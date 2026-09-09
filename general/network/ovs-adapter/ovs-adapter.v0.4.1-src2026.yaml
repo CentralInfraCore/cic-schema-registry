@@ -1,0 +1,96 @@
+---
+metadata:
+  name: ovs-adapter
+  version: v0.4.1
+  description: >
+    OVS / Linux bridge adapter contract — Open vSwitch és Linux bridge alapú
+    szoftveres hálózat hypervisor környezetben. cic-yang building blockok kompozíciója.
+    Ez a séma egyszerre az interface contract ÉS a conformance deklaráció.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - adapter-contract
+    - network
+    - ovs
+    - linux-bridge
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: AdapterContract
+  domain: "cic:network:NetworkInterface"
+
+  yang_composition:
+    blocks:
+      - block: ietf-interfaces-logical
+        source: cic-yang@v0.1.0
+        reason: OVS bridge, Linux bridge, loopback kezelés
+      - block: ietf-interfaces-vlan
+        source: cic-yang@v0.1.0
+        reason: VLAN tagging OVS portokon
+      - block: ietf-interfaces-tunnel
+        source: cic-yang@v0.1.0
+        reason: VXLAN tunnel portok (OVS native VXLAN)
+      - block: ietf-ip-v4
+        source: cic-yang@v0.1.0
+        reason: IPv4 konfiguráció bridge/loopback interfészeken
+      - block: ietf-ip-v6
+        source: cic-yang@v0.1.0
+        reason: IPv6 konfiguráció bridge/loopback interfészeken
+    note: >
+      ietf-interfaces-physical NEM szerepel — az OVS adapter szoftveres
+      interfészeket kezel. A fizikai uplink portot a switch-netconf-adapter kezeli.
+
+  backends:
+    - name: ovs
+      description: OVS / Linux bridge szoftveres switch hypervisoron
+      protocol: OVS-VSCTL / OVSDB (RFC 7047) / iproute2
+      known_implementations:
+        - Open vSwitch (OVS-VSCTL)
+        - Linux bridge (iproute2/ip link)
+        - Proxmox VE network API
+
+  operations:
+    - name: observe
+      description: >
+        OVS bridge/port állapotának lekérdezése OVS-VSCTL vagy OVSDB-n.
+        Visszaad egy NetworkInterface state_surface-t.
+        Adapter normalizálja: OVS 'LINK_UP' → oper_status: up
+      input:
+        - name: backend
+          type: string
+        - name: provider
+          type: string
+        - name: location
+          type: string
+        - name: id
+          type: string
+      output:
+        ref: NetworkInterface.state_surface
+
+    - name: apply
+      description: >
+        Config alkalmazása OVS-VSCTL parancsokkal vagy OVSDB tranzakcióval.
+        Idempotens — adapter diff alapján alkalmaz.
+        Nem implementált mezőre write → hard reject (D-012).
+      input:
+        ref: NetworkInterface.config_surface
+      output:
+        - name: applied
+          type: boolean
+
+    - name: watch
+      description: >
+        OVSDB monitor stream — bridge/port állapotváltozások.
+        Eredmény: NetworkInterface notification_surface eventjei.
+      output:
+        stream: true
+        ref: NetworkInterface.notification_surface
+
+  not_implemented_fields:
+    description: >
+      Ezek a NetworkInterface mezők NINCSENEK ebben az adapter sémában.
+      Write kísérlet → "field not implemented on OVS adapter" (D-012 hard reject).
+    fields:
+      - speed           # szoftveres interfészen nem értelmezhető
+      - duplex          # szoftveres interfészen nem értelmezhető

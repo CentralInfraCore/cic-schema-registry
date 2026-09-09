@@ -1,0 +1,127 @@
+---
+metadata:
+  name: switch-netconf-adapter
+  version: v0.4.1
+  description: >
+    Fizikai managed switch adapter contract — Juniper, Cisco, Aruba és más
+    NETCONF/RESTCONF képes switch-ek. cic-yang building blockok kompozíciója.
+    Ez a séma egyszerre az interface contract ÉS a conformance deklaráció:
+    ami nincs benne → nem implementált → schema validation error write-ra.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - adapter-contract
+    - network
+    - switch
+    - netconf
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: AdapterContract
+  domain: "cic:network:NetworkInterface"
+
+  yang_composition:
+    blocks:
+      - block: ietf-interfaces-physical
+        source: cic-yang@v0.1.0
+        reason: fizikai port kezelés (speed, duplex, MAC, statistics)
+      - block: ietf-interfaces-vlan
+        source: cic-yang@v0.1.0
+        reason: VLAN tagging — access/trunk/hybrid, allowed_vlans
+    note: >
+      ietf-interfaces-logical, ietf-interfaces-tunnel, ietf-ip-v4, ietf-ip-v6
+      NEM szerepel — fizikai switch nem kezeli ezeket (conformance by deletion).
+
+  backends:
+    - name: switch
+      description: Fizikai managed switch NETCONF/RESTCONF-on
+      protocol: NETCONF (RFC 6241) / RESTCONF (RFC 8040)
+      known_implementations:
+        - Juniper Junos (NETCONF native)
+        - Cisco IOS-XE (NETCONF/RESTCONF)
+        - Aruba AOS-CX (REST)
+
+  operations:
+    - name: observe
+      description: >
+        Switch interfész aktuális állapotának lekérdezése NETCONF GET-tel.
+        Visszaad egy NetworkInterface state_surface-t.
+        Adapter normalizálja: JUNOS 'present'+'up' → oper_status: up
+      input:
+        - name: backend
+          type: string
+        - name: provider
+          type: string
+        - name: location
+          type: string
+        - name: id
+          type: string
+      output:
+        ref: NetworkInterface.state_surface
+
+    - name: apply
+      description: >
+        Config alkalmazása NETCONF EDIT-CONFIG-gal. Idempotens — adapter
+        ellenőrzi az aktuális állapotot, csak a diff-et alkalmazza.
+        Nem implementált mezőre write → hard reject (D-012).
+      input:
+        ref: NetworkInterface.config_surface
+      output:
+        - name: applied
+          type: boolean
+
+    - name: watch
+      description: >
+        NETCONF notification stream feliratkozás (RFC 5277).
+        link-up / link-down notifikációk → NetworkInterface notification_surface.
+      output:
+        stream: true
+        ref: NetworkInterface.notification_surface
+
+  capabilities:
+    supported: [vlan_tagging, stp, storm_control, qinq, lacp, lldp, port_mirror, phy_stats, statistics]
+    conditional: [poe]
+    note: PoE csak PoE-képes switch modelleken érhető el.
+
+  conformance_matrix:
+    - target: NetworkInterface.config_surface.logical_interfaces
+      type: config_field
+      support: unsupported
+      reason: Fizikai switch nem kezel L3 logikai subinterfészeket
+
+    - target: NetworkInterface.config_surface.vxlans
+      type: config_field
+      support: unsupported
+      reason: VXLAN overlay csak szoftveres switch-en (OVS) értelmezett
+
+    - target: NetworkInterface.config_surface.lldp
+      type: config_field
+      support: full
+      yang_ref: cic-yang@v0.1.1/schemas/ietf/ietf-lldp.yaml
+
+    - target: NetworkInterface.config_surface.stp
+      type: config_field
+      support: full
+
+    - target: NetworkInterface.config_surface.storm_control
+      type: config_field
+      support: full
+
+    - target: NetworkInterface.config_surface.qinq
+      type: config_field
+      support: full
+
+    - target: NetworkInterface.config_surface.lacp
+      type: config_field
+      support: full
+
+    - target: NetworkInterface.config_surface.port_mirror
+      type: config_field
+      support: degraded
+      reason: Vendor-specifikus korlátok lehetnek (pl. max SPAN session szám)
+
+    - target: NetworkInterface.config_surface.poe
+      type: config_field
+      support: degraded
+      reason: Csak PoE-képes switch modelleken és portokon érhető el
