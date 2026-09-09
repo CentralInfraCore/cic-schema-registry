@@ -1,0 +1,110 @@
+---
+metadata:
+  name: ipmi-adapter
+  version: v0.2.3
+  description: >
+    IPMI/Redfish adapter interface contract — PhysicalMachine DomainComposition runtime kötése.
+    iDRAC, iLO, IPMI 2.0, Redfish bármelyike implementálhatja.
+    Ez NEM implementáció — ez az interface amit minden bare metal adapternek teljesítenie kell.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - adapter-contract
+    - compute
+    - bare-metal
+    - ipmi
+    - redfish
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.0
+
+spec:
+  kind: AdapterContract
+  domain: "cic:compute:PhysicalMachine"
+  protocol: "redfish-ipmi"
+
+  operations:
+
+    observe:
+      description: Fizikai szerver aktuális állapotának lekérdezése → state_surface
+      input:
+        - name: bmc_address
+          type: string
+          mandatory: true
+        - name: id
+          type: string
+          mandatory: true
+      output:
+        - name: power_state
+          type: string
+          maps_to: state_surface.power_state
+          redfish_path: "/redfish/v1/Systems/{id}#PowerState"
+        - name: hardware_health
+          type: string
+          maps_to: state_surface.hardware_health
+          redfish_path: "/redfish/v1/Systems/{id}#Status/Health"
+        - name: cpu_temperature_celsius
+          type: number
+          maps_to: state_surface.cpu_temperature_celsius
+          redfish_path: "/redfish/v1/Chassis/{id}/Thermal#Temperatures"
+
+    watch:
+      description: IPMI SEL / Redfish SSE event stream
+      protocol: redfish-sse
+      fallback: ipmi-sel-polling
+      poll_interval_seconds: 60
+      events:
+        - name: hardware-health-degraded
+          trigger: state_change
+        - name: temperature-threshold-exceeded
+          trigger: threshold
+
+    power_on:
+      description: Szerver bekapcsolása
+      idempotent: true
+      redfish_action: "POST /redfish/v1/Systems/{id}/Actions/ComputerSystem.Reset"
+      redfish_body: '{"ResetType": "On"}'
+      ipmi_fallback: "ipmitool chassis power on"
+      postcondition: power_state == on
+
+    power_off:
+      description: Szerver leállítása
+      idempotent: true
+      input:
+        - name: force
+          type: boolean
+          default: false
+      redfish_action: "POST /redfish/v1/Systems/{id}/Actions/ComputerSystem.Reset"
+      redfish_body_graceful: '{"ResetType": "GracefulShutdown"}'
+      redfish_body_force: '{"ResetType": "ForceOff"}'
+      ipmi_fallback: "ipmitool chassis power off"
+      postcondition: power_state == off
+
+    reset:
+      description: Hard reset
+      idempotent: false
+      redfish_action: "POST /redfish/v1/Systems/{id}/Actions/ComputerSystem.Reset"
+      redfish_body: '{"ResetType": "ForceRestart"}'
+      ipmi_fallback: "ipmitool chassis power reset"
+
+    provision:
+      description: OS telepítése PXE/network boot alapján
+      idempotent: false
+      input:
+        - name: os_image
+          type: string
+          mandatory: true
+      output:
+        - name: job_id
+          type: string
+      precondition: power_state == off
+      protocol_details: "PXE boot + kickstart/preseed/cloud-init"
+
+  known_implementations:
+    - name: idrac-adapter
+      protocol_details: "Dell iDRAC Redfish API"
+    - name: ilo-adapter
+      protocol_details: "HPE iLO Redfish API"
+    - name: ipmi-generic-adapter
+      protocol_details: "IPMI 2.0 (ipmitool)"
+    - name: maas-adapter
+      protocol_details: "Canonical MAAS API (bare metal provisioning)"
