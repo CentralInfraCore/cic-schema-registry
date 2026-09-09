@@ -1,0 +1,103 @@
+---
+metadata:
+  name: ietf-lldp
+  source: RFC 8516 — A YANG Data Model for LLDP
+  version: v0.1.3
+  description: >
+    LLDP (Link Layer Discovery Protocol) building block — IEEE 802.1AB alapú
+    szomszéd discovery. RFC 8516 ietf-lldp YANG modul CIC adaptációja.
+    Interface szinten konfigurálja az LLDP hirdetést és exposolja a felfedezett
+    szomszédok adatait a state_surface-en.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8516
+    - lldp
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-lldp
+  yang_source: RFC 8516
+  standalone: false     # mindig interfészhez kötött
+
+  config:
+    - name: lldp_enabled
+      type: boolean
+      required_on_create: false
+      default: true
+      description: LLDP engedélyezése ezen az interfészen
+      origin: rfc8516
+
+    - name: lldp_transmit
+      type: boolean
+      required_on_create: false
+      default: true
+      description: LLDP PDU küldés engedélyezése
+      origin: rfc8516
+
+    - name: lldp_receive
+      type: boolean
+      required_on_create: false
+      default: true
+      description: LLDP PDU fogadás engedélyezése
+      origin: rfc8516
+
+    - name: lldp_tlvs
+      type: list
+      item_type: string
+      required_on_create: false
+      description: >
+        Hirdetett TLV-k listája (management-address, port-description,
+        system-capabilities, system-description, system-name)
+      origin: rfc8516
+
+  state:
+    - name: lldp_neighbors
+      type: list
+      description: Felfedezett LLDP szomszédok listája
+      origin: rfc8516
+      item_fields:
+        - name: chassis_id
+          type: string
+          role: key
+          description: Szomszéd chassis azonosítója (MAC vagy IP)
+        - name: port_id
+          type: string
+          description: Szomszéd port azonosítója
+        - name: system_name
+          type: string
+          required_on_create: false
+          description: Szomszéd rendszer neve
+        - name: system_description
+          type: string
+          required_on_create: false
+          description: Szomszéd rendszer leírása
+        - name: port_description
+          type: string
+          required_on_create: false
+          description: Szomszéd port leírása
+        - name: capabilities
+          type: list
+          item_type: string
+          required_on_create: false
+          description: >
+            Hirdetett képességek (bridge, router, wlan-access-point, telephone,
+            docsis-cable-device, station-only, other)
+        - name: ttl_seconds
+          type: integer
+          description: Szomszéd bejegyzés érvényességi ideje másodpercben
+        - name: management_addresses
+          type: list
+          required_on_create: false
+          description: Szomszéd management IP cím(ek)
+          item_fields:
+            - name: address
+              type: string
+              role: key
+            - name: type
+              type: string
+              description: "inet: IPv4, inet6: IPv6"

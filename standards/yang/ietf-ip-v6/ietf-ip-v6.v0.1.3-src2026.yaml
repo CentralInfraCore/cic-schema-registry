@@ -1,0 +1,148 @@
+---
+metadata:
+  name: ietf-ip-v6
+  source: RFC 8344 — A YANG Data Model for IP Management
+  version: v0.1.3
+  description: >
+    IPv6 konfiguráció building block — RFC 8344 ietf-ip augmentáció CIC adaptációja,
+    netplan-kompatibilis struktúrával. Mindig egy interfészhez kötött, sosem standalone.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8344
+    - ipv6
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-ip
+  yang_source: RFC 8344
+  ip_version: ipv6
+  standalone: false     # mindig interfészhez kötött
+
+  config:
+    - name: dhcp6
+      type: boolean
+      required_on_create: false
+      default: false
+      description: >
+        DHCPv6 kliens engedélyezése (stateful). Ha false és accept_ra=true,
+        SLAAC-ból kap címet. Mindkettő lehet egyszerre true (dual-stack DHCP+SLAAC).
+      origin: cic-extension
+
+    - name: accept_ra
+      type: boolean
+      required_on_create: false
+      default: true
+      description: Router Advertisement fogadása és SLAAC engedélyezése (RFC 4862)
+      origin: rfc8344
+
+    - name: addresses
+      type: list
+      required_on_create: false
+      description: Statikus IPv6 cím(ek) CIDR formátumban
+      origin: rfc8344
+      item_fields:
+        - name: address
+          type: ipv6-prefix
+          role: key
+          description: IPv6 cím prefix-hosszal (pl. 2001:db8::1/64)
+        - name: label
+          type: string
+          required_on_create: false
+
+    - name: gateway6
+      type: ipv6-address
+      required_on_create: false
+      description: Default IPv6 gateway (default route next-hop)
+      origin: cic-extension
+
+    - name: nameservers
+      type: object
+      required_on_create: false
+      description: DNS konfiguráció (IPv6 forrású is lehet)
+      origin: cic-extension
+      properties:
+        addresses:
+          type: list
+          item_type: ipv6-address
+          description: DNS szerver IP cím(ek)
+        search:
+          type: list
+          item_type: string
+          description: DNS keresési domain lista
+
+    - name: routes
+      type: list
+      required_on_create: false
+      description: Statikus IPv6 route-ok
+      origin: cic-extension
+      item_fields:
+        - name: to
+          type: string
+          role: key
+          description: Célhálózat IPv6 CIDR vagy "default"
+        - name: via
+          type: ipv6-address
+          required_on_create: false
+          description: Next-hop IPv6 gateway
+        - name: metric
+          type: integer
+          required_on_create: false
+          default: 100
+          description: Route metrika
+        - name: table
+          type: integer
+          required_on_create: false
+          description: "Routing tábla azonosító (default: main=254)"
+
+    - name: privacy_extensions
+      type: boolean
+      required_on_create: false
+      default: false
+      description: RFC 4941 privacy extensions — ideiglenes cím generálás
+      origin: rfc8344
+
+    - name: dhcp6_overrides
+      type: object
+      required_on_create: false
+      description: DHCPv6 kliens finomhangolása (dhcp6=true esetén értelmezett)
+      origin: cic-extension
+      properties:
+        use_dns:
+          type: boolean
+          default: true
+        use_routes:
+          type: boolean
+          default: true
+        rapid_commit:
+          type: boolean
+          default: false
+          description: DHCPv6 rapid commit opció (2-message exchange)
+
+  state:
+    - name: assigned_addresses
+      type: list
+      description: Ténylegesen kiosztott IPv6 cím(ek)
+      origin: rfc8344
+      item_fields:
+        - name: address
+          type: ipv6-prefix
+          role: key
+          description: IPv6 cím CIDR formátumban
+        - name: origin
+          type: enum
+          values: [static, dhcpv6, slaac, link_local, other]
+          description: Cím forrása
+        - name: status
+          type: enum
+          values: [preferred, deprecated, invalid, inaccessible, unknown, tentative, duplicate]
+          description: RFC 4862 cím állapot (DAD eredmény)
+        - name: lease_expiry
+          type: datetime
+          format: iso8601
+          required_on_create: false
+          description: DHCPv6 bérleti idő lejárta (csak origin=dhcpv6 esetén)

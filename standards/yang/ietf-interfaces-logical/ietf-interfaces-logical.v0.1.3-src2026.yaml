@@ -1,0 +1,58 @@
+---
+metadata:
+  name: ietf-interfaces-logical
+  source: RFC 8343 — A YANG Data Model for Interface Management
+  version: v0.1.3
+  description: >
+    Logikai hálózati interfész building block — loopback, bridge (OVS/Linux),
+    önálló logikai interfészek. Fizikai szülő opcionális — létezhet standalone.
+    Kiterjeszti az ietf-interfaces-base közös mezőit.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - logical
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  extends:
+    name: ietf-interfaces-base
+    version: v0.0.dev
+  interface_types:
+    - softwareLoopback    # loopback interfész (RFC 8343)
+    - bridge              # Linux bridge / OVS bridge
+    - other               # általános logikai interfész (SVI, subinterface)
+
+  config:
+    - name: logical_type
+      type: enum
+      values: [loopback, bridge, subinterface, svi, other]
+      required_on_create: true
+      description: >
+        Logikai interfész altípusa (CIC-szintű pontosítás — nem ütközik a YANG
+        iana-if-type interface_types mezőjével).
+      origin: cic-extension
+
+    # Szülő-gyerek relációk (RFC 8343 higher/lower-layer-if)
+    - name: lower_layer_if
+      type: list
+      item_type: interface-ref
+      required_on_create: false
+      description: >
+        Alsó réteg interfészek — bridge esetén tag/untag portok,
+        bond esetén taginterfészek, OVS bridge esetén az uplink fizikai port.
+      origin: rfc8343
+
+    - name: higher_layer_if
+      type: interface-ref
+      required_on_create: false
+      description: >
+        Felső réteg interfész — ha ez az interfész egy bridge portja vagy
+        egy fizikai interfész subinterface-e.
+      origin: rfc8343

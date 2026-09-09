@@ -1,0 +1,237 @@
+---
+metadata:
+  name: cic-yang-block-schema
+  version: v0.1.3
+  description: >
+    Meta-schema a cic-yang YANGBlock fájlok belső struktúrájának validálásához.
+    Az index.yaml csak kind/yang_module/yang_source kötelezőségét ellenőrzi.
+    Ez a schema a config/state/notifications mezők belső konzisztenciáját validálja.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - meta-schema
+    - yang-block
+  validatedBy:
+    name: self
+    version: v0.0.dev
+
+spec:
+  kind: YANGBlock
+  yang_module: cic-yang-meta
+  yang_source: CIC internal
+
+  # ── A YANGBlock belső struktúra sémája ────────────────────────────────────────
+  block_schema:
+    $defs:
+      field_schema:
+        type: object
+        required: [name, type]
+        properties:
+
+          name:
+            type: string
+            pattern: "^[a-z][a-z0-9_]*$"
+            description: snake_case mezőnév
+
+          type:
+            type: string
+            enum:
+              # Primitív típusok
+              - string
+              - integer
+              - boolean
+              - number
+              # Szemantikus típusok
+              - mac-address
+              - ipv4-address
+              - ipv4-prefix
+              - ipv6-address
+              - ipv6-prefix
+              - ip-address
+              - ip-prefix
+              - vlan-id
+              - interface-ref
+              - datetime
+              # Összetett típusok
+              - enum
+              - list
+              - object
+              - ref
+
+          required_on_create:
+            type: boolean
+            default: false
+            description: Kötelező-e létrehozáskor explicit megadni
+
+          default:
+            description: Alapértelmezett érték (ha required_on_create=false)
+
+          role:
+            type: string
+            enum: [key, config, state, operational, reference]
+
+          origin:
+            type: string
+            enum: [rfc8343, rfc8344, rfc8516, openconfig, cic-extension]
+            description: Mező eredete — RFC-ből jön vagy CIC normalizáció
+
+          capability:
+            type: string
+            description: Ha meg van adva, csak az ezt támogató adapternél értelmezett
+
+          applicable_when:
+            type: object
+            properties:
+              field:
+                type: string
+              equals:
+                description: Skaláris érték
+              in:
+                type: array
+                description: Értékek listája
+            description: Feltétel ami alapján a mező értelmezett
+
+          required_when:
+            type: object
+            properties:
+              field:
+                type: string
+              equals:
+                description: Ha ez a feltétel teljesül, a mező kötelező
+            description: Feltételes kötelezőség
+
+          # Enum-specifikus
+          values:
+            type: array
+            items:
+              type: string
+            description: Enum értékek listája (type=enum esetén kötelező)
+
+          # List-specifikus
+          item_type:
+            type: string
+            description: Lista elemeinek típusa (type=list, egyszerű elem esetén)
+
+          item_fields:
+            type: array
+            description: Lista elemeinek mezői (type=list, összetett elem esetén)
+
+          # Object-specifikus
+          properties:
+            type: object
+            description: Object belső mezői (type=object esetén)
+
+          # Ref-specifikus
+          target_kind:
+            type: string
+            description: Mire mutat a referencia (pl. DHCPService, YANGBlock)
+
+          # Számértékes korlátok
+          range:
+            type: string
+            pattern: "^[0-9]+\\.\\.[0-9]+$"
+            description: "Értéktartomány (pl. 1..4094)"
+
+          unit:
+            type: string
+            description: Mértékegység (pl. Mbps, byte)
+
+          format:
+            type: string
+            description: Formátum spec (pl. iso8601, cidr)
+
+    type: object
+    required: [metadata, spec]
+    properties:
+
+      metadata:
+        type: object
+        required: [name, source, version, description, owner, tags, validatedBy]
+        properties:
+          name:
+            type: string
+            pattern: "^(ietf|openconfig|cic)-[a-z0-9-]+$"
+            description: Naming konvenció — prefix jelzi az origint
+          source:
+            type: string
+            description: Forrás RFC vagy spec (pl. "RFC 8343 — ietf-interfaces")
+          version:
+            type: string
+            pattern: "^v[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[a-z0-9]+)?$"
+
+      spec:
+        type: object
+        required: [kind, yang_module, yang_source]
+        properties:
+
+          kind:
+            type: string
+            enum: [YANGBlock]
+
+          yang_module:
+            type: string
+            description: YANG modul neve (pl. ietf-interfaces, ietf-ip)
+
+          yang_source:
+            type: string
+            description: Forrás dokumentum (pl. RFC 8343, OpenConfig)
+
+          abstract:
+            type: boolean
+            default: false
+            description: true = csak kiterjesztés alapja, önállóan nem használható
+
+          standalone:
+            type: boolean
+            default: true
+            description: false = mindig szülő building blockhoz kötött
+
+          extends:
+            type: object
+            required: [name, version]
+            properties:
+              name:
+                type: string
+              version:
+                type: string
+            description: Szülő building block aminek mezőit örökli
+
+          interface_types:
+            type: array
+            items:
+              type: string
+            description: RFC 8343 / IANA-IF-TYPE értékek amiket ez a blokk fed
+
+          ip_version:
+            type: string
+            enum: [ipv4, ipv6]
+            description: RFC 8344 blokkoknál az IP verzió
+
+          config:
+            type: array
+            items:
+              $ref: "#/$defs/field_schema"
+            description: Config tree mezők (RFC 8343 config container analóg)
+
+          state:
+            type: array
+            items:
+              $ref: "#/$defs/field_schema"
+            description: State tree mezők (RFC 8343 state container, read-only)
+
+          notifications:
+            type: array
+            items:
+              type: object
+              required: [name, description]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                origin:
+                  type: string
+                  enum: [rfc8343, rfc8344, rfc8516, openconfig, cic-extension]
+                payload:
+                  type: array
+                  items:
+                    type: object

@@ -1,0 +1,143 @@
+---
+metadata:
+  name: ietf-ip-v4
+  source: RFC 8344 — A YANG Data Model for IP Management
+  version: v0.1.3
+  description: >
+    IPv4 konfiguráció building block — RFC 8344 ietf-ip augmentáció CIC adaptációja,
+    netplan-kompatibilis struktúrával. Mindig egy interfészhez kötött, sosem standalone.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8344
+    - ipv4
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-ip
+  yang_source: RFC 8344
+  ip_version: ipv4
+  standalone: false     # mindig interfészhez kötött
+
+  config:
+    - name: dhcp4
+      type: boolean
+      required_on_create: false
+      default: false
+      description: >
+        DHCPv4 kliens engedélyezése. Ha true és a VLAN szegmensen dhcp_service
+        van, a kiosztott cím a state.assigned_addresses-ben jelenik meg.
+      origin: cic-extension
+
+    - name: addresses
+      type: list
+      required_on_create: false
+      description: Statikus IPv4 cím(ek) CIDR formátumban
+      origin: rfc8344
+      item_fields:
+        - name: address
+          type: ipv4-prefix
+          role: key
+          description: IPv4 cím prefix-hosszal (pl. 10.0.0.1/24)
+        - name: label
+          type: string
+          required_on_create: false
+          description: Cím label (pl. primary, secondary)
+
+    - name: gateway4
+      type: ipv4-address
+      required_on_create: false
+      description: Default IPv4 gateway (default route next-hop)
+      origin: cic-extension
+
+    - name: nameservers
+      type: object
+      required_on_create: false
+      description: DNS konfiguráció
+      origin: cic-extension
+      properties:
+        addresses:
+          type: list
+          item_type: ipv4-address
+          description: DNS szerver IP cím(ek) prioritás sorrendben
+        search:
+          type: list
+          item_type: string
+          description: DNS keresési domain lista
+
+    - name: routes
+      type: list
+      required_on_create: false
+      description: Statikus IPv4 route-ok
+      origin: cic-extension
+      item_fields:
+        - name: to
+          type: string
+          role: key
+          description: Célhálózat CIDR formátumban (pl. 192.168.0.0/16) vagy "default"
+        - name: via
+          type: ipv4-address
+          required_on_create: false
+          description: Next-hop gateway IP cím
+        - name: metric
+          type: integer
+          required_on_create: false
+          default: 100
+          description: Route metrika (kisebb = előnyben részesített)
+        - name: table
+          type: integer
+          required_on_create: false
+          description: "Routing tábla azonosító (default: main=254)"
+
+    - name: metric
+      type: integer
+      required_on_create: false
+      description: Interfész alapértelmezett metrikája (DHCP route-okra is)
+      origin: cic-extension
+
+    - name: dhcp4_overrides
+      type: object
+      required_on_create: false
+      description: DHCP kliens viselkedés finomhangolása (dhcp4=true esetén értelmezett)
+      origin: cic-extension
+      properties:
+        use_dns:
+          type: boolean
+          default: true
+          description: DHCP-kiosztott DNS szerverek használata
+        use_routes:
+          type: boolean
+          default: true
+          description: DHCP-kiosztott route-ok alkalmazása
+        use_gateway:
+          type: boolean
+          default: true
+          description: DHCP-kiosztott default gateway alkalmazása
+        hostname:
+          type: string
+          required_on_create: false
+          description: DHCP hostname opció
+
+  state:
+    - name: assigned_addresses
+      type: list
+      description: Ténylegesen kiosztott IPv4 cím(ek) — statikus és DHCP-s egyaránt
+      origin: rfc8344
+      item_fields:
+        - name: address
+          type: ipv4-prefix
+          role: key
+          description: IPv4 cím CIDR formátumban
+        - name: origin
+          type: enum
+          values: [static, dhcp, link_local, other]
+          description: Cím forrása
+        - name: lease_expiry
+          type: datetime
+          format: iso8601
+          required_on_create: false
+          description: DHCP bérleti idő lejárta (csak origin=dhcp esetén)
