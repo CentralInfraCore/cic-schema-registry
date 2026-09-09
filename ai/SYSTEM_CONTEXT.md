@@ -6,6 +6,18 @@ Olvasd el mielőtt bármit módosítasz.
 
 ## Mi ez a rendszer?
 
+Ez a szakasz alább a `base-repo` sablon öröklött, generikus leírása — az
+ALATTA lévő build/signing infrastruktúra a `cic-schema-registry`-re is
+érvényes, de ez a repó ennél specifikusabb: **konszolidált séma-registry**,
+`general`/`standards`/`providers` könyvtárszerkezettel, egy séma = egy fájl
+elven, fájlonként független verziózással és aláírással (nem bundle-release).
+A teljes tervezés: `cic-primitives` repó, `proposals/schema-registry/README.md`.
+Ennek a repónak a saját, valódi állapota: `CLAUDE.md` "Jelenlegi, valódi
+állapot" szakasza — ez a fájl (öröklött scaffold) NEM frissült még teljesen
+a registry-specifikus tartalommal.
+
+Az öröklött, generikus leírás:
+
 A `base-repo` egy **infrastruktúra sablon**. Nem tartalmaz üzleti logikát — a szerepe az, hogy a belőle
 származtatott production repók (pl. CIC-Schemas, CIC-Relay) egységes build, signing és release
 infrastruktúrát örököljenek Renovate-en keresztül.

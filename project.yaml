@@ -1,18 +1,21 @@
 ---
 metadata:
-  name: schema-registry-template
+  name: cic-schema-registry
   description: >
-    Consolidated CIC schema registry template — one schema description per
-    file, grouped general/standards/providers, independently versioned and
-    signed per file (no bundle release). See proposals/schema-registry in
-    cic-primitives for the design rationale.
+    Consolidated CIC schema registry — one schema description per file,
+    grouped general/standards/providers, independently versioned and signed
+    per file (no bundle release). Replaces the per-domain repos
+    (cic-network, cic-compute, cic-kubernetes, cic-storage, cic-yang,
+    CIC-Schemas) as the home of schema descriptions; those repos archive
+    once their content is migrated here. See proposals/schema-registry in
+    cic-primitives for the full design rationale.
   version: 0.1.0
   license: CC-BY-NC-SA-4.0
-  main_branch: schema-registry/main
+  main_branch: main
   owner: Gabor Zoltan Sinko
   tags:
-    - template
     - schema-registry
+    - domain
   validatedBy:
     name: TBD
     version: TBD

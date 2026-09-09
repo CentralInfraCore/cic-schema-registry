@@ -13,4 +13,4 @@ used_in:
   - onboarding
   - development-process
 description: |
-  Root README for the CentralInfraCore base-repo template. Entry point for understanding the repository structure, available make targets, and the overall CIC template system.
+  Root README for cic-schema-registry, the consolidated CIC schema registry (general/standards/providers, one schema per file, per-file signing). Entry point for understanding the repository structure and the design it implements.
