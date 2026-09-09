@@ -47,29 +47,67 @@ Amíg ez nincs meg, ne tegyél tényállításokat a registry állapotáról.
 
 | Státusz | Jelentés |
 |---|---|
-| **defined** | a mechanizmus/könyvtár létezik, `make validate` zöld rá |
+| **defined** | a mechanizmus/könyvtár létezik és le van tesztelve — ez ÖNMAGÁBAN nem jelenti, hogy `make validate`/`make registry.validate` érdemben ellenőrzi is (lásd "Jelenlegi, valódi állapot" a konkrét réseket) |
 | **draft** | terv megvan írásban (a `proposals/schema-registry`-ben), kód még nincs |
 | **not implemented** | sem terv, sem kód — vagy terv van, de kód szándékosan még nincs |
 
 ---
 
-## Jelenlegi, valódi állapot (2026-09-09-i bootstrap)
+## Jelenlegi, valódi állapot (2026-09-09-i frissítés)
 
-Ez a repó **most jött létre**, a `base-repo` `schema-registry@0.1.0`
-flavor-tag-jéből bootstrap-olva. Amit ez ténylegesen jelent:
+A bootstrap óta a hat elsődleges primitives-group repó tartalma (kernel +
+5 domain) migrálva lett — a `general/`/`standards/` könyvtárak **NEM üresek**:
 
-- A `general/`/`standards/`/`providers/` könyvtárak **üresek** (`.gitkeep`
-  csak) — semmilyen séma-tartalom nincs még migrálva
-- A `tools/compiler.py`/`tools/infra.py` **még az örökölt, bundle-alapú**
-  logikát futtatja — a fájlonkénti aláírás, a base-chain coverage-check, a
-  major-verzió-szabályok, a `-src<év>` kezelés **nincs megírva**
-- A `renovate.json` még sima package-dependency-kre van konfigurálva, NEM a
-  `base:`/`reference_target:` pin-ekre
-- A CI (`.github/workflows/ci.yml`) az örökölt base-repo tesztkészletet
-  futtatja, nem registry-specifikus szabályokat
+| Réteg | Fájlszám | Forrás |
+|---|---:|---|
+| `general/primitives/` | 1 (bundle) | `cic-primitives` `primitives/@v0.2.0` |
+| `general/compute/` | 4 | `cic-compute` `compute/@v0.2.3` |
+| `general/storage/` | 2 | `cic-storage` `storage/@v0.1.2` |
+| `general/kubernetes/` | 7 | `cic-kubernetes` `kubernetes/@v0.1.2` |
+| `general/network/` | 3 | `cic-network` `network/@v0.4.1` |
+| `standards/yang/` | 9 | `cic-yang` `yang/@v0.1.3` |
+| `providers/` | 0 | — még nincs provider-modul mapping |
 
-Ne állítsd egyik fentiről se, hogy "kész" vagy "működik" — ez egy bootstrap
-checkpoint, nem egy funkcionális registry.
+`tools/registrylib/` (`paths.py`, `identity.py`, `coverage.py`) és a hozzá
+tartozó `tools/registry_validate.py` CLI **meg vannak írva és tesztelve** —
+ez registry-specifikus, additív a `tools/compiler.py`/`tools/infra.py`
+örökölt, bundle-alapú logikájához képest (azt NEM helyettesíti).
+`tools/registry_sign.py` (+ `tools/registrylib/signing.py` +
+`tools/vault-mtls-client/`) is megvan: fájlonkénti, bundle nélküli aláírás
+Vault Transit + CICSourceCA ellenjegyzéssel, élő teszttel bizonyítva.
+
+**Ennek ellenére a validáció ma nagyon kevés tényleges garanciát ad — ne
+higgy a zöld futásnak félrevezető magabiztossággal:**
+
+- `make validate` (`tools/compiler.py validate` → `run_validation()` a
+  `tools/infra.py`-ban) **placeholder** — betölti és logolja a
+  `canonical_source_file`-t, de a validációs logika szó szerint
+  "to be fully implemented here". Nem érinti a migrált tartalmat.
+- `make registry.validate` valódi, de a jelenlegi corpuson **0
+  verzióátmenetet ellenőriz** (minden séma pontosan egy tartalmi
+  verzióval létezik) és **minden `base:` referenciát csendben átugrik**,
+  mert egyik migrált domain-kompozíció sem ír pontos verziót
+  (`base: "cic:core:ManagedEntity"`, nem `...@v0.2.0`) — ez az ág még a
+  `SKIPPED` jelentésben sem jelenik meg, egyáltalán nincs log róla. A
+  `reference_target` mezőt semmi nem oldja fel, csak a docstringben
+  szerepel.
+- `tools/registrylib/coverage.py` a mezőket surface-től függetlenül,
+  pusztán névre lapítja — egy azonos nevű, azonos típusú mező
+  `config_surface`→`state_surface` áthelyezése major-váltás nélkül átmegy,
+  pedig a fogyasztói szerződés megváltozik.
+- `tools/registrylib/paths.py` `resolve_pin()` a legfrissebb `-src<év>`-et
+  numerikusan választja ki, tanúsítvány/aláírás-érvényesség ellenőrzése
+  nélkül — jelenlét = bizalom.
+- A CI (`.github/workflows/ci.yml`) **sem `make validate`-et, sem
+  `make registry.validate`-et nem hívja** — csak `make check`/`make test`
+  fut, ami a tooling kódot teszteli, nem a valódi séma-corpust.
+- A migrált 26 fájl közül **1 van aláírva** (a `cic-primitives` bundle, a
+  forrás repóból byte-verbatim átvett, eredeti aláírásával) — a másik 25
+  egyike sem lett a `registry_sign.py`-jal aláírva.
+
+Ne állítsd egyik fentiről se, hogy "kész" vagy "működik" pusztán azért,
+mert `make check`/`make registry.validate` zöld — nézd meg pontosan, mit
+NEM ellenőriz.
 
 ---
 
@@ -78,8 +116,9 @@ checkpoint, nem egy funkcionális registry.
 | Repo | Remote | Mit ad |
 |---|---|---|
 | `base-repo` | `base` | tooling, signing hook, CI, Makefile — `schema-registry` flavor branch |
-| `cic-primitives` | — | a tervezési dokumentum forrása (`proposals/schema-registry`) |
-| `cic-network`/`cic-compute`/`cic-kubernetes`/`cic-storage`/`cic-yang`/`CIC-Schemas` | — | migráció forrása, archiválásra várnak |
+| `cic-primitives` | — | a tervezési dokumentum forrása (`proposals/schema-registry`); **NEM archivált**, élő kernel-forrás |
+| `cic-network`/`cic-compute`/`cic-kubernetes`/`cic-storage`/`cic-yang` | — | migráció forrása, tartalmuk átköltözött, **mind archivált** |
+| `CIC-Schemas` | — | más témájú, tartalma NEM lett migrálva, nincs archiválva |
 | `cic-module-oracle-cloud` | — | provider modul, a `providers/oracle-cloud/` sémáinak megvalósítója |
 
 ---
@@ -87,5 +126,9 @@ checkpoint, nem egy funkcionális registry.
 ## Mérce
 
 ```bash
-make validate    # séma validáció — ha ez nem zöld, semmi sem kész
+make validate            # örökölt bundle-check — jelenleg PLACEHOLDER, nem validál semmit érdemben
+make registry.validate   # valódi, de a jelenlegi corpuson 0 verzióátmenetet és 0 pinnelt base-t lát
 ```
+
+Egyik zöld futás sem jelenti azt, hogy a migrált tartalom valóban
+ellenőrzött — lásd fent "Jelenlegi, valódi állapot".
