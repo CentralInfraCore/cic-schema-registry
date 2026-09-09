@@ -76,6 +76,14 @@ validate:
 	@echo "--- Validating all schemas against the meta-schema ---"
 	@docker compose exec builder python -m tools.compiler validate $(COMPILER_CLI_ARGS)
 
+# registry.validate: the NEW, registry-specific checks (proposals/schema-registry)
+# — base-chain field coverage + major-version-gated evolution rules. Additive to
+# `validate` above, not yet merged into it (see CLAUDE.md "Jelenlegi, valódi
+# állapot" for what's still missing: per-file signing, -src<year> handling).
+registry.validate:
+	@echo "--- Registry: base-chain coverage + version-evolution rules ---"
+	@docker compose exec builder python -m tools.registry_validate
+
 release:
 ifeq ($(VERSION),)
 	$(error VERSION is required for the release command. Usage: make release VERSION=1.0.0)
