@@ -1,0 +1,118 @@
+---
+metadata:
+  name: ietf-interfaces-vlan
+  source: RFC 8343 + CIC L2 VLAN extension
+  version: v0.1.4
+  description: >
+    VLAN szegmens building block — IEEE 802.1Q VLAN tagging, access/trunk/hybrid mód.
+    Mindig fizikai VAGY logikai interfészhez kötött, soha nem standalone.
+    A dhcp_service referencia egy külső DHCP service-re mutat (service réteg).
+    Megjegyzés: a vlan_mode (access/trunk/hybrid) CIC L2 extension — az RFC 8343
+    l2vlan type-hoz képest kiegészítő switchport-absztrakció.
+    v0.1.4: native_vlan mostantól hybrid módban is érvényes — lásd issue #19.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - vlan
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  interface_types:
+    - l2vlan              # IEEE 802.1Q VLAN (RFC 8343)
+
+  extends:
+    name: ietf-interfaces-base
+    version: v0.0.dev
+  standalone: false       # mindig szülőhöz kötött (physical vagy logical)
+
+  config:
+    - name: vlan_id
+      type: vlan-id
+      range: "1..4094"
+      required_on_create: true
+      role: key
+      description: VLAN azonosító (IEEE 802.1Q)
+      origin: rfc8343
+
+    - name: name
+      type: string
+      required_on_create: false
+      description: VLAN neve / leírása
+      origin: cic-extension
+
+    - name: vlan_mode
+      type: enum
+      values: [access, trunk, hybrid]
+      required_on_create: false
+      default: access
+      description: >
+        Port VLAN működési mód.
+        access: egy VLAN, untagged forgalom.
+        trunk: több VLAN, tagged forgalom (allowed_vlans lista alapján).
+        hybrid: vegyes — egyes VLAN-ok tagged, mások untagged.
+      origin: cic-extension
+
+    - name: allowed_vlans
+      type: list
+      item_type: vlan-id
+      required_on_create: false
+      applicable_when:
+        field: vlan_mode
+        in: [trunk, hybrid]
+      description: >
+        Engedélyezett, TAGGED VLAN ID-k trunk/hybrid módban. Üres = minden
+        VLAN engedélyezett (trunk default). Hybrid módban a native_vlan
+        NEM ide tartozik — az az egy, untagged kivétel (lásd ott).
+      origin: cic-extension
+
+    # issue #19: korábban `equals: trunk` volt — a hybrid mód saját
+    # leírása szerint "vegyes: egyes VLAN-ok tagged, mások untagged", de
+    # az egyetlen mező, ami untagged VLAN-t tud kifejezni (native_vlan),
+    # ki volt zárva pont ebből a módból. Egy port (trunk vagy hybrid)
+    # tipikusan egyetlen untagged/native VLAN-t enged (ugyanaz a modell,
+    # mint pl. Cisco "switchport mode general" natív VLAN-ja) — ezt fejezi
+    # ki a native_vlan, MINDEN más engedélyezett VLAN (allowed_vlans)
+    # pedig tagged. Ha a jövőben több egyidejű untagged VLAN-t kellene
+    # támogatni egy hybrid porton, az már egy per-VLAN {id, tagged}
+    # struktúrát igényelne — ezt a jelenlegi valós adapterek egyike sem
+    # igényli, ezért itt nem vezetjük be korai absztrakcióként.
+    - name: native_vlan
+      type: vlan-id
+      required_on_create: false
+      default: 1
+      applicable_when:
+        field: vlan_mode
+        in: [trunk, hybrid]
+      description: >
+        Az egyetlen untagged/native VLAN trunk VAGY hybrid porton
+        (default: 1). Minden más, allowed_vlans-ban felsorolt VLAN tagged.
+      origin: cic-extension
+
+    - name: dhcp_service
+      type: ref
+      target_kind: DHCPService
+      required_on_create: false
+      description: >
+        Referencia egy DHCP service resource-ra amely erre a VLAN-ra oszt
+        IP címeket. Service réteg — máshol definiált, ez csak pointer.
+        Formátum: CIC address string (pl. "dhcp/server-01/pool-mgmt")
+      origin: cic-extension
+
+  state:
+    - name: oper_status
+      type: enum
+      values: [up, down, unknown]
+      description: Operációs állapot
+      origin: rfc8343
+
+    - name: mac_table_entries
+      type: integer
+      description: Aktuális MAC tábla bejegyzések száma ezen a VLAN-on
+      origin: cic-extension
