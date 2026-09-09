@@ -1,0 +1,548 @@
+---
+metadata:
+  name: StorageResource
+  version: v0.1.3
+  description: >
+    Egységes block volume erőforrás — hypervisor-managed disk, SAN/iSCSI LUN és cloud
+    block storage egyaránt leírható. A paradigma (hypervisor/san/cloud) az adapter és
+    az address rétegben van, nem a config_surface-ben.
+    Scope: kizárólag block volume lifecycle. Object storage, NFS/NAS és snapshot mint
+    önálló resource NEM tartozik ide (D-001).
+    v0.1.3: attachments lista a multi_attach állapot leírására — lásd issue #15.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - storage
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: schemas/aggregate/managed-entity.yaml
+
+  # ── PolicySurface ─────────────────────────────────────────────────────────────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: schemas/atomic/identity.yaml
+    kind: StorageResource
+    namespace: "cic:storage"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: Platform-agnosztikus block volume erőforrás
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: schemas/aggregate/config-surface.yaml
+    nodes:
+
+      # ── Core: minden adapter ──────────────────────────────────────────────────
+      - name: size_gb
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: config
+        mandatory: true
+        description: Volume mérete GB-ban
+        contract:
+          - type: range
+            expression: "1..65536"
+
+      - name: access_mode
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: Hozzáférési mód
+        contract:
+          - type: enum
+            expression: [read_write_once, read_only_many, read_write_many]
+        capability_values:
+          read_only_many: multi_attach
+          read_write_many: multi_attach
+
+      # capability: filesystem ───────────────────────────────────────────────────
+      - name: filesystem
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: filesystem
+        description: Filesystem típus (none = raw block device)
+        contract:
+          - type: enum
+            expression: [ext4, xfs, ntfs, btrfs, none]
+
+      # capability: encryption ───────────────────────────────────────────────────
+      - name: encryption
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: false
+        capability: encryption
+        description: At-rest titkosítás engedélyezve
+
+      - name: encryption_key_ref
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: encryption
+        description: Titkosítási kulcs referencia (KMS key ID vagy path)
+
+      # capability: tagging ─────────────────────────────────────────────────────
+      - name: tags
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: Platform tag-ek
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: schemas/aggregate/state-surface.yaml
+    source: storage-adapter
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: attach_state
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: >
+          Aktuális csatolási állapot — adapter normalizálja a platform értékeket.
+          attaching/detaching: tranziens állapot.
+          error: I/O hiba, adapter nem tudja kezelni a volume-ot.
+        contract:
+          - type: enum
+            expression: [attached, detached, attaching, detaching, error, unknown]
+
+      - name: attached_to
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:compute:ComputeResource"
+        role: state
+        optional: true
+        access:
+          conformance: deprecated
+        description: >
+          ELAVULT (v0.1.3) — csak single-attach (access_mode:
+          read_write_once) esetén megbízható, mert egyetlen ComputeResource
+          address-t tud visszaadni. multi_attach módban (read_only_many /
+          read_write_many) használd az attachments listát — ez a mező
+          onnantól tetszőleges egy csatolást ad vissza, nem a teljes
+          állapotot. Megtartva visszafelé kompatibilitás miatt, nem
+          törölve (issue #15).
+
+      # multi_attach — issue #15: attached_to (single string) nem tudja
+      # leírni több egyidejű csatolás állapotát, holott az access_mode
+      # explicit hirdeti a multi_attach capabilityt (read_only_many /
+      # read_write_many). Ez a lista minden aktuális csatolást felsorol,
+      # célponttal és saját állapottal — single-attach esetén legfeljebb
+      # egy eleme van.
+      - name: attachments
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: state
+        optional: true
+        description: >
+          Aktuális csatolások — minden csatolt ComputeResource saját
+          elemként, saját állapottal. Single-attach esetén legfeljebb egy
+          elem; multi_attach (read_only_many/read_write_many) esetén a
+          teljes csatolási állapot itt jelenik meg, az attached_to
+          mezővel szemben.
+        item_fields:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:compute:ComputeResource"
+            role: key
+            description: A csatolt ComputeResource address-e
+          - name: state
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [attached, detached, attaching, detaching, error, unknown]
+            description: Ennek az egy csatolásnak az állapota
+
+      - name: size_actual_gb
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        optional: true
+        description: Tényleges volume méret (resize után frissül)
+
+      # capability: usage_metrics ───────────────────────────────────────────────
+      - name: usage_bytes
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: usage_metrics
+        description: Felhasznált tárhely byte-ban (csak filesystem esetén értelmezett)
+
+      - name: iops_read
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: usage_metrics
+
+      - name: iops_write
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: usage_metrics
+
+      # capability: health_monitoring ───────────────────────────────────────────
+      - name: health
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        optional: true
+        capability: health_monitoring
+        contract:
+          - type: enum
+            expression: [ok, degraded, failed, unknown]
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: schemas/aggregate/operation-surface.yaml
+    operations:
+
+      # ── Core: minden adapter ──────────────────────────────────────────────────
+      - name: attach
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        description: Volume csatolása compute resource-hoz
+        input:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+            description: ComputeResource address
+        output:
+          - name: attach_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: detach
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: true
+        description: >
+          Volume lecsatolása. multi_attach esetén (state_surface.attachments
+          több elemű) target NEM opcionális a gyakorlatban — enélkül az
+          adapter nem tudja eldönteni, melyik csatolást szüntesse meg. Ezt
+          ma csak ez a leírás mondja ki, a séma nem kényszeríti ki
+          feltételesen kötelezőként (lásd issue #17 — hasonló, szövegben
+          élő garanciák a struktúra helyett).
+        input:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:compute:ComputeResource"
+            optional: true
+            description: >
+              Melyik csatolást szüntesse meg — single-attach esetén
+              elhagyható, multi_attach esetén a gyakorlatban kötelező.
+          - name: force
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+        output:
+          - name: attach_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: delete
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        description: "Volume végleges törlése — MANUAL ONLY (confirm: mandatory)"
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+        output: null
+
+      # capability: resize ───────────────────────────────────────────────────────
+      - name: resize
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: resize
+        description: >
+          Volume méret növelése. Csökkentés NEM támogatott (platform-agnosztikus korlát).
+          resize_online: leállítás nélkül, resize_offline: lecsatolt állapotban.
+        input:
+          - name: size_gb
+            shape_type: scalar
+            scalar_type: integer
+            mandatory: true
+        output:
+          - name: size_actual_gb
+            shape_type: scalar
+            scalar_type: integer
+
+      # capability: snapshot ─────────────────────────────────────────────────────
+      - name: snapshot
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: snapshot
+        description: >
+          Pillanatkép készítése — az eredmény egy adapter-specifikus snapshot ref.
+          A snapshot NEM önálló StorageResource — az adapter kezeli az életciklusát.
+        input:
+          - name: snapshot_name
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: snapshot_ref
+            shape_type: scalar
+            scalar_type: string
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: attach-state-changed
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: info
+        description: Csatolási állapot megváltozott
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+          - name: attached_to
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+
+      # capability: usage_metrics
+      - name: threshold-exceeded
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: threshold
+        severity: warning
+        capability: usage_metrics
+        description: Tárhely kihasználtság küszöböt átlépett
+        payload:
+          - name: usage_bytes
+            shape_type: scalar
+            scalar_type: integer
+          - name: size_bytes
+            shape_type: scalar
+            scalar_type: integer
+
+      # capability: health_monitoring
+      - name: health-degraded
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: warning
+        capability: health_monitoring
+        description: Volume egészségi állapot romlott
+        payload:
+          - name: previous_health
+            shape_type: scalar
+            scalar_type: string
+          - name: current_health
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: schemas/atomic/address.yaml
+        schema_path: "/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:storage:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:storage"
+        key_fields:
+          - name: backend
+            type: enum
+            values: [hypervisor, san, cloud]
+          - name: provider
+            type: string
+            description: >
+              Ki kezeli a volume-ot — routing kulcs az adapter kiválasztásához.
+              hypervisor: hypervisor azonosítója (pl. proxmox-01)
+              san: storage rendszer azonosítója (pl. netapp-01, pure-01)
+              cloud: enum [aws, gcp, azure, hcloud, do, ovh, oci]
+          - name: location
+            type: string
+            description: >
+              Hol van a volume.
+              hypervisor: storage pool neve (pl. local-lvm, ceph-pool)
+              san: aggregate/pool neve (pl. aggr1)
+              cloud: provider region (pl. eu-central-1)
+          - name: id
+            type: string
+            description: >
+              Volume egyedi azonosítója.
+              hypervisor: disk neve (pl. vm-100-disk-0)
+              san: LUN azonosítója (pl. lun-42)
+              cloud: cloud volume ID (pl. vol-0abc123)
+    adapter: storage-adapter
+    adapter_capabilities:
+      known_adapters:
+        - name: storage-adapter
+          backend: hypervisor
+          provider: "<hypervisor-id>"
+          capabilities: [filesystem, snapshot, resize, usage_metrics]
+        - name: storage-adapter
+          backend: san
+          provider: "<storage-system-id>"
+          capabilities: [snapshot, resize, multi_attach, health_monitoring]
+        - name: storage-adapter
+          backend: cloud
+          provider: [aws, gcp, azure, hcloud, do, ovh, oci]
+          capabilities: [filesystem, encryption, snapshot, resize, tagging, usage_metrics]
+
+# ── Levezetési lánc ───────────────────────────────────────────────────────────
+derivation_chain:
+
+  yang:
+    status: specification-only
+    module: cic-storage
+    namespace: "urn:cic:storage"
+    content: |
+      module cic-storage {
+        namespace "urn:cic:storage";
+        prefix cic-s;
+
+        list volume {
+          key "backend provider location id";
+          leaf backend  { type enumeration { enum hypervisor; enum san; enum cloud; } }
+          leaf provider { type string; }
+          leaf location { type string; }
+          leaf id       { type string; }
+
+          container config {
+            leaf size-gb     { type uint32; mandatory true; }
+            leaf access-mode { type enumeration { enum read_write_once; enum read_only_many; enum read_write_many; } mandatory true; }
+            leaf filesystem  { type enumeration { enum ext4; enum xfs; enum ntfs; enum btrfs; enum none; } }
+            leaf encryption  { type boolean; default false; }
+            leaf encryption-key-ref { type string; }
+            list tags {
+              key key;
+              leaf key   { type string; }
+              leaf value { type string; }
+            }
+          }
+
+          container state {
+            config false;
+            leaf attach-state   { type enumeration { enum attached; enum detached; enum attaching; enum detaching; enum error; enum unknown; } }
+            leaf attached-to    { type string; status deprecated; }  // v0.1.3: lásd list attachments
+            list attachments {
+              key target;
+              leaf target { type string; }
+              leaf state  { type enumeration { enum attached; enum detached; enum attaching; enum detaching; enum error; enum unknown; } }
+            }
+            leaf size-actual-gb { type uint32; }
+            leaf usage-bytes    { type uint64; }
+            leaf iops-read      { type uint64; }
+            leaf iops-write     { type uint64; }
+            leaf health         { type enumeration { enum ok; enum degraded; enum failed; enum unknown; } }
+          }
+
+          action attach  { input  { leaf target { type string; mandatory true; } } output { leaf attach-state { type string; } } }
+          action detach  { input  { leaf target { type string; } leaf force { type boolean; default false; } } output { leaf attach-state { type string; } } }
+          action delete  { input  { leaf confirm { type boolean; mandatory true; } } }
+          action resize  { input  { leaf size-gb { type uint32; mandatory true; } } output { leaf size-actual-gb { type uint32; } } }
+          action snapshot { input { leaf snapshot-name { type string; mandatory true; } } output { leaf snapshot-ref { type string; } } }
+
+          notification attach-state-changed {
+            leaf previous-state { type string; }
+            leaf current-state  { type string; }
+            leaf attached-to    { type string; }
+          }
+          notification threshold-exceeded {
+            leaf usage-bytes { type uint64; }
+            leaf size-bytes  { type uint64; }
+          }
+          notification health-degraded {
+            leaf previous-health { type string; }
+            leaf current-health  { type string; }
+          }
+        }
+      }
+
+  restconf:
+    collection: "GET /restconf/data/cic-storage:volumes"
+    instance: "GET /restconf/data/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}"
+    config:
+      read: "GET   /restconf/data/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/config"
+      update: "PUT   /restconf/data/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/config"
+    state:
+      read: "GET   /restconf/data/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/state"
+    operations:
+      attach: "POST /restconf/operations/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/attach"
+      detach: "POST /restconf/operations/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/detach"
+      delete: "POST /restconf/operations/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/delete"
+      resize: "POST /restconf/operations/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/resize"
+      snapshot: "POST /restconf/operations/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}/snapshot"
+    events:
+      stream: "GET /restconf/streams/cic-storage-events"
+
+  runtime:
+    reconcile_loop: |
+      1. observe:   adapter.get(backend, provider, location, id) → state_surface
+      2. compare:   diff(config_surface, state_surface) → drift?
+      3. if drift:
+           size_gb mismatch   → resize(size_gb) — csak növelés
+           access_mode change → adapter reconfigures (platform-függő)
+           encryption change  → MANUAL ONLY — adatvesztés kockázat
+      4. emit:      capability-specifikus events ha adapter jelzi

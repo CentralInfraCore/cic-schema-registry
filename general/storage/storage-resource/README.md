@@ -111,6 +111,37 @@ ez a fájl NEM hordoz saját `release`/`cic_countersign` blokkot. A tartalmi
 hitelesség a `cic-storage` repó saját, GHCR-en is publikált release-én
 keresztül ellenőrizhető (`ghcr.io/centralinfracore/schema/cic-storage:v0.1.2-src2026`).
 
+## v0.1.3 — registry-native tartalmi javítás (NEM a `cic-storage`-ból jön)
+
+A `v0.1.2` fájl fent leírt módon byte-azonos a `cic-storage` archivált
+repójából — az EGYETLEN kivétel a `metadata.version` beállítása. `v0.1.3`
+ezzel szemben **ebben a registryben született**, mert `cic-storage` már
+archivált (nincs hova visszamenő issue-t nyitni, mint a korábbi
+placeholder-mismatch hibáknál) — ez az első eset, hogy a registry saját
+maga hordoz tartalmi evolúciót, nem csak migrációt.
+
+Mi változott ([#15](https://github.com/CentralInfraCore/cic-schema-registry/issues/15)):
+`state_surface.attached_to` egyetlen string, miközben `config_surface.access_mode`
+explicit hirdeti a `multi_attach` capabilityt (`read_only_many`/`read_write_many`)
+— egy több compute-erőforráshoz csatolt volume teljes csatolási állapota nem
+volt leírható. Megoldás:
+
+- új `state_surface.attachments` lista (`target`+`state` páronként) — ez adja
+  vissza a teljes, multi-attach-kompatibilis állapotot
+- `attached_to` megmaradt, de `access.conformance: deprecated` — visszafelé
+  kompatibilis, single-attach esetén továbbra is használható, de már nem ez
+  a hivatkozási forrás
+- `operation_surface.detach` kapott egy opcionális `target` inputot, mert egy
+  konkrét csatolás megszüntetéséhez multi-attach esetén tudni kell, MELYIK
+  csatolást szünteti meg — ez a séma szinten csak leírásban kötelező
+  multi-attach esetén, strukturálisan nem kikényszerített (lásd
+  [#17](https://github.com/CentralInfraCore/cic-schema-registry/issues/17) —
+  hasonló, prózában élő garanciák általános problémája)
+
+Ez additív, MAJOR-váltás nélküli (PATCH) módosítás — a `registrylib`
+`check_schema_evolution` ellenőrzi és zöld rá, mert `attached_to` nem tűnt
+el, csak deprecated lett.
+
 ## Kapcsolódó fájl
 
 `storage-adapter/` — a `StorageAdapter` kontraktus, amit ez a séma
