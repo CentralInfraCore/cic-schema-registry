@@ -94,7 +94,7 @@ make registry.validate   # base-chain coverage + verzió-evolúció — valódi,
 | Örökölt `tools/compiler.py validate` (`run_validation()`) | **not implemented** | placeholder — betölt és logol, nem validál érdemben |
 | Fájlonkénti aláírás (`registry_sign.py` + `signing.py` + `vault-mtls-client`) | **defined**, élő teszttel bizonyítva | **de a 26 migrált fájl közül 1 van aláírva** (a `cic-primitives` bundle eredeti, forrásból hozott aláírása) — a `registry_sign.py` a másik 25-re még nem lett lefuttatva |
 | `renovate.json` egyedi manager a `base:`/`reference_target:` pin-ekhez | **not implemented** | |
-| CI (`.github/workflows/ci.yml`) a registry-specifikus szabályokra | **not implemented** | `make check`/`make test` fut, de sem `make validate`, sem `make registry.validate` nincs a workflow-ban |
+| CI (`.github/workflows/ci.yml`) a registry-specifikus szabályokra | **defined** | `make validate` + `make registry.validate` (`--min-schemas=20` küszöbbel) most már lépés a workflow-ban — de a trigger továbbra is csak `main`/`master`-re irányuló push/PR, `devel`-en nem fut le |
 
 **Ismert, dokumentált rések a `registry_validate.py`-ban** (mind reprodukálva,
 lásd `CLAUDE.md` "Jelenlegi, valódi állapot"):

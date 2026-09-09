@@ -143,8 +143,41 @@ def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
     return problems, skipped
 
 
-def main() -> int:
+def _parse_min_schemas(argv: list[str]) -> int:
+    """--min-schemas=N — a floor on how many schema directories this run
+    must have scanned, so an accidentally-empty or broken checkout (wrong
+    cwd, a botched migration, iter_schema_dirs regressing to find nothing)
+    fails CI instead of trivially reporting "OK — no violations found"
+    over zero schemas. 0 (the default) performs no such check — this is
+    opt-in, since library callers (tests, other tooling) have no reason to
+    hit it unexpectedly."""
+    for arg in argv:
+        if arg.startswith("--min-schemas="):
+            return int(arg.split("=", 1)[1])
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    min_schemas = _parse_min_schemas(argv)
+
     registry_root = Path.cwd()
+    schema_dirs = list(iter_schema_dirs(registry_root))
+    print(
+        f"registry_validate: scanned {len(schema_dirs)} schema "
+        f"director{'y' if len(schema_dirs) == 1 else 'ies'} under "
+        f"general/standards/providers"
+    )
+    if len(schema_dirs) < min_schemas:
+        print(
+            f"registry_validate: FAILED — expected at least {min_schemas} "
+            f"schema directories, found only {len(schema_dirs)}. This is a "
+            "floor, not the real corpus size — either the checkout/cwd is "
+            "wrong, or content was genuinely removed (lower --min-schemas "
+            "deliberately if so)."
+        )
+        return 1
+
     evolution_problems, evolution_skipped = check_schema_evolution(registry_root)
     base_problems, base_skipped = check_base_references(registry_root)
     problems = evolution_problems + base_problems

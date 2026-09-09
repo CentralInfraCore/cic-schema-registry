@@ -105,9 +105,15 @@ higgy a zöld futásnak félrevezető magabiztossággal:**
 - `tools/registrylib/paths.py` `resolve_pin()` a legfrissebb `-src<év>`-et
   numerikusan választja ki, tanúsítvány/aláírás-érvényesség ellenőrzése
   nélkül — jelenlét = bizalom.
-- A CI (`.github/workflows/ci.yml`) **sem `make validate`-et, sem
-  `make registry.validate`-et nem hívja** — csak `make check`/`make test`
-  fut, ami a tooling kódot teszteli, nem a valódi séma-corpust.
+- **Javítva**: a CI (`.github/workflows/ci.yml`) mostantól `make check`/
+  `make test` után lefuttatja `make validate`-et ÉS `make registry.validate`-et
+  is (utóbbi `--min-schemas=20` küszöbbel — ha a scannelt könyvtárak száma
+  ez alá esik, a CI hibázik, nem sikeres "OK"-t jelent egy üres/törött
+  corpuson). **Figyelem**: a workflow trigger-je (`on: push/pull_request:
+  branches: [main, master]`) NEM változott — ez a `devel`-en végzett
+  munkára (mint pl. ez a commit is) nem fut le, csak ha `main`-re kerül
+  PR-ral/push-sal. `devel`-en dolgozva a `make check`/`make registry.validate`
+  helyi futtatása marad az egyetlen visszajelzés, amíg nincs `main`-promóció.
 - A migrált 26 fájl közül **1 van aláírva** (a `cic-primitives` bundle, a
   forrás repóból byte-verbatim átvett, eredeti aláírásával) — a másik 25
   egyike sem lett a `registry_sign.py`-jal aláírva.

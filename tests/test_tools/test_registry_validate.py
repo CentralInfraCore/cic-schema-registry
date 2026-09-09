@@ -2,8 +2,10 @@ import yaml
 
 from tools.registry_validate import (
     _is_bundle,
+    _parse_min_schemas,
     check_base_references,
     check_schema_evolution,
+    main,
 )
 
 
@@ -229,3 +231,49 @@ spec:
     assert problems == []
     assert len(skipped) == 1
     assert "bundle-shaped" in skipped[0]
+
+
+def test_parse_min_schemas_defaults_to_zero():
+    assert _parse_min_schemas([]) == 0
+    assert _parse_min_schemas(["--some-other-flag"]) == 0
+
+
+def test_parse_min_schemas_parses_value():
+    assert _parse_min_schemas(["--min-schemas=20"]) == 20
+
+
+def test_main_fails_on_empty_registry_when_floor_set(tmp_path, monkeypatch, capsys):
+    """The exact blind spot this flag exists to close: an empty/broken
+    checkout must not silently report "OK — no violations found" just
+    because there was nothing to check."""
+    monkeypatch.chdir(tmp_path)
+    rc = main(["--min-schemas=1"])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "scanned 0 schema" in out
+    assert "FAILED" in out
+    assert "expected at least 1" in out
+
+
+def test_main_passes_on_empty_registry_when_no_floor_set(tmp_path, monkeypatch):
+    """Without --min-schemas, an empty registry is not itself a failure —
+    the flag is opt-in, not a hidden default floor."""
+    monkeypatch.chdir(tmp_path)
+    assert main([]) == 0
+
+
+def test_main_passes_when_floor_is_met(tmp_path, monkeypatch):
+    schema_dir = tmp_path / "general" / "storage" / "storage-resource"
+    _write(
+        schema_dir / "storage-resource.v1.0.0-src2026.yaml",
+        """---
+metadata:
+  name: StorageResource
+spec:
+  identity:
+    namespace: "cic:storage"
+    kind: StorageResource
+""",
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main(["--min-schemas=1"]) == 0
