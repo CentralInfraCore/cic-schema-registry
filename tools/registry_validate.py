@@ -34,8 +34,22 @@ def _load(path: Path) -> dict:
     return yaml.safe_load(path.read_text()) or {}
 
 
-def check_schema_evolution(registry_root: Path) -> list[str]:
+def _is_bundle(doc: dict) -> bool:
+    """A PrimitiveRelease-shaped file (e.g. general/primitives/cic-primitives/) —
+    many identities folded into one `specs[]` list, one release artifact
+    treated as a single indivisible unit (proposals/schema-registry: the
+    primitive kernel is versioned as a whole, not per-atom). Neither check
+    below understands this shape yet — they operate on "one file = one
+    schema" documents. Detected explicitly so an unsupported file is
+    reported as skipped, never silently treated as an empty/compatible
+    schema (extract_fields() would just find no surfaces and pass green,
+    which would be a false negative, not a real pass)."""
+    return doc.get("kind") == "PrimitiveRelease" or "specs" in doc
+
+
+def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
     problems: list[str] = []
+    skipped: list[str] = []
     for schema_dir in iter_schema_dirs(registry_root):
         versions = list_versions(schema_dir)
         # Group by content version, keep only the transition between distinct
@@ -48,25 +62,38 @@ def check_schema_evolution(registry_root: Path) -> list[str]:
             )  # last (freshest) wins
         ordered = sorted(by_content.items())
         for (old_cv, old_path), (new_cv, new_path) in zip(ordered, ordered[1:]):
+            old_doc, new_doc = _load(old_path), _load(new_path)
+            if _is_bundle(old_doc) or _is_bundle(new_doc):
+                skipped.append(
+                    f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
+                    f"v{'.'.join(map(str, new_cv))} — bundle-shaped file(s), "
+                    "coverage/evolution check not yet implemented for this shape"
+                )
+                continue
             major_bump = old_cv[0] != new_cv[0]
-            result = check_coverage(
-                _load(old_path), _load(new_path), major_bump=major_bump
-            )
+            result = check_coverage(old_doc, new_doc, major_bump=major_bump)
             for violation in result.violations:
                 problems.append(
                     f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
                     f"v{'.'.join(map(str, new_cv))}: {violation.message}"
                 )
-    return problems
+    return problems, skipped
 
 
-def check_base_references(registry_root: Path) -> list[str]:
+def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
     problems: list[str] = []
+    skipped: list[str] = []
     type_index = build_type_index(registry_root)
     for schema_dir in iter_schema_dirs(registry_root):
         versions = list_versions(schema_dir)
         newest = max(versions)
         doc = _load(newest.path)
+        if _is_bundle(doc):
+            skipped.append(
+                f"{newest.path}: bundle-shaped file, base-chain coverage not "
+                "yet implemented for this shape"
+            )
+            continue
         identity = ((doc.get("spec") or {}).get("identity")) or {}
         base_pin = identity.get("base")
         if not base_pin or "@v" not in str(base_pin):
@@ -91,17 +118,31 @@ def check_base_references(registry_root: Path) -> list[str]:
             )
             continue
         base_doc = _load(base_version.path)
+        if _is_bundle(base_doc):
+            skipped.append(
+                f"{newest.path}: base {base_pin!r} resolves into a bundle-"
+                "shaped file, base-chain coverage not yet implemented for "
+                "this shape"
+            )
+            continue
         result = check_coverage(base_doc, doc, major_bump=False)
         for violation in result.violations:
             problems.append(f"{newest.path} (base {base_pin}): {violation.message}")
-    return problems
+    return problems, skipped
 
 
 def main() -> int:
     registry_root = Path.cwd()
-    problems = check_schema_evolution(registry_root) + check_base_references(
-        registry_root
-    )
+    evolution_problems, evolution_skipped = check_schema_evolution(registry_root)
+    base_problems, base_skipped = check_base_references(registry_root)
+    problems = evolution_problems + base_problems
+    skipped = evolution_skipped + base_skipped
+
+    if skipped:
+        print("registry_validate: SKIPPED (unsupported shape, not a failure)")
+        for s in skipped:
+            print(f"  - {s}")
+
     if not problems:
         print("registry_validate: OK — no coverage/evolution violations found.")
         return 0
