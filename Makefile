@@ -80,9 +80,14 @@ validate:
 # — base-chain field coverage + major-version-gated evolution rules. Additive to
 # `validate` above, not yet merged into it (see CLAUDE.md "Jelenlegi, valódi
 # állapot" for what's still missing: per-file signing, -src<year> handling).
+# --min-schemas=20 is a floor, not a target — the real corpus is 26 schema
+# directories as of this writing. It exists so an empty/broken checkout (or
+# a regression in iter_schema_dirs) fails loudly instead of trivially
+# reporting "OK" over zero schemas. Lower it deliberately if content is
+# ever genuinely removed; raise it as the corpus grows.
 registry.validate:
 	@echo "--- Registry: base-chain coverage + version-evolution rules ---"
-	@docker compose exec builder python -m tools.registry_validate
+	@docker compose exec builder python -m tools.registry_validate --min-schemas=20
 
 release:
 ifeq ($(VERSION),)
