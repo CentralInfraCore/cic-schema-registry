@@ -32,6 +32,34 @@ release (pl. `v0.2.1` vagy `v0.3.0`), az az új release **egy ÚJ fájlként**
 kerül ide (`cic-primitives.v0.2.1-src2026.yaml` stb.) — a `v0.2.0` fájl
 változatlanul megmarad, verzió-történetként.
 
+## Kriptográfiai ellenőrzés — valóban elvégezve
+
+A `release.sign` (Vault Transit, a szerző kulcsával) és a `cic_countersign.sign`
+(CICSourceCA) aláírást **ténylegesen, `openssl`-lel** ellenőriztük a beágyazott
+tanúsítványok ellen, mindkettő a `release.build_hash` felett — mindkettő
+**`Signature Verified Successfully`**. Ez tehát valóban érvényes, kettős
+aláírású artifact, nem csak struktúra alapján feltételezett.
+
+## ⚠ A kernel maga sem teljes — 3 placeholder slot a ManagedEntity-ben
+
+Mielőtt bárki erre a fájlra mint lezárt, kész alapra hivatkozik: a
+`ManagedEntity` aggregate 8 slotja közül **3 explicit placeholder**, nem kész:
+
+| Slot | Státusz | Blokkolva |
+|---|---|---|
+| `notification_surface` | `placeholder`, `type: Event[]` | NotificationSurface aggregate — nincs modell (notification routing előfeltétel hiányzik) |
+| `capability_surface` | `placeholder`, `type: TBD` | CapabilitySurface aggregate — nincs modell (Relay capability declaration rendszer előfeltétel hiányzik) |
+| `lifecycle_surface` | `sealed`, `type: TBD` | LifecycleSurface aggregate — nincs modell (Relay execution model előfeltétel hiányzik) |
+
+Ez **nem hiba** — a forrásban is explicit, dokumentált, tudatos hiány (a
+háromszintű státusz-elv szerint: `concept`, nem `implemented`). De aki innen
+származtat (bármelyik domain composition, pl. `StorageResource`,
+`ComputeResource`), **örökli ezt a három hiányt** — ha egy domain-objektumnak
+valódi lifecycle- vagy capability-modellje kellene, azt ez a kernel jelenleg
+NEM tudja adni. Ezt a kernel bármelyik jövőbeli fogyasztójánál explicit
+figyelembe kell venni, nem hallgatólagosan feltételezni, hogy "a ManagedEntity
+teljes".
+
 ## Ismert, nyitott pont
 
 A `tools/registrylib` jelenlegi feloldó mechanizmusa (`build_type_index`)
