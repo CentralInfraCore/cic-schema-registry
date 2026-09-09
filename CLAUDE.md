@@ -85,12 +85,19 @@ higgy a zöld futásnak félrevezető magabiztossággal:**
   "to be fully implemented here". Nem érinti a migrált tartalmat.
 - `make registry.validate` valódi, de a jelenlegi corpuson **0
   verzióátmenetet ellenőriz** (minden séma pontosan egy tartalmi
-  verzióval létezik) és **minden `base:` referenciát csendben átugrik**,
-  mert egyik migrált domain-kompozíció sem ír pontos verziót
-  (`base: "cic:core:ManagedEntity"`, nem `...@v0.2.0`) — ez az ág még a
-  `SKIPPED` jelentésben sem jelenik meg, egyáltalán nincs log róla. A
-  `reference_target` mezőt semmi nem oldja fel, csak a docstringben
-  szerepel.
+  verzióval létezik). A `reference_target` mezőt semmi nem oldja fel,
+  csak a docstringben szerepel.
+- **Javítva**: az 5 domain-kompozíció `base:` mezője mostantól pontos
+  verzióra pin-el (`cic:core:ManagedEntity@v0.2.0`), és
+  `tools/registrylib/identity.py` `build_type_index()`-e a
+  `cic-primitives` bundle `specs[]`-ébe is bemászik, hogy ezt fel tudja
+  oldani (`tools/registrylib/bundle.py`). A pin most már ténylegesen
+  feloldódik és látszik a `SKIPPED` jelentésben — de a kernel típusai
+  (`ManagedEntity` is) `slots`/`fields`-en át írják le magukat, nem a
+  `config_surface`/`state_surface`/... node-listákon, amit
+  `coverage.py` ért — ezért a mezőkompatibilitás-ellenőrzés a kernel
+  ellen **még mindig nem fut le**, csak most már EXPLICIT, pontos okkal
+  jelzett SKIPPED-ként, nem néma `continue`-ként.
 - `tools/registrylib/coverage.py` a mezőket surface-től függetlenül,
   pusztán névre lapítja — egy azonos nevű, azonos típusú mező
   `config_surface`→`state_surface` áthelyezése major-váltás nélkül átmegy,

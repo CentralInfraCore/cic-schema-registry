@@ -11,7 +11,11 @@ providers — no committed index:
 
 2. base-chain coverage — every schema whose `spec.identity.base` is an
    exact-version pin must fully account for every field its resolved base
-   declares (implemented, or explicitly `not_implemented`/`deprecated`).
+   declares (implemented, or explicitly `not_implemented`/`deprecated`). A
+   base pinned into the cic-primitives kernel bundle resolves through
+   registrylib.bundle — but most kernel types (ManagedEntity included)
+   declare their shape via `slots`/`fields`, not surface node-lists, so
+   coverage against them is reported SKIPPED, not silently passed.
 
 This does NOT replace `tools/compiler.py validate` (the inherited, bundle-
 oriented meta-schema check) — it is additive, and is not yet wired into
@@ -25,26 +29,15 @@ from pathlib import Path
 
 import yaml
 
-from .registrylib.coverage import check_coverage
+from .registrylib.bundle import find_kernel_type
+from .registrylib.bundle import is_bundle as _is_bundle
+from .registrylib.coverage import check_coverage, extract_fields
 from .registrylib.identity import build_type_index, iter_schema_dirs, parse_pin
 from .registrylib.paths import list_versions, resolve_pin
 
 
 def _load(path: Path) -> dict:
     return yaml.safe_load(path.read_text()) or {}
-
-
-def _is_bundle(doc: dict) -> bool:
-    """A PrimitiveRelease-shaped file (e.g. general/primitives/cic-primitives/) —
-    many identities folded into one `specs[]` list, one release artifact
-    treated as a single indivisible unit (proposals/schema-registry: the
-    primitive kernel is versioned as a whole, not per-atom). Neither check
-    below understands this shape yet — they operate on "one file = one
-    schema" documents. Detected explicitly so an unsupported file is
-    reported as skipped, never silently treated as an empty/compatible
-    schema (extract_fields() would just find no surfaces and pass green,
-    which would be a false negative, not a real pass)."""
-    return doc.get("kind") == "PrimitiveRelease" or "specs" in doc
 
 
 def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
@@ -119,12 +112,31 @@ def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
             continue
         base_doc = _load(base_version.path)
         if _is_bundle(base_doc):
-            skipped.append(
-                f"{newest.path}: base {base_pin!r} resolves into a bundle-"
-                "shaped file, base-chain coverage not yet implemented for "
-                "this shape"
-            )
-            continue
+            kernel_doc = find_kernel_type(base_doc, parsed.type_key)
+            if kernel_doc is None:
+                skipped.append(
+                    f"{newest.path}: base {base_pin!r} resolves into the "
+                    f"kernel bundle, but {parsed.type_key!r} was not found "
+                    "among its specs[] entries — check the pin"
+                )
+                continue
+            if not extract_fields(kernel_doc):
+                # A real, correctly-resolved kernel type (e.g. ManagedEntity)
+                # — but kernel types declare their shape via `slots`/`fields`
+                # (schemas/aggregate|atomic/*.yaml), not the
+                # config_surface/state_surface/... node-lists extract_fields()
+                # looks for. Running check_coverage anyway would silently
+                # find 0 fields and report a trivial, meaningless "pass" —
+                # exactly the false-confidence failure mode this whole
+                # module exists to avoid. Reported as skipped, not OK.
+                skipped.append(
+                    f"{newest.path}: base {base_pin!r} resolves to kernel "
+                    f"type {parsed.type_key!r}, which declares its shape "
+                    "via slots/fields, not surface node-lists — base-chain "
+                    "coverage against the kernel is not yet implemented"
+                )
+                continue
+            base_doc = kernel_doc
         result = check_coverage(base_doc, doc, major_bump=False)
         for violation in result.violations:
             problems.append(f"{newest.path} (base {base_pin}): {violation.message}")

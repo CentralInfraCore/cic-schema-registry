@@ -38,7 +38,7 @@ spec:
     kind: ComputeResource
     namespace: "cic:compute"
     version: v0.1.dev
-    base: "cic:core:ManagedEntity"
+    base: "cic:core:ManagedEntity@v0.2.0"
     abstract: false
     description: Platform-agnosztikus compute erőforrás
 

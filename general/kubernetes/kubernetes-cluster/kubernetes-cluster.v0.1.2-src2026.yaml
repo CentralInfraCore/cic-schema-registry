@@ -40,7 +40,7 @@ spec:
     kind: KubernetesCluster
     namespace: "cic:kubernetes"
     version: v0.1.dev
-    base: "cic:core:ManagedEntity"
+    base: "cic:core:ManagedEntity@v0.2.0"
     abstract: false
     description: Kubernetes cluster infrastruktúra egység
 
