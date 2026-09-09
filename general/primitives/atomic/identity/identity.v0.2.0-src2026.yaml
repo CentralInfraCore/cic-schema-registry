@@ -1,0 +1,103 @@
+---
+metadata:
+  name: Identity
+  version: v0.2.0
+  description: 'Atomic primitive describing type identity — not instance identification, but describing
+    WHAT this entity is in the CIC model. Identity defines an entity''s type, namespace, version, and
+    inheritance chain. Analogous to YANG identity/identityref, but more general and versioned.
+
+    '
+  owner: Gabor Zoltan Sinko
+  tags:
+  - primitive
+  - atomic
+  - identity
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+spec:
+  kind: AtomicPrimitive
+  fields:
+    description: Required and optional fields of an Identity definition
+    properties:
+      kind:
+        type: string
+        description: 'Type name — PascalCase. Identifies the entity type within its namespace. E.g. NetworkInterface,
+          KubernetesPod, PostgresDatabase, ManagedSwitch.
+
+          '
+        mandatory: true
+      namespace:
+        type: string
+        description: 'CIC namespace — reverse domain or cic: prefix convention. E.g. cic:network, cic:kubernetes,
+          cic:compute, cic:storage. Together with kind, provides a globally unique type identifier.
+
+          '
+        mandatory: true
+      version:
+        type: string
+        description: 'Identity version — semantic versioning. Incremented when the schema changes, not
+          when entity instances change.
+
+          '
+        pattern: ^v(0|[1-9]\d*)\.(0|[1-9]\d*)(\.dev)?$
+        mandatory: true
+      base:
+        type: reference
+        description: 'Inheritance chain — which Identity this type specializes from. Multi-level inheritance
+          is supported: KubernetesPod → ManagedEntity. If absent: this is a root Identity (e.g. ManagedEntity
+          itself). Format: "{namespace}:{Kind}" — the same three-segment form the examples below and every
+          live composition use. The earlier two-segment "cic:ManagedEntity" omitted the namespace and
+          is not valid.
+
+          '
+        optional: true
+        example: cic:core:ManagedEntity
+      abstract:
+        type: boolean
+        default: false
+        description: 'If true, this Identity cannot be instantiated directly — it may only serve as a
+          base for other Identities. E.g. ManagedEntity is abstract.
+
+          '
+      description:
+        type: string
+        description: What this type represents in the domain
+        optional: true
+  inheritance_rules:
+    description: 'Rules for Identity inheritance — how semantics propagate along the chain.
+
+      '
+    rules:
+    - A derived type inherits the aggregate surfaces of its base (ConfigSurface, StateSurface, etc.)
+    - A derived type may narrow (sealed) or extend (required/defaulted) the base slots
+    - Every level of the inheritance chain is independently validatable
+    - Circular inheritance is forbidden
+  examples:
+    managed_entity:
+      kind: ManagedEntity
+      namespace: cic:core
+      version: v0.2.0
+      abstract: true
+    network_interface:
+      kind: NetworkInterface
+      namespace: cic:network
+      version: v0.2.0
+      base: cic:core:ManagedEntity
+    kubernetes_pod:
+      kind: KubernetesPod
+      namespace: cic:kubernetes
+      version: v0.2.0
+      base: cic:core:ManagedEntity
+  semantic_mapping:
+    yang:
+      identity: identity <kind> { base <base>; }
+      identityref: type identityref { base <kind>; }
+      note: 'YANG identity only describes namespace and inheritance — CIC Identity adds versioning and
+        carries aggregate surfaces.
+
+        '
+    api:
+      note: Identity → OpenAPI discriminator / x-cic-kind extension
+    runtime:
+      note: kind + namespace → runtime type registry lookup, handler dispatch
