@@ -1,0 +1,80 @@
+---
+metadata:
+  name: StateSurface
+  version: v0.2.0
+  description: >
+    The read-only observed-state surface of a ManagedEntity.
+    Populated by the adapter — shows what is actually present in the system.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - primitive
+    - aggregate
+    - state
+  validatedBy:
+    name: cic-primitives
+    version: v0.0.dev
+
+spec:
+  kind: AggregatePrimitive
+
+  atomic_dependencies:
+    - atomic: Shape
+      ref: schemas/atomic/shape.yaml
+      used_by: [root, nodes]
+    - atomic: Role
+      ref: schemas/atomic/role.yaml
+      used_by: [nodes]
+
+  slots:
+    root:
+      mode: sealed
+      type: Shape
+      atomic_ref: schemas/atomic/shape.yaml
+      shape_type: composite
+      description: >
+        Root of the state tree — Shape(composite) container, config false.
+        Not overridable — structure is uniform across the entire CIC.
+
+    nodes:
+      mode: required
+      type: "Shape[]"
+      atomic_ref: schemas/atomic/shape.yaml
+      role_constraint: [state, operational, derived, volatile]
+      role_ref: schemas/atomic/role.yaml
+      description: >
+        The observable fields — Shape atoms with Role(state|operational|derived|volatile) constraint.
+        Role(config) is forbidden here — state surface contains no writable fields.
+        Must be specialised in derived types.
+
+    freshness:
+      mode: defaulted
+      type: object
+      default:
+        ttl: 60s
+        strategy: polling
+      description: >
+        How long the observed state is valid and how it is refreshed.
+        Strategies: polling | streaming | event-driven | push.
+        Not an atomic primitive — adapter-level configuration.
+
+    source:
+      mode: required
+      type: TBD
+      description: >
+        Who populates this state surface. Adapter reference — must be specified.
+        Examples: kubernetes-adapter, snmp-adapter, mock-adapter.
+        Future atomic: AdapterRef (to be defined in BindingSurface scope).
+
+  semantic_mapping:
+    yang:
+      construct: container
+      name: state
+      flag: "config false"
+      note: every child node is config false — not writable via NETCONF/RESTCONF
+    api:
+      methods: [GET]
+      path: "/{resource}/state"
+      note: read-only — PUT/PATCH/DELETE not permitted
+    runtime:
+      role: observed-state-store
+      note: written by the adapter, read by the reconciler for drift calculation

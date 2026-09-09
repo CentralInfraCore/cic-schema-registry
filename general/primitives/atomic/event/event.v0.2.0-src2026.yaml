@@ -1,0 +1,100 @@
+---
+metadata:
+  name: Event
+  version: v0.2.0
+  description: >
+    Atomic primitive describing an asynchronous notification — what a ManagedEntity
+    can emit to the management plane on its own initiative. Event is not request/response:
+    the source entity fires it, subscribed observers receive it. NotificationSurface
+    is composed of Events.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - primitive
+    - atomic
+    - event
+  validatedBy:
+    name: cic-primitives
+    version: v0.0.dev
+
+spec:
+  kind: AtomicPrimitive
+
+  triggers:
+    state_change:
+      description: >
+        A node value changed — the observed state differs from the previous value.
+        E.g. interface oper-status: up → down, pod phase: Running → Failed.
+      yang_mapping: notification triggered by state transition
+      typical_payload: [previous_value, current_value, timestamp, entity_ref]
+
+    threshold:
+      description: >
+        A measured value crossed a boundary — upward or downward.
+        E.g. CPU utilization > 90%, error_rate > threshold, queue depth critical.
+      yang_mapping: notification triggered by threshold crossing
+      typical_payload: [metric_name, threshold_value, current_value, direction, timestamp]
+
+    lifecycle:
+      description: >
+        The entity's lifecycle state changed — create, update, delete, or
+        state machine transition (active → degraded → terminating).
+      yang_mapping: notification triggered by lifecycle transition
+      typical_payload: [previous_state, current_state, entity_ref, timestamp, actor]
+
+    explicit:
+      description: >
+        Triggered explicitly by an action or rpc — not automatic, but produced
+        as a side-effect of an executed Behavior.
+        E.g. backup-completed, reconcile-finished, config-applied.
+      yang_mapping: notification triggered by rpc/action execution
+      typical_payload: [operation_name, operation_result, entity_ref, timestamp]
+
+  fields:
+    description: Required and optional fields of an Event definition
+    properties:
+      name:
+        type: string
+        description: Event name — past-tense verb form recommended (state-changed, threshold-crossed)
+        mandatory: true
+
+      trigger:
+        type: string
+        enum: [state_change, threshold, lifecycle, explicit]
+        description: What triggers this event (see triggers above)
+        mandatory: true
+
+      payload:
+        type: reference
+        description: >
+          Schema of the emitted data — Shape reference or inline Shape.
+          What the event contains that the observer receives.
+        optional: true
+
+      severity:
+        type: string
+        enum: [info, warning, error, critical]
+        default: info
+        description: Event severity — affects alerting and routing logic
+
+      description:
+        type: string
+        description: What this event means and what reaction it requires
+        optional: true
+
+  semantic_mapping:
+    yang:
+      construct: notification
+      format: |
+        notification <name> {
+          leaf trigger { ... }
+          container payload { ... }
+        }
+      note: YANG notification = push, not poll — server sends to client
+    api:
+      note: >
+        Event → WebSocket push / SSE stream / webhook POST.
+        RESTCONF: GET /restconf/streams/{stream} subscription.
+    runtime:
+      note: >
+        Event → message bus (NATS/Kafka/AMQP) topic publish.
+        NotificationSurface registers Events in the runtime event registry.
