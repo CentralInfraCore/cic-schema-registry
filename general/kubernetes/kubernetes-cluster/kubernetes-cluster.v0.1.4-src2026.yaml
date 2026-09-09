@@ -1,0 +1,515 @@
+---
+metadata:
+  name: KubernetesCluster
+  version: v0.1.4
+  description: >
+    Kubernetes cluster mint infrastrukturális egység — lifecycle, control plane
+    konfiguráció, cluster networking, cert management.
+    Anchor: Talos ClusterConfig v1alpha1 (dependency.yaml).
+    Scope: cluster infrastruktúra. Workload management (Pod, Deployment, Service) NEM ide tartozik.
+    v0.1.4: capability-jelölés a control-plane mezőkön (issue #18) + a
+    kubernetes-adapter placeholder helyett valódi, provider-önkénti
+    adapter_capabilities mátrix (lásd README).
+    Megjegyzés: v0.1.3-at szándékosan kihagytuk — a forrás cic-kubernetes
+    repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
+    cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
+    elkerülése végett ez a fájl egyenesen v0.1.4-ként indul.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - kubernetes
+    - cluster
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: schemas/aggregate/managed-entity.yaml
+
+  # ── PolicySurface ─────────────────────────────────────────────────────────────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: schemas/atomic/identity.yaml
+    kind: KubernetesCluster
+    namespace: "cic:kubernetes"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: Kubernetes cluster infrastruktúra egység
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: schemas/aggregate/config-surface.yaml
+    nodes:
+
+      # ── Core ──────────────────────────────────────────────────────────────────
+      - name: kubernetes_version
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: true
+        description: Kubernetes verzió (pl. v1.32.0)
+
+      - name: control_plane_endpoint
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: true
+        description: API server endpoint URL (pl. https://k8s.example.com:6443)
+
+      - name: control_plane_count
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: config
+        required_on_create: false
+        default: 1
+        description: Control plane node-ok száma — 1 (single) vagy páratlan (HA)
+        contract:
+          - type: minimum
+            expression: "1"
+          - type: policy
+            expression: odd_or_one
+            recommended: [1, 3, 5]
+            note: HA cluster split-brain elkerüléséhez páratlan szám szükséges
+
+      # ── Cluster networking (Talos cluster.network) ────────────────────────────
+      - name: cluster_network
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: true
+        description: Cluster hálózati konfiguráció
+        properties:
+          - name: pod_cidr
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: true
+            description: Pod hálózati CIDR (pl. 10.244.0.0/16)
+          - name: service_cidr
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: true
+            description: Service hálózati CIDR (pl. 10.96.0.0/12)
+          - name: dns_domain
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+            default: cluster.local
+            description: Cluster DNS domain
+
+      # ── Control plane komponensek (Talos cluster.apiServer stb.) ─────────────
+      - name: api_server
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        capability: control_plane_tuning
+        description: >
+          API server konfiguráció. capability: control_plane_tuning —
+          managed clusternél a szolgáltató kezeli, nem közvetlenül
+          állítható (issue #18).
+        properties:
+          - name: extra_args
+            shape_type: object
+            required_on_create: false
+            description: Extra API server argumentumok (key-value map)
+          - name: cert_sans
+            shape_type: collection
+            collection_variant: list
+            required_on_create: false
+            description: Extra TLS SAN-ek az API server certifikáthoz
+          - name: audit_policy
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+            description: Audit policy YAML (inline)
+
+      - name: etcd
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        capability: control_plane_tuning
+        description: >
+          etcd konfiguráció. capability: control_plane_tuning — managed
+          clusternél a szolgáltató kezeli, nem közvetlenül állítható
+          (issue #18).
+        properties:
+          - name: extra_args
+            shape_type: object
+            required_on_create: false
+          - name: subnet
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+            description: etcd peer kommunikáció subnet (pl. 192.168.0.0/24)
+
+      - name: controller_manager
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        capability: control_plane_tuning
+        description: >
+          Controller manager konfiguráció. capability:
+          control_plane_tuning — managed clusternél a szolgáltató kezeli
+          (issue #18).
+        properties:
+          - name: extra_args
+            shape_type: object
+            required_on_create: false
+
+      - name: scheduler
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        capability: control_plane_tuning
+        description: >
+          Scheduler konfiguráció. capability: control_plane_tuning —
+          managed clusternél a szolgáltató kezeli (issue #18).
+        properties:
+          - name: extra_args
+            shape_type: object
+            required_on_create: false
+
+      # ── CoreDNS (Talos cluster.coreDNS) ──────────────────────────────────────
+      - name: coredns
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        description: CoreDNS konfiguráció
+        properties:
+          - name: disabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+          - name: image
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+            description: "CoreDNS container image (default: Talos-bundled)"
+
+      # ── Node pools — compute követelmények (D-005) ───────────────────────────
+      - name: node_pools
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        required_on_create: true
+        description: >
+          Node pool definíciók — compute követelmények, nem konkrét gép referenciák.
+          A konkrét ComputeResource hozzárendelés az adapter feladata (D-005).
+          A materializált node-ok compute_ref-je a KubernetesNode.state_surface-en jelenik meg.
+        item_fields:
+          - name: name
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            description: Node pool neve (pl. control-plane, workers)
+          - name: machine_type
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: true
+            contract:
+              - type: enum
+                expression: [controlplane, worker]
+          - name: count
+            shape_type: scalar
+            scalar_type: integer
+            required_on_create: true
+            description: Kívánt node szám ebben a pool-ban
+          - name: compute_requirements
+            shape_type: object
+            required_on_create: false
+            description: Compute erőforrás követelmények — az adapter ezek alapján választ ComputeResource-t
+            properties:
+              - name: min_cpu
+                shape_type: scalar
+                scalar_type: integer
+                required_on_create: false
+                description: Minimum CPU magok száma
+              - name: min_memory_gb
+                shape_type: scalar
+                scalar_type: integer
+                required_on_create: false
+                description: Minimum memória GB-ban
+              - name: min_disk_gb
+                shape_type: scalar
+                scalar_type: integer
+                required_on_create: false
+                description: Minimum boot disk GB-ban
+              - name: compute_tags
+                shape_type: object
+                required_on_create: false
+                description: Label/tag szűrők a ComputeResource kiválasztáshoz
+
+      # ── Discovery (Talos cluster.discovery) ───────────────────────────────────
+      - name: discovery
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        description: Node discovery konfiguráció
+        properties:
+          - name: enabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+          - name: registries
+            shape_type: object
+            required_on_create: false
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: schemas/aggregate/state-surface.yaml
+    source: "provider-specific — see binding_surface.adapter_capabilities on KubernetesCluster"
+    freshness:
+      ttl: 30s
+      strategy: event-driven
+    nodes:
+
+      - name: health
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: true
+        description: Cluster összesített egészségi állapota
+        contract:
+          - type: enum
+            expression: [healthy, degraded, unavailable, unknown]
+
+      - name: api_server_status
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: true
+        contract:
+          - type: enum
+            expression: [up, down, unknown]
+
+      - name: etcd_status
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: true
+        contract:
+          - type: enum
+            expression: [healthy, degraded, unavailable, unknown]
+
+      - name: kubernetes_version_actual
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: Tényleges futó Kubernetes verzió
+
+      - name: node_count
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        required_on_create: false
+        description: Összes node szám
+
+      - name: control_plane_node_count
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        required_on_create: false
+
+      - name: cert_expiry
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: Legkorábbi lejáró cert időbélyege (ISO 8601)
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: schemas/aggregate/operation-surface.yaml
+    operations:
+
+      - name: upgrade
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: upgrade
+        description: Kubernetes verzió frissítése — rolling upgrade
+        input:
+          - name: target_version
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: true
+        output:
+          - name: kubernetes_version_actual
+            shape_type: scalar
+            scalar_type: string
+
+      - name: rotate_certs
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: cert_management
+        description: Cluster certifikátok rotálása
+        input: null
+        output:
+          - name: cert_expiry
+            shape_type: scalar
+            scalar_type: string
+
+      - name: get_kubeconfig
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: true
+        description: Admin kubeconfig lekérdezése
+        input: null
+        output:
+          - name: kubeconfig
+            shape_type: scalar
+            scalar_type: string
+            description: base64-kódolt kubeconfig YAML
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: cluster-health-changed
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: warning
+        description: Cluster egészségi állapot megváltozott
+        payload:
+          - name: previous_health
+            shape_type: scalar
+            scalar_type: string
+          - name: current_health
+            shape_type: scalar
+            scalar_type: string
+
+      - name: node-count-changed
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: info
+        description: Node számváltozás
+        payload:
+          - name: previous_count
+            shape_type: scalar
+            scalar_type: integer
+          - name: current_count
+            shape_type: scalar
+            scalar_type: integer
+
+      - name: cert-expiry-warning
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: threshold
+        severity: warning
+        capability: cert_management
+        description: Cluster cert hamarosan lejár
+        payload:
+          - name: cert_expiry
+            shape_type: scalar
+            scalar_type: string
+          - name: days_remaining
+            shape_type: scalar
+            scalar_type: integer
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: schemas/atomic/address.yaml
+        schema_path: "/cic-kubernetes:clusters/cluster={provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={provider}, {location}, {id}"
+        logical_id: "cic:kubernetes:{provider}:{location}:{id}"
+        namespace: "cic:kubernetes"
+        key_fields:
+          - name: provider
+            type: string
+            description: >
+              Cluster provider azonosítója — az adapter routing kulcsa.
+              talos: Talos Linux alapú cluster
+              kubespray: kubespray managed cluster
+              k3s: k3s lightweight cluster
+              rke2: RKE2 (Rancher Kubernetes Engine 2) cluster
+              KORLÁT (issue #25): cloud-managed cluster (GKE/EKS/AKS/OKE/DOKS)
+              nem fér bele tisztán ebbe az egy mezőbe — a `provider` itt vagy
+              az önkezelt disztribúciót azonosítja (talos/kubespray/k3s/rke2),
+              vagy a cloud szolgáltatót (aws/gcp/azure/oci) azonosítaná, a
+              kettő ütközik. A storage/compute mintája (`backend`+`provider`
+              két mező) itt hiányzik — nem ez a fájl a helye ennek a
+              strukturális döntésnek, lásd #25.
+          - name: location
+            type: string
+            description: Datacenter / site azonosítója ahol a cluster fut
+          - name: id
+            type: string
+            description: Cluster egyedi neve (pl. prod-cluster-01)
+    # v0.1.4 (issue #18): a korábbi `adapter: kubernetes-adapter` egyetlen
+    # placeholder-mező volt, ami nem felelt meg egyik valódi adapternek sem
+    # (ugyanaz a hibaosztály, mint a már archivált cic-kubernetes repóban
+    # #3-ként dokumentált — a repó archiválása miatt ott már nem javítható,
+    # itt viszont igen). A kubernetes domain architektúrája ráadásul eleve
+    # nem egyetlen generikus adapterrel dolgozik (mint storage/compute egy
+    # AdapterContract-tal + backend enummal) — minden provider saját, önálló
+    # adapter-fájl (talos-adapter/kubespray-adapter/k3s-adapter/rke2-adapter).
+    # Egyetlen flat `adapter:` mezőnek itt sosem volt értelme — a
+    # `adapter_capabilities.known_adapters` az egyetlen helyes forrás.
+    adapter_capabilities:
+      description: >
+        A `provider` kulcs alapján az adaptert a known_adapters lista
+        azonosítja — nincs egyetlen generikus "kubernetes-adapter".
+        cloud-managed-adapter szándékosan NINCS ebben a listában, mert a
+        `provider` mező jelenlegi modellje nem tudja azonosítani (lásd #25).
+      known_adapters:
+        - name: talos-adapter
+          provider: talos
+          capabilities: [control_plane_tuning]
+        - name: kubespray-adapter
+          provider: kubespray
+          capabilities: [control_plane_tuning]
+        - name: rke2-adapter
+          provider: rke2
+          capabilities: [control_plane_tuning]
+        - name: k3s-adapter
+          provider: k3s
+          capabilities: []
+          note: >
+            Részleges implementáció (lásd az adapter saját leírását) —
+            control_plane_tuning támogatása nincs megerősítve, ezért itt
+            nem hirdetjük.
+
+# ── Relationships ─────────────────────────────────────────────────────────────
+relationships:
+  - name: owns_nodes
+    from: KubernetesCluster
+    to: KubernetesNode
+    cardinality: one-to-many
+    via:
+      child_field: KubernetesNode.config_surface.cluster_ref
+      parent_address: KubernetesCluster.binding_surface.logical_id
+    description: >
+      Egy cluster több node-ot kezél. A KubernetesNode.cluster_ref
+      a szülő KubernetesCluster CIC address-ére mutat.
