@@ -22,3 +22,10 @@ file-rules:
 
 ignore: |
   /p_venv/
+  # Machine-generated release bundles migrated byte-verbatim from their
+  # source repo's own `make release` output (proposals/schema-registry:
+  # the primitive kernel is versioned/signed as one indivisible artifact,
+  # never hand-edited here — see general/primitives/cic-primitives/README.md).
+  # Reformatting them to satisfy this repo's own style rules would break
+  # their byte-identity with the real, already-signed release.
+  /general/primitives/cic-primitives/
