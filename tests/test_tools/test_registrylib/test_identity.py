@@ -5,8 +5,7 @@ from tools.registrylib.identity import build_type_index, parse_pin, resolve
 
 def _write(path, namespace, kind):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"""---
+    path.write_text(f"""---
 metadata:
   name: {kind}
 spec:
@@ -14,8 +13,7 @@ spec:
   identity:
     namespace: "{namespace}"
     kind: {kind}
-"""
-    )
+""")
 
 
 def test_parse_pin_valid():

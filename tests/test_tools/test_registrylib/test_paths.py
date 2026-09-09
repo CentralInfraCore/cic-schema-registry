@@ -1,10 +1,10 @@
 from pathlib import Path
 
 from tools.registrylib.paths import (
+    latest_content_version,
     list_versions,
     parse_filename,
     resolve_pin,
-    latest_content_version,
 )
 
 

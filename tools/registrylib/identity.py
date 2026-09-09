@@ -92,7 +92,9 @@ def build_type_index(registry_root: Path) -> dict[str, Path]:
     return index
 
 
-def resolve(pin: str, registry_root: Path, type_index: dict[str, Path] | None = None) -> SchemaVersion:
+def resolve(
+    pin: str, registry_root: Path, type_index: dict[str, Path] | None = None
+) -> SchemaVersion:
     """Resolve a full pin string to the concrete, freshest-signed
     SchemaVersion file it currently points at. Raises ValueError/KeyError
     with an actionable message on any failure — this is meant to be called

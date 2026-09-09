@@ -27,7 +27,7 @@ import yaml
 
 from .registrylib.coverage import check_coverage
 from .registrylib.identity import build_type_index, iter_schema_dirs, parse_pin
-from .registrylib.paths import list_versions
+from .registrylib.paths import list_versions, resolve_pin
 
 
 def _load(path: Path) -> dict:
@@ -42,16 +42,20 @@ def check_schema_evolution(registry_root: Path) -> list[str]:
         # content versions (a re-sign under a new -src year is not a content
         # change and has nothing to check).
         by_content: dict[tuple[int, int, int], Path] = {}
-        for v in versions:
-            by_content[v.content_version] = v.path  # last (freshest) wins
+        for schema_version in versions:
+            by_content[schema_version.content_version] = (
+                schema_version.path
+            )  # last (freshest) wins
         ordered = sorted(by_content.items())
         for (old_cv, old_path), (new_cv, new_path) in zip(ordered, ordered[1:]):
             major_bump = old_cv[0] != new_cv[0]
-            result = check_coverage(_load(old_path), _load(new_path), major_bump=major_bump)
-            for v in result.violations:
+            result = check_coverage(
+                _load(old_path), _load(new_path), major_bump=major_bump
+            )
+            for violation in result.violations:
                 problems.append(
                     f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
-                    f"v{'.'.join(map(str, new_cv))}: {v.message}"
+                    f"v{'.'.join(map(str, new_cv))}: {violation.message}"
                 )
     return problems
 
@@ -78,9 +82,9 @@ def check_base_references(registry_root: Path) -> list[str]:
                 f"{newest.path}: base {parsed.type_key!r} not found in registry"
             )
             continue
-        from .registrylib.paths import resolve_pin
-
-        base_version = resolve_pin(base_schema_dir, parsed.major, parsed.minor, parsed.patch)
+        base_version = resolve_pin(
+            base_schema_dir, parsed.major, parsed.minor, parsed.patch
+        )
         if base_version is None:
             problems.append(
                 f"{newest.path}: base {base_pin!r} — no matching content version found"
@@ -88,14 +92,16 @@ def check_base_references(registry_root: Path) -> list[str]:
             continue
         base_doc = _load(base_version.path)
         result = check_coverage(base_doc, doc, major_bump=False)
-        for v in result.violations:
-            problems.append(f"{newest.path} (base {base_pin}): {v.message}")
+        for violation in result.violations:
+            problems.append(f"{newest.path} (base {base_pin}): {violation.message}")
     return problems
 
 
 def main() -> int:
     registry_root = Path.cwd()
-    problems = check_schema_evolution(registry_root) + check_base_references(registry_root)
+    problems = check_schema_evolution(registry_root) + check_base_references(
+        registry_root
+    )
     if not problems:
         print("registry_validate: OK — no coverage/evolution violations found.")
         return 0

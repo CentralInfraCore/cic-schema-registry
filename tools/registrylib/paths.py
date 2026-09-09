@@ -88,7 +88,9 @@ def list_versions(schema_dir: Path) -> list[SchemaVersion]:
     return sorted(versions)
 
 
-def resolve_pin(schema_dir: Path, major: int, minor: int, patch: int) -> SchemaVersion | None:
+def resolve_pin(
+    schema_dir: Path, major: int, minor: int, patch: int
+) -> SchemaVersion | None:
     """Resolve a content-version pin (e.g. from `base: "...@v1.0.0"`) to the
     file with the LATEST still-listed -src year for that exact content
     version — this is the "reference resolution always follows the freshest
@@ -97,7 +99,9 @@ def resolve_pin(schema_dir: Path, major: int, minor: int, patch: int) -> SchemaV
     valid; expiry handling is a separate, not-yet-implemented concern (the
     scheduled CA-expiry job in the design doc)."""
     candidates = [
-        v for v in list_versions(schema_dir) if v.content_version == (major, minor, patch)
+        v
+        for v in list_versions(schema_dir)
+        if v.content_version == (major, minor, patch)
     ]
     if not candidates:
         return None
