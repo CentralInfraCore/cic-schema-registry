@@ -67,3 +67,27 @@ feltételezve):
 
 **⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben —
 ez a fájl NEM hordoz saját `release`/`cic_countersign` blokkot.
+
+## v0.2.4 — registry-native tartalmi javítás (NEM a `cic-compute`-ból jön)
+
+A `v0.2.3` fent leírt módon byte-azonos a `cic-compute` archivált
+repójából. `v0.2.4` ebben a registryben született
+([#16](https://github.com/CentralInfraCore/cic-schema-registry/issues/16)):
+
+A `config_surface` kér `cpu_cores`/`memory_mb`/`disk_gb`-t, de a
+`state_surface`-ben csak kihasználtsági metrika volt (`cpu_usage_pct`,
+`memory_usage_mb`), tényleges allokált kapacitás sehol. Ez azért lényeges,
+mert a `resize` explicit megengedi, hogy az adapter a legközelebbi
+`instance_type`-ot válassza (AWS/GCP/Azure) — enélkül a mező nélkül a
+kért és a tényleges eltérés sehol nem jelenik meg strukturáltan.
+
+Megoldás: `cpu_cores_actual`/`memory_mb_actual`/`disk_gb_actual` új
+state mezők, mindegyik egy `Contract: type: must` kontraktussal
+(**meglévő, már dokumentált Contract-típus, nem új primitívum** —
+`cic-primitives` Contract atom, "Logical constraint... May express
+cross-node relationships"), ami kizárja, hogy KEVESEBB legyen allokálva
+a kértnél — a felfelé eltérés (instance_type lookup) szándékosan
+megengedett marad.
+
+Additív, PATCH bump — semmi nem tűnt el, `check_schema_evolution` zöld
+rá.
