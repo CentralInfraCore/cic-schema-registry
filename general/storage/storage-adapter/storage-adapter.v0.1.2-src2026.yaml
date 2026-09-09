@@ -1,0 +1,97 @@
+---
+metadata:
+  name: StorageAdapter
+  version: v0.1.2
+  description: >
+    Egységes storage adapter interface contract — hypervisor disk, SAN/iSCSI LUN és cloud
+    block storage egyaránt implementálja. Ez NEM implementáció: az adapter implementáció
+    dönti el a protokollt (Proxmox API, NetApp REST, AWS EBS API). A backend enum
+    azonosítja az erőforrás típusát, a capabilities lista szűri a támogatott funkciókat.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - adapter-contract
+    - storage
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: AdapterContract
+  domain: "cic:storage:StorageResource"
+
+  backends:
+    - name: hypervisor
+      description: Hypervisor-managed disk — qcow2, raw, vmdk
+      protocol_examples: [Proxmox Storage API, libvirt storage pool, qemu-img]
+    - name: san
+      description: SAN/iSCSI LUN — fizikai tárolórendszer
+      protocol_examples: [NetApp ONTAP REST, Pure Storage API, iSCSI target]
+    - name: cloud
+      description: Cloud block storage — EBS, Persistent Disk, Azure Disk
+      protocol_examples: [AWS EBS API, GCP Persistent Disk API, Azure Disk API]
+      known_providers: [aws, gcp, azure, hcloud, do, ovh, oci]
+
+  operations:
+    - name: observe
+      description: >
+        Volume aktuális állapotának lekérdezése — visszaad egy StorageResource
+        state_surface-t. Az adapter normalizálja a platform-specifikus értékeket.
+      input:
+        - name: backend
+          type: string
+        - name: provider
+          type: string
+        - name: location
+          type: string
+        - name: id
+          type: string
+      output:
+        ref: StorageResource.state_surface
+
+    - name: apply
+      description: >
+        Config alkalmazása — az adapter fordítja le platform-specifikus parancsokra.
+        Idempotens: csak a diff-et alkalmazza.
+      input:
+        ref: StorageResource.config_surface
+      output:
+        - name: applied
+          type: boolean
+
+    - name: watch
+      description: Folyamatos állapotfigyelés — event stream a NotificationSurface-nek.
+      input:
+        - name: backend
+          type: string
+        - name: provider
+          type: string
+        - name: location
+          type: string
+        - name: id
+          type: string
+      output:
+        stream: true
+        ref: StorageResource.notification_surface
+
+  capability_declaration:
+    known_implementations:
+      - backend: hypervisor
+        examples:
+          - name: proxmox-storage
+            capabilities: [filesystem, snapshot, resize, usage_metrics]
+          - name: libvirt-storage
+            capabilities: [filesystem, snapshot, resize]
+      - backend: san
+        examples:
+          - name: netapp-ontap
+            capabilities: [snapshot, resize, multi_attach, health_monitoring]
+          - name: pure-storage
+            capabilities: [snapshot, resize, multi_attach, health_monitoring]
+      - backend: cloud
+        examples:
+          - name: aws-ebs
+            capabilities: [filesystem, encryption, snapshot, resize, tagging, usage_metrics]
+          - name: gcp-pd
+            capabilities: [filesystem, encryption, snapshot, resize, tagging, usage_metrics]
+          - name: azure-disk
+            capabilities: [filesystem, encryption, snapshot, resize, tagging]
