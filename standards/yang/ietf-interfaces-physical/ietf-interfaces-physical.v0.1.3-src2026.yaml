@@ -1,0 +1,110 @@
+---
+metadata:
+  name: ietf-interfaces-physical
+  source: RFC 8343 — A YANG Data Model for Interface Management
+  version: v0.1.3
+  description: >
+    Fizikai hálózati interfész building block — ethernetCsmacd és ieee8023adLag
+    (LAG/bond) típusok. Kiterjeszti az ietf-interfaces-base közös mezőit.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - physical
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  extends:
+    name: ietf-interfaces-base
+    version: v0.0.dev
+  interface_types:
+    - ethernetCsmacd      # standard Ethernet (RFC 8343)
+    - ieee8023adLag       # LAG / bond / port-channel (IEEE 802.3ad)
+
+  config:
+    - name: speed
+      type: integer
+      unit: Mbps
+      required_on_create: false
+      description: Konfigurált port sebesség — null = auto-negotiate
+      origin: rfc8343
+
+    - name: duplex
+      type: enum
+      values: [full, half, auto]
+      required_on_create: false
+      default: auto
+      description: Duplex mód
+      origin: rfc8343
+
+    - name: connector_type
+      type: enum
+      values: [rj45, sfp, sfp_plus, qsfp, qsfp28, backplane, other]
+      required_on_create: false
+      description: Fizikai csatlakozó típusa
+      origin: cic-extension
+
+    # LAG-specifikus (ieee8023adLag esetén)
+    - name: lag_members
+      type: list
+      item_type: interface-ref
+      required_on_create: false
+      applicable_when:
+        field: interface_type
+        equals: ieee8023adLag
+      required_when:
+        field: interface_type
+        equals: ieee8023adLag
+      capability: lag
+      description: LAG taginterfészek nevei (csak ieee8023adLag típusnál)
+      origin: cic-extension
+
+    - name: lag_mode
+      type: enum
+      values: [active, passive, static]
+      required_on_create: false
+      default: active
+      applicable_when:
+        field: interface_type
+        equals: ieee8023adLag
+      capability: lag
+      description: LACP mód — active=küld, passive=fogad, static=nincs LACP
+      origin: cic-extension
+
+  state:
+    - name: speed_actual
+      type: integer
+      unit: Mbps
+      description: Tényleges tárgyalt sebesség
+      origin: rfc8343
+
+    - name: duplex_actual
+      type: enum
+      values: [full, half, unknown]
+      description: Tényleges duplex mód
+      origin: rfc8343
+
+  notifications:
+    - name: link-up
+      description: Interfész oper_status up-ra váltott
+      origin: rfc8343
+      payload:
+        - name: interface_name
+          type: string
+        - name: oper_status
+          type: string
+
+    - name: link-down
+      description: Interfész oper_status down-ra váltott
+      origin: rfc8343
+      payload:
+        - name: interface_name
+          type: string
+        - name: oper_status
+          type: string

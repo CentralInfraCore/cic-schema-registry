@@ -1,0 +1,155 @@
+---
+metadata:
+  name: ietf-interfaces-tunnel
+  source: RFC 8343 — A YANG Data Model for Interface Management
+  version: v0.1.3
+  description: >
+    Tunnel interfész building block — VXLAN, GRE, IPIP, Geneve encapsulation.
+    Logikai interfész típusa, nincs fizikai szülő szükséges (underlay IP-n fut).
+    Kiterjeszti az ietf-interfaces-base közös mezőit.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - tunnel
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  extends:
+    name: ietf-interfaces-base
+    version: v0.0.dev
+  interface_types:
+    - tunnel              # általános tunnel típus (RFC 8343)
+
+  config:
+    - name: tunnel_type
+      type: enum
+      values: [vxlan, gre, ipip, geneve, other]
+      required_on_create: true
+      description: Encapsulation protokoll
+      origin: cic-extension
+
+    - name: local_endpoint
+      type: ip-address
+      required_on_create: true
+      description: Helyi tunnel végpont IP cím — IPv4 vagy IPv6 underlay
+      origin: cic-extension
+
+    - name: remote_endpoint
+      type: ip-address
+      required_on_create: false
+      description: >
+        Távoli tunnel végpont IP cím (point-to-point esetén).
+        VXLAN multicast flood-and-learn esetén multicast cím (pl. 239.1.1.1).
+        Üres = head-end replication vagy BGP EVPN vezérelt.
+      origin: cic-extension
+
+    - name: underlay_interface
+      type: interface-ref
+      required_on_create: false
+      description: Underlay fizikai/logikai interfész neve amin a tunnel fut
+      origin: cic-extension
+
+    - name: ttl
+      type: integer
+      range: "1..255"
+      required_on_create: false
+      default: 64
+      description: Outer IP TTL értéke
+      origin: cic-extension
+
+    # VXLAN-specifikus
+    - name: vni
+      type: integer
+      range: "1..16777215"
+      required_on_create: false
+      required_when:
+        field: tunnel_type
+        equals: vxlan
+      capability: vxlan
+      description: VXLAN Network Identifier (24-bit)
+      origin: cic-extension
+
+    - name: vxlan_dstport
+      type: integer
+      range: "1..65535"
+      required_on_create: false
+      default: 4789
+      applicable_when:
+        field: tunnel_type
+        equals: vxlan
+      capability: vxlan
+      description: VXLAN UDP destination port (IANA default 4789)
+      origin: cic-extension
+
+    - name: vxlan_learning
+      type: boolean
+      required_on_create: false
+      default: true
+      applicable_when:
+        field: tunnel_type
+        equals: vxlan
+      capability: vxlan
+      description: >
+        MAC learning engedélyezése a VXLAN tunnelen.
+        false = BGP EVPN vagy statikus FDB vezérelt (nincs flood-and-learn).
+      origin: cic-extension
+
+    - name: vxlan_proxy
+      type: boolean
+      required_on_create: false
+      default: false
+      applicable_when:
+        field: tunnel_type
+        equals: vxlan
+      capability: vxlan
+      description: ARP/ND proxy engedélyezése a VXLAN bridge-en
+      origin: cic-extension
+
+    # GRE-specifikus
+    - name: gre_key
+      type: integer
+      required_on_create: false
+      applicable_when:
+        field: tunnel_type
+        equals: gre
+      capability: gre
+      description: GRE tunnel key (opcionális azonosítás)
+      origin: cic-extension
+
+  state:
+    - name: oper_status
+      type: enum
+      values: [up, down, unknown]
+      description: Tunnel operációs állapot
+      origin: rfc8343
+
+    - name: statistics
+      type: object
+      description: Tunnel forgalmi számlálók
+      origin: rfc8343
+      properties:
+        in_pkts:
+          type: integer
+          description: Fogadott tunelezett csomagok
+        in_octets:
+          type: integer
+          description: Fogadott tunelezett byte-ok
+        in_errors:
+          type: integer
+          description: Decapsulation hibák
+        out_pkts:
+          type: integer
+          description: Küldött tunelezett csomagok
+        out_octets:
+          type: integer
+          description: Küldött tunelezett byte-ok
+        out_errors:
+          type: integer
+          description: Encapsulation hibák

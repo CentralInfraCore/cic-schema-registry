@@ -1,0 +1,103 @@
+---
+metadata:
+  name: ietf-interfaces-base
+  source: RFC 8343 — A YANG Data Model for Interface Management
+  version: v0.1.3
+  description: >
+    Közös interfész building block — minden RFC 8343 interfész típus (physical,
+    logical, tunnel) örökli ezeket a mezőket. Nem használható önállóan — mindig
+    egy konkrét interfész blokk kiterjeszti.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - base
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  abstract: true    # nem használható önállóan, csak kiterjesztés alapja
+
+  config:
+    - name: name
+      type: string
+      required_on_create: true
+      role: key
+      description: Interfész neve (pl. eth0, ge-0/0/1, lo, ovs-br0)
+
+    - name: description
+      type: string
+      required_on_create: false
+      description: Emberi olvasható leírás
+
+    - name: enabled
+      type: boolean
+      required_on_create: false
+      default: true
+      description: Adminisztrációs állapot — true=up, false=down
+
+    - name: mtu
+      type: integer
+      required_on_create: false
+      default: 1500
+      range: "68..9216"
+      description: Maximum Transmission Unit (byte)
+
+  state:
+    - name: admin_status
+      type: enum
+      values: [up, down, testing]
+      description: Konfigurált adminisztrációs állapot (RFC 8343 ifAdminStatus)
+
+    - name: oper_status
+      type: enum
+      values: [up, down, testing, unknown, dormant, not_present, lower_layer_down]
+      description: >
+        Tényleges operációs állapot (RFC 8343 ifOperStatus).
+        lower_layer_down: szülő interfész nincs fenn.
+
+    - name: phys_address
+      type: mac-address
+      required_on_create: false
+      description: MAC cím (pl. 00:1a:2b:3c:4d:5e)
+
+    - name: last_change
+      type: datetime
+      format: iso8601
+      required_on_create: false
+      description: Utolsó oper_status változás időbélyege
+
+    - name: statistics
+      type: object
+      required_on_create: false
+      description: Forgalmi számlálók (RFC 8343 ifCounterDiscontinuityTime alapján)
+      properties:
+        in_octets:
+          type: integer
+          description: Fogadott byte-ok száma
+        in_pkts:
+          type: integer
+          description: Fogadott csomagok száma
+        in_errors:
+          type: integer
+          description: Fogadási hibák száma
+        in_discards:
+          type: integer
+          description: Eldobott fogadott csomagok (puffer túlcsordulás stb.)
+        out_octets:
+          type: integer
+          description: Küldött byte-ok száma
+        out_pkts:
+          type: integer
+          description: Küldött csomagok száma
+        out_errors:
+          type: integer
+          description: Küldési hibák száma
+        out_discards:
+          type: integer
+          description: Eldobott küldendő csomagok

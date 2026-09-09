@@ -1,0 +1,138 @@
+---
+metadata:
+  name: cloud-managed-adapter
+  version: v0.1.2
+  description: >
+    Cloud managed Kubernetes adapter — GKE, EKS, AKS, OKE, DOKS és más
+    managed Kubernetes szolgáltatások egységes adaptere.
+    A cloud provider kezeli a control plane-t és az OS-szintű konfigurációt —
+    ezek nagy része nem elérhető vagy nem módosítható.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - adapter-contract
+    - kubernetes
+    - cloud
+    - managed
+    - gke
+    - eks
+    - aks
+    - oke
+    - doks
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: AdapterContract
+  domain: "cic:kubernetes:KubernetesCluster+KubernetesNode"
+
+  protocol: Cloud provider REST API + kubectl
+  conformance: partial
+
+  known_implementations:
+    - name: gke-adapter
+      provider: gcp
+      api: Google Kubernetes Engine API v1
+      note: AutoPilot mode esetén node konfig is managed
+    - name: eks-adapter
+      provider: aws
+      api: Amazon EKS API
+      note: Fargate mode esetén node konfig nem elérhető
+    - name: aks-adapter
+      provider: azure
+      api: Azure Kubernetes Service API
+      note: Virtual nodes esetén node konfig nem elérhető
+    - name: oke-adapter
+      provider: oci
+      api: Oracle Container Engine for Kubernetes API
+    - name: doks-adapter
+      provider: digitalocean
+      api: DigitalOcean Kubernetes API
+
+  operations:
+    - name: observe
+      description: >
+        Cloud provider API-n cluster állapot lekérdezés.
+        KubernetesCluster: provider cluster describe + kubectl get nodes
+        KubernetesNode: provider node pool describe + kubectl get node
+      output:
+        ref: KubernetesCluster.state_surface + KubernetesNode.state_surface
+
+    - name: apply
+      description: >
+        Cloud provider API-n cluster konfig módosítás.
+        Csak a provider által exponált mezők módosíthatók.
+        OS-szintű konfig (sysctls, ntp, stb.) NEM elérhető.
+      input:
+        ref: KubernetesCluster.config_surface + KubernetesNode.config_surface
+
+    - name: watch
+      description: Cloud provider event stream + kubectl watch
+      output:
+        stream: true
+
+  conformance_matrix:
+    # Control plane — provider fully managed
+    - target: KubernetesCluster.config_surface.etcd
+      type: config_field
+      support: unsupported
+      reason: Control plane fully managed — etcd nem elérhető
+
+    - target: KubernetesCluster.config_surface.api_server.extra_args
+      type: config_field
+      support: unsupported
+      reason: Control plane fully managed — API server args nem módosítható
+
+    - target: KubernetesCluster.config_surface.controller_manager
+      type: config_field
+      support: unsupported
+      reason: Control plane fully managed
+
+    - target: KubernetesCluster.config_surface.scheduler
+      type: config_field
+      support: unsupported
+      reason: Control plane fully managed
+
+    - target: KubernetesCluster.operation_surface.rotate_certs
+      type: operation
+      support: unsupported
+      reason: Cert rotáció provider által managed
+
+    # Node OS konfig — provider managed image
+    - target: KubernetesNode.config_surface.sysctls
+      type: config_field
+      support: unsupported
+      reason: OS-szintű konfig — provider managed, nem módosítható
+
+    - target: KubernetesNode.config_surface.ntp_servers
+      type: config_field
+      support: unsupported
+      reason: NTP provider managed
+
+    - target: KubernetesNode.config_surface.cert_sans
+      type: config_field
+      support: unsupported
+      reason: Node cert SANok provider által generált
+
+    - target: KubernetesNode.config_surface.install_disk
+      type: config_field
+      support: unsupported
+      reason: Boot disk provider managed — nem konfigurálható direkt
+
+    - target: KubernetesNode.operation_surface.reset
+      type: operation
+      support: degraded
+      reason: Node reset = node pool recreate — provider API-n keresztül, nem direkt reset
+
+    - target: KubernetesNode.state_surface.network_ref
+      type: state_field
+      support: degraded
+      reason: >
+        Provider VPC/subnet azonosító elérhető (pl. AWS subnet-id, GCP subnetwork),
+        de nem garantáltan normalizálható cic-network referenciára. Az adapter
+        best-effort mappingot végez — teljes cic-network kompatibilitás nem szavatolt.
+
+    - target: KubernetesCluster.config_surface.discovery
+      type: config_field
+      support: unsupported
+      reason: Talos-specifikus discovery — cloud managed k8s-ben nem elérhető
