@@ -9,6 +9,13 @@ cic-primitives/schemas/atomic/identity.yaml) with an explicit, mandatory
 version pin, per proposals/schema-registry §4. A `base`/`reference_target`
 written without "@vX.Y.Z" is rejected here — every registry-internal
 reference must be exact-version-pinned.
+
+One type_key can resolve to a schema directory two ways: a normal one
+file = one identity schema (read from its `spec.identity`), or one of the
+kernel's internal types living inside the cic-primitives bundle's
+`specs[]` (see .bundle) — both end up in the same {type_key: schema_dir}
+index, and `resolve()` doesn't need to know which kind of directory it got,
+since resolve_pin() just lists files in it either way.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ from typing import Iterable
 
 import yaml
 
+from .bundle import is_bundle, iter_kernel_types
 from .paths import SchemaVersion, list_versions, resolve_pin
 
 _PIN_RE = re.compile(
@@ -79,12 +87,23 @@ def build_type_index(registry_root: Path) -> dict[str, Path]:
     reading one file per schema directory (the newest by content version —
     identity.namespace/kind do not vary across a schema's own versions, so
     any file works, but the newest is checked first as it's most likely
-    to reflect the current shape if a schema were ever renamed)."""
+    to reflect the current shape if a schema were ever renamed).
+
+    A bundle-shaped file (the cic-primitives kernel) indexes differently:
+    instead of one `spec.identity`, it declares many types in its
+    `specs[]` — every one of those ("cic:core:ManagedEntity",
+    "cic:core:Identity", ...) is indexed here too, all pointing at the
+    same schema_dir (the bundle file itself is what resolve_pin() will
+    find there for any content version pinned against it)."""
     index: dict[str, Path] = {}
     for schema_dir in iter_schema_dirs(registry_root):
         versions = list_versions(schema_dir)
         newest = max(versions)
         doc = yaml.safe_load(newest.path.read_text())
+        if is_bundle(doc or {}):
+            for type_key, _inner in iter_kernel_types(doc or {}):
+                index[type_key] = schema_dir
+            continue
         ident = ((doc or {}).get("spec") or {}).get("identity") or {}
         namespace, kind = ident.get("namespace"), ident.get("kind")
         if namespace and kind:
