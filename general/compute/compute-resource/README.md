@@ -91,3 +91,12 @@ megengedett marad.
 
 Additív, PATCH bump — semmi nem tűnt el, `check_schema_evolution` zöld
 rá.
+
+## v0.2.5 — must-kontraktus a terminate confirm mezőn
+
+([#17](https://github.com/CentralInfraCore/cic-schema-registry/issues/17))
+`operation_surface.terminate.confirm` ugyanazt a hiányt mutatta, mint a
+`StorageResource.delete` — `mandatory: true` nem tiltotta a `false`
+értéket, a "MANUAL ONLY" szabály csak prózában élt. Ugyanaz a
+`must: confirm = true()` kontraktus, ugyanazzal a `Contract` atom
+meglévő `must` típusával (nem új primitívum).
