@@ -142,6 +142,27 @@ Ez additív, MAJOR-váltás nélküli (PATCH) módosítás — a `registrylib`
 `check_schema_evolution` ellenőrzi és zöld rá, mert `attached_to` nem tűnt
 el, csak deprecated lett.
 
+## v0.1.4 — must-kontraktus a delete/resize szövegben élő szabályokra
+
+([#17](https://github.com/CentralInfraCore/cic-schema-registry/issues/17))
+Két, korábban csak `description`-ben kimondott szabály kapott valódi,
+géppel értelmezhető kontraktust — mindkettő a `Contract` atom MEGLÉVŐ
+`must` típusát használja (XPath-szerű logikai kifejezés, cross-node
+relációkra — ez nem új primitívum, a `cic-primitives` kernel már
+dokumentálja):
+
+- `operation_surface.delete.confirm`: `must: confirm = true()` — a
+  `mandatory: true` eddig nem tiltotta a `false` értéket.
+- `operation_surface.resize.size_gb`: `must: size_gb >=
+  ../../state_surface/size_actual_gb` — a "csak növelhet" szabály eddig
+  csak prózában élt.
+
+Az issue #17 harmadik pontja (adapter `apply` idempotencia strukturált
+jelölése) NEM ebben a fájlban lett kezelve — az `AdapterContract` dialektus
+(`storage-adapter.yaml` és a többi adapter-kontraktus) egyáltalán nem
+ismer `idempotent:` mezőt sehol, ez egy dialektus-szintű döntés, nem egy
+fájl foltja. Lásd [#23](https://github.com/CentralInfraCore/cic-schema-registry/issues/23).
+
 ## Kapcsolódó fájl
 
 `storage-adapter/` — a `StorageAdapter` kontraktus, amit ez a séma
