@@ -74,50 +74,21 @@ def iter_schema_dirs(registry_root: Path) -> Iterable[Path]:
                 yield path
 
 
-# Namespace convention for AggregatePrimitive/AtomicPrimitive files, which
-# (unlike DomainCompositions) carry no `spec.identity` block describing
-# themselves — their own "identity" is just their metadata.name. Verified
-# against the real corpus: every live `identity.base` pointing at ManagedEntity
-# writes "cic:core:ManagedEntity" (e.g. cic-network's network-interface.yaml,
-# cic-primitives' own kubernetes-pod.yaml) — "cic:core" is that convention,
-# not invented here. Only ManagedEntity is actually referenced this way today
-# (ConfigSurface/StateSurface/atoms are used via aggregate_ref/atomic_ref file
-# paths, not identity pins) — AtomicPrimitive is indexed too for symmetry and
-# because nothing prevents a future reference from needing it, but that path
-# is currently untested against real content.
-_PRIMITIVE_NAMESPACE = "cic:core"
-_PRIMITIVE_KINDS = {"AggregatePrimitive", "AtomicPrimitive"}
-
-
 def build_type_index(registry_root: Path) -> dict[str, Path]:
     """{ "namespace:Kind": schema_dir } across the whole tree. Built by
     reading one file per schema directory (the newest by content version —
     identity.namespace/kind do not vary across a schema's own versions, so
     any file works, but the newest is checked first as it's most likely
-    to reflect the current shape if a schema were ever renamed).
-
-    Two ways a schema declares its own type key:
-      - DomainComposition-style files: an explicit `spec.identity.namespace`
-        + `spec.identity.kind`.
-      - AggregatePrimitive/AtomicPrimitive files (general/primitives/*): no
-        `spec.identity` block — keyed as "cic:core:{metadata.name}" instead
-        (see _PRIMITIVE_NAMESPACE above).
-    """
+    to reflect the current shape if a schema were ever renamed)."""
     index: dict[str, Path] = {}
     for schema_dir in iter_schema_dirs(registry_root):
         versions = list_versions(schema_dir)
         newest = max(versions)
-        doc = yaml.safe_load(newest.path.read_text()) or {}
-        spec = doc.get("spec") or {}
-        ident = spec.get("identity") or {}
+        doc = yaml.safe_load(newest.path.read_text())
+        ident = ((doc or {}).get("spec") or {}).get("identity") or {}
         namespace, kind = ident.get("namespace"), ident.get("kind")
         if namespace and kind:
             index[f"{namespace}:{kind}"] = schema_dir
-            continue
-        if spec.get("kind") in _PRIMITIVE_KINDS:
-            name = (doc.get("metadata") or {}).get("name")
-            if name:
-                index[f"{_PRIMITIVE_NAMESPACE}:{name}"] = schema_dir
     return index
 
 
