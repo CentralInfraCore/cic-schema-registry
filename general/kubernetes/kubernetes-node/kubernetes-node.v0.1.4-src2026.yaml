@@ -1,0 +1,454 @@
+---
+metadata:
+  name: KubernetesNode
+  version: v0.1.4
+  description: >
+    Kubernetes node mint infrastrukturális egység — machine konfiguráció, install,
+    kubelet, cross-domain referenciák (compute/network/storage).
+    Anchor: Talos MachineConfig v1alpha1 (dependency.yaml).
+    Mindig egy KubernetesCluster-hez tartozik.
+    v0.1.4: a kubernetes-adapter placeholder eltávolítva (issue #18
+    kapcsán talált, ugyanaz a hibaosztály, mint kubernetes-cluster-nél).
+    v0.1.3 szándékosan kihagyva — lásd kubernetes-cluster.v0.1.4 megjegyzését
+    a forrás cic-kubernetes @v0.1.3 regressziójáról (cic-kubernetes#3).
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - kubernetes
+    - node
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: schemas/aggregate/managed-entity.yaml
+
+  # ── PolicySurface ─────────────────────────────────────────────────────────────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: schemas/atomic/identity.yaml
+    kind: KubernetesNode
+    namespace: "cic:kubernetes"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: Kubernetes node infrastruktúra egység
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: schemas/aggregate/config-surface.yaml
+    nodes:
+
+      # ── Core (Talos machine.type) ─────────────────────────────────────────────
+      - name: machine_type
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: true
+        description: Node szerepe a clusterben
+        contract:
+          - type: enum
+            expression: [controlplane, worker]
+
+      - name: cluster_ref
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:kubernetes:KubernetesCluster"
+        role: reference
+        required_on_create: true
+        description: A KubernetesCluster CIC address-e amelyhez ez a node tartozik
+
+      # ── Install disk (Talos machine.install) ─────────────────────────────────
+      - name: install_disk
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: true
+        description: >
+          Boot disk eszköz path VAGY StorageResource CIC address.
+          Eszköz path: "/dev/sda" (Talos natív — legtöbb esetben ez)
+          CIC address: "hypervisor/proxmox-01/local-lvm/vm-100-disk-0" (opcionális)
+
+      # ── Node identitás (Talos machine.network.hostname) ──────────────────────
+      - name: hostname
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: false
+        description: "Node hostname (default: compute_ref alapján generált)"
+
+      # ── Kubelet konfiguráció (Talos machine.kubelet) ──────────────────────────
+      - name: kubelet
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        description: kubelet konfiguráció
+        properties:
+          - name: extra_args
+            shape_type: object
+            required_on_create: false
+            description: Extra kubelet argumentumok
+          - name: node_labels
+            shape_type: object
+            required_on_create: false
+            description: Kubernetes node label-ek (key-value map)
+          - name: node_taints
+            shape_type: collection
+            collection_variant: list
+            required_on_create: false
+            description: Kubernetes node taint-ek
+            item_fields:
+              - name: key
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: value
+                shape_type: scalar
+                scalar_type: string
+                required_on_create: false
+              - name: effect
+                shape_type: scalar
+                scalar_type: string
+                contract:
+                  - type: enum
+                    expression: [NoSchedule, PreferNoSchedule, NoExecute]
+
+      # ── OS szintű konfiguráció (Talos machine.sysctls, machine.time) ──────────
+      - name: sysctls
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        required_on_create: false
+        description: Kernel paraméterek (key-value map, pl. net.ipv4.ip_forward=1)
+
+      - name: ntp_servers
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        required_on_create: false
+        description: NTP szerver(ek) időszinkronizációhoz
+        item_fields:
+          - name: server
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+      # ── Certifikát SANok (Talos machine.certSANs) ────────────────────────────
+      - name: cert_sans
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        required_on_create: false
+        description: Extra TLS SAN-ek a node certifikáthoz
+        item_fields:
+          - name: san
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: schemas/aggregate/state-surface.yaml
+    source: "provider-specific — see binding_surface.adapter_capabilities on KubernetesCluster"
+    freshness:
+      ttl: 30s
+      strategy: event-driven
+    nodes:
+
+      # ── Materializált cross-domain referenciák (D-005) ───────────────────────
+      - name: compute_ref
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:compute:ComputeResource"
+        role: state
+        required_on_create: false
+        description: >
+          A tényleges ComputeResource CIC address-e amelyen ez a node fut.
+          Az adapter tölti ki miután a config materializálódott egy konkrét gépen.
+          Config-ban NEM szerepel — a Talos MachineConfig nem tudja melyik gépre megy (D-005).
+
+      - name: network_ref
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:network:NetworkInterface"
+        role: state
+        required_on_create: false
+        description: >
+          A node elsődleges hálózati interfészének CIC address-e (cic-network domain).
+          Az adapter tölti ki a materializáció után.
+
+      - name: node_status
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: true
+        description: Kubernetes node kondíció (kubectl get node STATUS)
+        contract:
+          - type: enum
+            expression: [Ready, NotReady, SchedulingDisabled, Unknown]
+
+      - name: kubelet_version
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: Futó kubelet verzió
+
+      - name: os_version
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: Node operációs rendszer verzió
+
+      - name: allocatable_cpu
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: operational
+        required_on_create: false
+        description: Schedulable CPU kapacitás (pl. "3920m")
+
+      - name: allocatable_memory
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: operational
+        required_on_create: false
+        description: Schedulable memória kapacitás (pl. "7.5Gi")
+
+      - name: allocated_pods
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        required_on_create: false
+        description: Aktuálisan futó Pod-ok száma
+
+      - name: conditions
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: state
+        required_on_create: false
+        description: Node condition-ök (MemoryPressure, DiskPressure, PIDPressure, Ready)
+        item_fields:
+          - name: type
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: status
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [True, False, Unknown]
+          - name: reason
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: schemas/aggregate/operation-surface.yaml
+    operations:
+
+      - name: cordon
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: true
+        description: Node megjelölése SchedulingDisabled — új Pod nem kerül rá
+        input: null
+        output:
+          - name: node_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: uncordon
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: true
+        description: Node visszaengedése a schedulingba
+        input: null
+        output:
+          - name: node_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: drain
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        description: Futó Pod-ok kitelepítése a node-ról (graceful)
+        input:
+          - name: grace_period_seconds
+            shape_type: scalar
+            scalar_type: integer
+            default: 60
+          - name: ignore_daemonsets
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+        output:
+          - name: evicted_pods
+            shape_type: scalar
+            scalar_type: integer
+
+      - name: reboot
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: node_reboot
+        description: Node újraindítása (graceful drain + reboot)
+        input:
+          - name: mode
+            shape_type: scalar
+            scalar_type: string
+            default: default
+            contract:
+              - type: enum
+                expression: [default, powercycle]
+        output: null
+
+      - name: upgrade
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: node_upgrade
+        description: Node OS/Kubernetes verzió frissítése
+        input:
+          - name: target_version
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: true
+        output:
+          - name: os_version
+            shape_type: scalar
+            scalar_type: string
+          - name: kubelet_version
+            shape_type: scalar
+            scalar_type: string
+
+      - name: reset
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: operation
+        idempotent: false
+        capability: node_reset
+        description: "Node visszaállítása gyári állapotba — MANUAL ONLY (confirm: mandatory)"
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            required_on_create: true
+          - name: graceful
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+        output: null
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: node-status-changed
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: warning
+        description: Node kondíció megváltozott
+        payload:
+          - name: previous_status
+            shape_type: scalar
+            scalar_type: string
+          - name: current_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: node-pressure-warning
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: threshold
+        severity: warning
+        description: Node erőforrás nyomás (MemoryPressure, DiskPressure, PIDPressure)
+        payload:
+          - name: condition_type
+            shape_type: scalar
+            scalar_type: string
+          - name: reason
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: schemas/atomic/address.yaml
+        schema_path: "/cic-kubernetes:clusters/cluster={provider}, {location}, {cluster_id}/nodes/node={id}"
+        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={provider}, {location}, {cluster_id}/nodes/node={id}"
+        logical_id: "cic:kubernetes:{provider}:{location}:{cluster_id}:node:{id}"
+        namespace: "cic:kubernetes"
+        key_fields:
+          - name: provider
+            type: string
+          - name: location
+            type: string
+          - name: cluster_id
+            type: string
+            description: A szülő KubernetesCluster id-ja
+          - name: id
+            type: string
+            description: Node neve (Kubernetes node name)
+    # v0.1.4 (issue #18 kapcsán): a korábbi `adapter: kubernetes-adapter`
+    # placeholder eltávolítva — ugyanaz a hibaosztály, mint a
+    # kubernetes-cluster.yaml-ben (lásd ott a részletes indoklást és a
+    # cic-kubernetes#3 hivatkozást). A `provider`-önkénti valódi
+    # adapter-mátrix a szülő KubernetesCluster.binding_surface-én él
+    # (adapter_capabilities.known_adapters) — a node ugyanazokat az
+    # adaptereket használja, amik a clustert kezelik, nincs itt külön
+    # node-szintű mátrixra szükség.
+
+# ── Relationships ─────────────────────────────────────────────────────────────
+relationships:
+  - name: member_of
+    from: KubernetesNode
+    to: KubernetesCluster
+    cardinality: many-to-one
+    via:
+      field: KubernetesNode.config_surface.cluster_ref
+    description: Minden node pontosan egy clusterhez tartozik.
+
+  - name: runs_on
+    from: KubernetesNode
+    to: ComputeResource
+    domain: cic-compute
+    cardinality: one-to-one
+    via:
+      field: KubernetesNode.state_surface.compute_ref
+    description: >
+      A node egy ComputeResource-on fut. State-surface-en jelenik meg —
+      az adapter tölti ki materializáció után (D-005).
