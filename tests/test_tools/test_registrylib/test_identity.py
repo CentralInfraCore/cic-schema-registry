@@ -16,6 +16,18 @@ spec:
 """)
 
 
+def _write_primitive(path, name, spec_kind):
+    """An AggregatePrimitive/AtomicPrimitive-shaped file — no spec.identity
+    block, as the real cic-primitives corpus writes them."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"""---
+metadata:
+  name: {name}
+spec:
+  kind: {spec_kind}
+""")
+
+
 def test_parse_pin_valid():
     p = parse_pin("cic:storage:StorageResource@v1.0.0")
     assert p.namespace == "cic:storage"
@@ -74,3 +86,49 @@ def test_resolve_known_type_missing_version_raises(tmp_path):
     index = build_type_index(tmp_path)
     with pytest.raises(KeyError):
         resolve("cic:storage:StorageResource@v9.9.9", tmp_path, index)
+
+
+def test_aggregate_primitive_indexed_under_cic_core(tmp_path):
+    """ManagedEntity-shaped files carry no spec.identity block — real
+    compositions (cic-network's network-interface.yaml, cic-primitives'
+    own kubernetes-pod.yaml) reference them as "cic:core:ManagedEntity"
+    regardless, so the index must derive that key itself."""
+    schema_dir = tmp_path / "general" / "primitives" / "aggregate" / "managed-entity"
+    _write_primitive(
+        schema_dir / "managed-entity.v0.2.0-src2026.yaml",
+        "ManagedEntity",
+        "AggregatePrimitive",
+    )
+
+    index = build_type_index(tmp_path)
+    assert index["cic:core:ManagedEntity"] == schema_dir
+
+    resolved = resolve("cic:core:ManagedEntity@v0.2.0", tmp_path, index)
+    assert resolved.content_version == (0, 2, 0)
+
+
+def test_atomic_primitive_indexed_under_cic_core(tmp_path):
+    schema_dir = tmp_path / "general" / "primitives" / "atomic" / "shape"
+    _write_primitive(
+        schema_dir / "shape.v0.2.0-src2026.yaml", "Shape", "AtomicPrimitive"
+    )
+
+    index = build_type_index(tmp_path)
+    assert index["cic:core:Shape"] == schema_dir
+
+
+def test_domain_composition_identity_takes_precedence_over_primitive_fallback(
+    tmp_path,
+):
+    """A file that DOES declare spec.identity must be keyed by that, never
+    by the cic:core fallback — even if its spec.kind happened to collide
+    with a primitive kind (defensive; not expected in real content)."""
+    schema_dir = tmp_path / "general" / "storage" / "storage-resource"
+    _write(
+        schema_dir / "storage-resource.v1.0.0-src2026.yaml",
+        "cic:storage",
+        "StorageResource",
+    )
+    index = build_type_index(tmp_path)
+    assert "cic:core:StorageResource" not in index
+    assert index["cic:storage:StorageResource"] == schema_dir
