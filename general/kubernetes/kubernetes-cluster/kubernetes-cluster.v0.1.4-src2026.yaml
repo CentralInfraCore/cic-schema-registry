@@ -1,12 +1,19 @@
 ---
 metadata:
   name: KubernetesCluster
-  version: v0.1.2
+  version: v0.1.4
   description: >
     Kubernetes cluster mint infrastrukturális egység — lifecycle, control plane
     konfiguráció, cluster networking, cert management.
     Anchor: Talos ClusterConfig v1alpha1 (dependency.yaml).
     Scope: cluster infrastruktúra. Workload management (Pod, Deployment, Service) NEM ide tartozik.
+    v0.1.4: capability-jelölés a control-plane mezőkön (issue #18) + a
+    kubernetes-adapter placeholder helyett valódi, provider-önkénti
+    adapter_capabilities mátrix (lásd README).
+    Megjegyzés: v0.1.3-at szándékosan kihagytuk — a forrás cic-kubernetes
+    repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
+    cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
+    elkerülése végett ez a fájl egyenesen v0.1.4-ként indul.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -113,7 +120,11 @@ spec:
         shape_type: object
         role: config
         required_on_create: false
-        description: API server konfiguráció
+        capability: control_plane_tuning
+        description: >
+          API server konfiguráció. capability: control_plane_tuning —
+          managed clusternél a szolgáltató kezeli, nem közvetlenül
+          állítható (issue #18).
         properties:
           - name: extra_args
             shape_type: object
@@ -135,7 +146,11 @@ spec:
         shape_type: object
         role: config
         required_on_create: false
-        description: etcd konfiguráció
+        capability: control_plane_tuning
+        description: >
+          etcd konfiguráció. capability: control_plane_tuning — managed
+          clusternél a szolgáltató kezeli, nem közvetlenül állítható
+          (issue #18).
         properties:
           - name: extra_args
             shape_type: object
@@ -151,7 +166,11 @@ spec:
         shape_type: object
         role: config
         required_on_create: false
-        description: Controller manager konfiguráció
+        capability: control_plane_tuning
+        description: >
+          Controller manager konfiguráció. capability:
+          control_plane_tuning — managed clusternél a szolgáltató kezeli
+          (issue #18).
         properties:
           - name: extra_args
             shape_type: object
@@ -162,7 +181,10 @@ spec:
         shape_type: object
         role: config
         required_on_create: false
-        description: Scheduler konfiguráció
+        capability: control_plane_tuning
+        description: >
+          Scheduler konfiguráció. capability: control_plane_tuning —
+          managed clusternél a szolgáltató kezeli (issue #18).
         properties:
           - name: extra_args
             shape_type: object
@@ -259,7 +281,7 @@ spec:
   # ── StateSurface ──────────────────────────────────────────────────────────────
   state_surface:
     aggregate_ref: schemas/aggregate/state-surface.yaml
-    source: kubernetes-adapter
+    source: "provider-specific — see binding_surface.adapter_capabilities on KubernetesCluster"
     freshness:
       ttl: 30s
       strategy: event-driven
@@ -431,13 +453,53 @@ spec:
               talos: Talos Linux alapú cluster
               kubespray: kubespray managed cluster
               k3s: k3s lightweight cluster
+              rke2: RKE2 (Rancher Kubernetes Engine 2) cluster
+              KORLÁT (issue #25): cloud-managed cluster (GKE/EKS/AKS/OKE/DOKS)
+              nem fér bele tisztán ebbe az egy mezőbe — a `provider` itt vagy
+              az önkezelt disztribúciót azonosítja (talos/kubespray/k3s/rke2),
+              vagy a cloud szolgáltatót (aws/gcp/azure/oci) azonosítaná, a
+              kettő ütközik. A storage/compute mintája (`backend`+`provider`
+              két mező) itt hiányzik — nem ez a fájl a helye ennek a
+              strukturális döntésnek, lásd #25.
           - name: location
             type: string
             description: Datacenter / site azonosítója ahol a cluster fut
           - name: id
             type: string
             description: Cluster egyedi neve (pl. prod-cluster-01)
-    adapter: kubernetes-adapter
+    # v0.1.4 (issue #18): a korábbi `adapter: kubernetes-adapter` egyetlen
+    # placeholder-mező volt, ami nem felelt meg egyik valódi adapternek sem
+    # (ugyanaz a hibaosztály, mint a már archivált cic-kubernetes repóban
+    # #3-ként dokumentált — a repó archiválása miatt ott már nem javítható,
+    # itt viszont igen). A kubernetes domain architektúrája ráadásul eleve
+    # nem egyetlen generikus adapterrel dolgozik (mint storage/compute egy
+    # AdapterContract-tal + backend enummal) — minden provider saját, önálló
+    # adapter-fájl (talos-adapter/kubespray-adapter/k3s-adapter/rke2-adapter).
+    # Egyetlen flat `adapter:` mezőnek itt sosem volt értelme — a
+    # `adapter_capabilities.known_adapters` az egyetlen helyes forrás.
+    adapter_capabilities:
+      description: >
+        A `provider` kulcs alapján az adaptert a known_adapters lista
+        azonosítja — nincs egyetlen generikus "kubernetes-adapter".
+        cloud-managed-adapter szándékosan NINCS ebben a listában, mert a
+        `provider` mező jelenlegi modellje nem tudja azonosítani (lásd #25).
+      known_adapters:
+        - name: talos-adapter
+          provider: talos
+          capabilities: [control_plane_tuning]
+        - name: kubespray-adapter
+          provider: kubespray
+          capabilities: [control_plane_tuning]
+        - name: rke2-adapter
+          provider: rke2
+          capabilities: [control_plane_tuning]
+        - name: k3s-adapter
+          provider: k3s
+          capabilities: []
+          note: >
+            Részleges implementáció (lásd az adapter saját leírását) —
+            control_plane_tuning támogatása nincs megerősítve, ezért itt
+            nem hirdetjük.
 
 # ── Relationships ─────────────────────────────────────────────────────────────
 relationships:

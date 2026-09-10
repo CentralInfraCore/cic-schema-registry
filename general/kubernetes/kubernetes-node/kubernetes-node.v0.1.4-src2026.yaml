@@ -1,12 +1,16 @@
 ---
 metadata:
   name: KubernetesNode
-  version: v0.1.2
+  version: v0.1.4
   description: >
     Kubernetes node mint infrastrukturális egység — machine konfiguráció, install,
     kubelet, cross-domain referenciák (compute/network/storage).
     Anchor: Talos MachineConfig v1alpha1 (dependency.yaml).
     Mindig egy KubernetesCluster-hez tartozik.
+    v0.1.4: a kubernetes-adapter placeholder eltávolítva (issue #18
+    kapcsán talált, ugyanaz a hibaosztály, mint kubernetes-cluster-nél).
+    v0.1.3 szándékosan kihagyva — lásd kubernetes-cluster.v0.1.4 megjegyzését
+    a forrás cic-kubernetes @v0.1.3 regressziójáról (cic-kubernetes#3).
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -167,7 +171,7 @@ spec:
   # ── StateSurface ──────────────────────────────────────────────────────────────
   state_surface:
     aggregate_ref: schemas/aggregate/state-surface.yaml
-    source: kubernetes-adapter
+    source: "provider-specific — see binding_surface.adapter_capabilities on KubernetesCluster"
     freshness:
       ttl: 30s
       strategy: event-driven
@@ -419,7 +423,14 @@ spec:
           - name: id
             type: string
             description: Node neve (Kubernetes node name)
-    adapter: kubernetes-adapter
+    # v0.1.4 (issue #18 kapcsán): a korábbi `adapter: kubernetes-adapter`
+    # placeholder eltávolítva — ugyanaz a hibaosztály, mint a
+    # kubernetes-cluster.yaml-ben (lásd ott a részletes indoklást és a
+    # cic-kubernetes#3 hivatkozást). A `provider`-önkénti valódi
+    # adapter-mátrix a szülő KubernetesCluster.binding_surface-én él
+    # (adapter_capabilities.known_adapters) — a node ugyanazokat az
+    # adaptereket használja, amik a clustert kezelik, nincs itt külön
+    # node-szintű mátrixra szükség.
 
 # ── Relationships ─────────────────────────────────────────────────────────────
 relationships:

@@ -1,11 +1,13 @@
 ---
 metadata:
   name: ComputeResource
-  version: v0.2.3
+  version: v0.2.5
   description: >
     Egységes compute erőforrás — hypervisor VM, bare metal fizikai szerver és cloud instance
     egyaránt leírható. A paradigma (vm/physical/cloud) az adapter és az address rétegben van,
     nem a config_surface-ben. Az adapter deklarálja a támogatott capability-ket.
+    v0.2.4: observed cpu/memory/disk kapacitás + must-kontraktus a kérthez képest — lásd issue #16.
+    v0.2.5: must-kontraktus a terminate confirm mezőn — lásd issue #17.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -203,6 +205,60 @@ spec:
         role: operational
         optional: true
 
+      # issue #16 — observed kapacitás, elkülönítve a kihasználtságtól
+      # (cpu_usage_pct lent): a resize leírása explicit megengedi, hogy az
+      # adapter a kérthez legközelebbi instance_type-ot válassza — enélkül
+      # a mező nélkül sehol nem jelenik meg strukturáltan, mennyi lett
+      # ténylegesen allokálva. A `must` kontraktus (Contract atom, meglévő
+      # típus) fejezi ki az elfogadható eltérést: csak felfelé térhet el.
+      - name: cpu_cores_actual
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        optional: true
+        description: >
+          Ténylegesen allokált CPU magok száma — instance_type lookup esetén
+          eltérhet a config_surface.cpu_cores-tól, de csak felfelé.
+        contract:
+          - type: must
+            expression: "cpu_cores_actual >= ../config_surface/cpu_cores"
+            error_message: >
+              A ténylegesen allokált CPU kevesebb, mint a kért — az adapter
+              instance_type lookup-ja csak felfelé térhet el a kérttől.
+
+      - name: memory_mb_actual
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        optional: true
+        description: >
+          Ténylegesen allokált memória MB-ban — instance_type lookup esetén
+          eltérhet a config_surface.memory_mb-től, de csak felfelé.
+        contract:
+          - type: must
+            expression: "memory_mb_actual >= ../config_surface/memory_mb"
+            error_message: >
+              A ténylegesen allokált memória kevesebb, mint a kért — az
+              adapter instance_type lookup-ja csak felfelé térhet el a kérttől.
+
+      - name: disk_gb_actual
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        optional: true
+        description: >
+          Ténylegesen allokált elsődleges lemezméret GB-ban — eltérhet a
+          config_surface.disk_gb-től, de csak felfelé (lásd StorageResource
+          "resize kizárólag növelhet" mintáját, issue #17).
+        contract:
+          - type: must
+            expression: "disk_gb_actual >= ../config_surface/disk_gb"
+            error_message: >
+              A ténylegesen allokált lemezméret kisebb, mint a kért.
+
       # capability: resource_metrics
       - name: cpu_usage_pct
         atomic_ref: schemas/atomic/shape.yaml
@@ -398,6 +454,16 @@ spec:
             shape_type: scalar
             scalar_type: boolean
             mandatory: true
+            # issue #17: mandatory:true eddig nem tiltotta a `false` értéket
+            # — a "MANUAL ONLY" szabály csak a leírásban élt. A `must` a
+            # Contract atom meglévő, dokumentált típusa (nem új primitívum),
+            # ugyanaz a minta, mint a StorageResource.delete-nél (v0.1.4).
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre — confirm: false nem elfogadható bemenet.
         output:
           - name: power_state
             shape_type: scalar
@@ -568,6 +634,9 @@ derivation_chain:
             config false;
             leaf power-state          { type enumeration { enum running; enum starting; enum stopping; enum stopped; enum paused; enum terminated; enum error; enum unknown; } }
             leaf uptime-seconds       { type uint64; }
+            leaf cpu-cores-actual     { type uint16; }
+            leaf memory-mb-actual     { type uint32; }
+            leaf disk-gb-actual       { type uint32; }
             leaf cpu-usage-pct        { type decimal64 { fraction-digits 2; } }
             leaf memory-usage-mb      { type uint32; }
             leaf hardware-health      { type enumeration { enum ok; enum degraded; enum critical; enum unknown; } }
@@ -637,6 +706,8 @@ derivation_chain:
     reconcile_loop: |
       1. observe:   adapter.get(backend, provider, location, id) → state_surface
       2. compare:   diff(config_surface, state_surface) → drift?
+                    v0.2.4: cpu_cores/memory_mb/disk_gb ellen a *_actual
+                    mezők a valódi összevetést adják, nem csak a usage_pct-et.
       3. if drift:
            power_state wrong  → start/stop
            cpu/memory changed → resize(cpu_cores, memory_mb) — adapter fordítja le platformra
@@ -647,3 +718,7 @@ derivation_chain:
       resize: az adapter dönti el a fordítási stratégiát —
         vm/physical/OCI flex: direkt cpu/memory spec,
         AWS/GCP/Azure fixed shapes: legközelebbi instance_type lookup.
+        A *_actual mezők must-kontraktusa (issue #16) csak azt zárja ki,
+        hogy KEVESEBB legyen allokálva a kértnél — a felfelé eltérés
+        (pl. a lookup egy nagyobb instance_type-ot talál) szándékosan
+        megengedett, nem hiba.

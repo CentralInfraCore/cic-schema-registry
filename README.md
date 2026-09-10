@@ -9,10 +9,10 @@ szabvány-alapú fragmentek, provider-specifikus leképezések) itt él, egyetle
 repóban, **egy séma = egy fájl** elven.
 
 **Ez a repó leváltja** a korábbi per-domain repókat (`cic-network`,
-`cic-compute`, `cic-kubernetes`, `cic-storage`, `cic-yang`, `CIC-Schemas`) —
-azok a tartalom átköltöztetése után archiválásra kerülnek. A provider-modulok
-**kódja** (pl. `cic-module-oracle-cloud`) NEM ide tartozik, marad a saját
-repójában — csak a séma-leírásaik.
+`cic-compute`, `cic-kubernetes`, `cic-storage`, `cic-yang`) — tartalmuk
+átköltözött, a repók archiválva. (`CIC-Schemas` más témájú, tartalma NEM lett
+migrálva.) A provider-modulok **kódja** (pl. `cic-module-oracle-cloud`) NEM
+ide tartozik, marad a saját repójában — csak a séma-leírásaik.
 
 A teljes tervezési dokumentáció: `cic-primitives` repó,
 `proposals/schema-registry/README.md`.
@@ -64,7 +64,8 @@ Részletek, indoklás, nyitott kérdések: `cic-primitives`
 ## Gyors start
 
 ```bash
-make validate    # séma validáció — ha ez nem zöld, semmi sem kész
+make validate            # örökölt bundle-check — jelenleg placeholder, nem validál érdemben
+make registry.validate   # base-chain coverage + verzió-evolúció — valódi, de lásd korlátait lent
 ```
 
 ---
@@ -75,8 +76,8 @@ make validate    # séma validáció — ha ez nem zöld, semmi sem kész
 |---|---|
 | `base-repo` | upstream — `schema-registry` flavor branch, `git remote base` |
 | `cic-primitives` | a tervezési döntések forrása (`proposals/schema-registry`) |
-| `cic-network`/`cic-compute`/`cic-kubernetes`/`cic-storage`/`cic-yang` | migráció forrása — tartalmuk ide költözik, majd archiválásra kerülnek |
-| `CIC-Schemas` | migráció forrása (pl. PostgreSQL séma-fragmentek → `standards/postgresql/`) |
+| `cic-network`/`cic-compute`/`cic-kubernetes`/`cic-storage`/`cic-yang` | migráció forrása — tartalmuk átköltözött, **mind archivált** |
+| `CIC-Schemas` | más témájú, tartalma **NEM** lett migrálva, nincs archiválva |
 | `cic-module-oracle-cloud` és jövőbeli provider-modulok | a `providers/` rétegben leírt sémák megvalósítói, `cic:provider` WASM ABI-n keresztül |
 | `CIC-Relay` | runtime — a provider-modulokat futtatja a registry sémái ellen |
 
@@ -87,8 +88,28 @@ make validate    # séma validáció — ha ez nem zöld, semmi sem kész
 | Elem | Státusz | Megjegyzés |
 |---|---|---|
 | Repó bootstrap (`base` remote, `schema-registry@0.1.0` merge) | **defined** | |
-| `general/`/`standards/`/`providers/` könyvtárstruktúra | **defined** | egyelőre üres (`.gitkeep`) |
-| Tényleges séma-tartalom migrálása | **not implemented** | a per-domain repókból még nem történt átköltöztetés |
-| `tools/compiler.py` kiterjesztése (base-chain coverage-check, major-verzió-szabályok, fájlonkénti aláírás) | **not implemented** | jelenleg az örökölt, bundle-alapú `compiler.py`/`infra.py` fut |
+| `general/`/`standards/`/`providers/` könyvtárstruktúra | **defined** | |
+| Séma-tartalom migrálása (kernel + 5 domain, 26 fájl) | **defined** | `cic-primitives`/`cic-compute`/`cic-storage`/`cic-kubernetes`/`cic-network`/`cic-yang`-ból; forrás-repók archiválva; `providers/` még üres |
+| `tools/registrylib/` (base-chain coverage, verzió-evolúció, kernel-identitás feloldás) + `registry_validate.py` CLI | **defined** | additív az örökölt `compiler.py`/`infra.py`-hoz, azt NEM helyettesíti; a jelenlegi corpuson 0 verzióátmenet fut le; az 5 domain-kompozíció `base:`-je pontos verzióra pin-el és fel is oldódik a kernel bundle-be, de a kernel `slots`/`fields`-alapú (nem surface node-lista), így a mezőkompatibilitás ellene EXPLICIT SKIPPED, nem lefutó check — lásd alul |
+| Örökölt `tools/compiler.py validate` (`run_validation()`) | **not implemented** | placeholder — betölt és logol, nem validál érdemben |
+| Fájlonkénti aláírás (`registry_sign.py` + `signing.py` + `vault-mtls-client`) | **defined**, élő teszttel bizonyítva | **de a 26 migrált fájl közül 1 van aláírva** (a `cic-primitives` bundle eredeti, forrásból hozott aláírása) — a `registry_sign.py` a másik 25-re még nem lett lefuttatva |
 | `renovate.json` egyedi manager a `base:`/`reference_target:` pin-ekhez | **not implemented** | |
-| CI (`.github/workflows/ci.yml`) a registry-specifikus szabályokra | **not implemented** | jelenleg az örökölt base-repo CI fut |
+| CI (`.github/workflows/ci.yml`) a registry-specifikus szabályokra | **defined** | `make validate` + `make registry.validate` (`--min-schemas=20` küszöbbel) most már lépés a workflow-ban — de a trigger továbbra is csak `main`/`master`-re irányuló push/PR, `devel`-en nem fut le |
+
+**Ismert, dokumentált rések a `registry_validate.py`-ban** (mind reprodukálva,
+lásd `CLAUDE.md` "Jelenlegi, valódi állapot"):
+
+- **Javítva**: az 5 domain-kompozíció `base:`-je pontos verzióra pin-el
+  (`cic:core:ManagedEntity@v0.2.0`), és `tools/registrylib/bundle.py` +
+  `identity.py` a kernel bundle `specs[]`-ébe mászva fel is oldja — ez most
+  már ténylegesen resolve-ol, és látszik a `SKIPPED` jelentésben (nem
+  csendben `continue`-ol tovább, mint korábban). A mezőkompatibilitás a
+  kernel ellen viszont még mindig nem fut le, mert a kernel típusai
+  `slots`/`fields`-en át írják le magukat, nem surface node-listákon —
+  ezt a check explicit, pontos okkal jelzi SKIPPED-ként.
+- `reference_target` mezőt semmi nem old fel
+- a mező-kompatibilitás surface-öket (config/state/operation/notification)
+  összemos, pusztán mezőnév alapján hasonlít — egy mező surface-ek közti
+  áthelyezése major-váltás nélkül átmegy
+- a `-src<év>` feloldás a legfrissebb évet numerikusan választja,
+  tanúsítvány/aláírás-érvényesség ellenőrzése nélkül

@@ -1,13 +1,14 @@
 ---
 metadata:
   name: StorageResource
-  version: v0.1.2
+  version: v0.1.3
   description: >
     Egységes block volume erőforrás — hypervisor-managed disk, SAN/iSCSI LUN és cloud
     block storage egyaránt leírható. A paradigma (hypervisor/san/cloud) az adapter és
     az address rétegben van, nem a config_surface-ben.
     Scope: kizárólag block volume lifecycle. Object storage, NFS/NAS és snapshot mint
     önálló resource NEM tartozik ide (D-001).
+    v0.1.3: attachments lista a multi_attach állapot leírására — lásd issue #15.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -157,7 +158,50 @@ spec:
         reference_target: "cic:compute:ComputeResource"
         role: state
         optional: true
-        description: A ComputeResource address-e amelyhez csatolva van
+        access:
+          conformance: deprecated
+        description: >
+          ELAVULT (v0.1.3) — csak single-attach (access_mode:
+          read_write_once) esetén megbízható, mert egyetlen ComputeResource
+          address-t tud visszaadni. multi_attach módban (read_only_many /
+          read_write_many) használd az attachments listát — ez a mező
+          onnantól tetszőleges egy csatolást ad vissza, nem a teljes
+          állapotot. Megtartva visszafelé kompatibilitás miatt, nem
+          törölve (issue #15).
+
+      # multi_attach — issue #15: attached_to (single string) nem tudja
+      # leírni több egyidejű csatolás állapotát, holott az access_mode
+      # explicit hirdeti a multi_attach capabilityt (read_only_many /
+      # read_write_many). Ez a lista minden aktuális csatolást felsorol,
+      # célponttal és saját állapottal — single-attach esetén legfeljebb
+      # egy eleme van.
+      - name: attachments
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: state
+        optional: true
+        description: >
+          Aktuális csatolások — minden csatolt ComputeResource saját
+          elemként, saját állapottal. Single-attach esetén legfeljebb egy
+          elem; multi_attach (read_only_many/read_write_many) esetén a
+          teljes csatolási állapot itt jelenik meg, az attached_to
+          mezővel szemben.
+        item_fields:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:compute:ComputeResource"
+            role: key
+            description: A csatolt ComputeResource address-e
+          - name: state
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [attached, detached, attaching, detaching, error, unknown]
+            description: Ennek az egy csatolásnak az állapota
 
       - name: size_actual_gb
         atomic_ref: schemas/atomic/shape.yaml
@@ -231,8 +275,23 @@ spec:
         atomic_ref: schemas/atomic/behavior.yaml
         type: operation
         idempotent: true
-        description: Volume lecsatolása
+        description: >
+          Volume lecsatolása. multi_attach esetén (state_surface.attachments
+          több elemű) target NEM opcionális a gyakorlatban — enélkül az
+          adapter nem tudja eldönteni, melyik csatolást szüntesse meg. Ezt
+          ma csak ez a leírás mondja ki, a séma nem kényszeríti ki
+          feltételesen kötelezőként (lásd issue #17 — hasonló, szövegben
+          élő garanciák a struktúra helyett).
         input:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:compute:ComputeResource"
+            optional: true
+            description: >
+              Melyik csatolást szüntesse meg — single-attach esetén
+              elhagyható, multi_attach esetén a gyakorlatban kötelező.
           - name: force
             shape_type: scalar
             scalar_type: boolean
@@ -426,7 +485,12 @@ derivation_chain:
           container state {
             config false;
             leaf attach-state   { type enumeration { enum attached; enum detached; enum attaching; enum detaching; enum error; enum unknown; } }
-            leaf attached-to    { type string; }
+            leaf attached-to    { type string; status deprecated; }  // v0.1.3: lásd list attachments
+            list attachments {
+              key target;
+              leaf target { type string; }
+              leaf state  { type enumeration { enum attached; enum detached; enum attaching; enum detaching; enum error; enum unknown; } }
+            }
             leaf size-actual-gb { type uint32; }
             leaf usage-bytes    { type uint64; }
             leaf iops-read      { type uint64; }
@@ -435,7 +499,7 @@ derivation_chain:
           }
 
           action attach  { input  { leaf target { type string; mandatory true; } } output { leaf attach-state { type string; } } }
-          action detach  { input  { leaf force  { type boolean; default false; } } output { leaf attach-state { type string; } } }
+          action detach  { input  { leaf target { type string; } leaf force { type boolean; default false; } } output { leaf attach-state { type string; } } }
           action delete  { input  { leaf confirm { type boolean; mandatory true; } } }
           action resize  { input  { leaf size-gb { type uint32; mandatory true; } } output { leaf size-actual-gb { type uint32; } } }
           action snapshot { input { leaf snapshot-name { type string; mandatory true; } } output { leaf snapshot-ref { type string; } } }
