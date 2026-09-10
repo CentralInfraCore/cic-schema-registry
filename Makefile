@@ -72,9 +72,18 @@ build: infra.build
 # Main Development Tasks
 # =============================================================================
 
+# --dry-run is unconditional here, not gated by $(DRY_RUN) — `validate`
+# never performs a release and should never need live Vault credentials
+# to run. Without it, tools/compiler.py's main() unconditionally
+# constructs a live VaultService for every subcommand (including
+# validate) and raises "Vault address and token must be provided for a
+# live run" the moment VAULT_ADDR/VAULT_TOKEN aren't set — which they
+# never are in CI (caught the hard way: this passed locally, where the
+# dev environment happens to have a live Vault mounted for the signing
+# work, and only failed once it actually ran in CI, see PR #30/#31).
 validate:
 	@echo "--- Validating all schemas against the meta-schema ---"
-	@docker compose exec builder python -m tools.compiler validate $(COMPILER_CLI_ARGS)
+	@docker compose exec builder python -m tools.compiler validate --dry-run $(COMPILER_CLI_ARGS)
 
 # registry.validate: the NEW, registry-specific checks (proposals/schema-registry)
 # — base-chain field coverage + major-version-gated evolution rules. Additive to
