@@ -7,7 +7,13 @@ providers — no committed index:
 1. schema evolution — within each schema's own directory, every step from
    one content version to the next (ignoring -src re-signs, which never
    change content) must respect the major-version-gated field rules
-   (tools/registrylib/coverage.py).
+   (tools/registrylib/coverage.py). A YANGBlock-kind file (standards/yang/)
+   uses `spec.config`/`spec.state` as direct lists, not the
+   DomainComposition dialect's `config_surface`/`state_surface` `nodes:`
+   wrapper that extract_fields() understands — running the check anyway
+   would silently compare 0 fields against 0 fields and report a
+   meaningless "OK", so these transitions are reported SKIPPED instead
+   (#28).
 
 2. base-chain coverage — every schema whose `spec.identity.base` is an
    exact-version pin must fully account for every field its resolved base
@@ -40,6 +46,18 @@ def _load(path: Path) -> dict:
     return yaml.safe_load(path.read_text()) or {}
 
 
+def _is_yang_block(doc: dict) -> bool:
+    """A YANGBlock-kind schema (standards/yang/) — `spec.config`/
+    `spec.state` are direct lists, not the DomainComposition dialect's
+    `config_surface`/`state_surface` `nodes:`-wrapped lists extract_fields()
+    knows how to read. extract_fields() silently returns {} for these, so
+    without this detector check_coverage() would compare 0 fields to 0
+    fields and report a trivially-true "OK" on every version transition —
+    the same false-confidence shape as the kernel-bundle case below, just
+    not yet flagged (#28)."""
+    return ((doc.get("spec") or {}).get("kind")) == "YANGBlock"
+
+
 def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
     problems: list[str] = []
     skipped: list[str] = []
@@ -61,6 +79,15 @@ def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
                     f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
                     f"v{'.'.join(map(str, new_cv))} — bundle-shaped file(s), "
                     "coverage/evolution check not yet implemented for this shape"
+                )
+                continue
+            if _is_yang_block(old_doc) or _is_yang_block(new_doc):
+                skipped.append(
+                    f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
+                    f"v{'.'.join(map(str, new_cv))} — YANGBlock-shaped "
+                    "file(s) (spec.config/spec.state, not "
+                    "config_surface/state_surface), field-coverage/"
+                    "evolution check not yet implemented for this dialect (#28)"
                 )
                 continue
             major_bump = old_cv[0] != new_cv[0]
