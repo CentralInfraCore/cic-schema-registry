@@ -21,8 +21,7 @@ spec:
   protocol: "hypervisor-api"
 
   operations:
-
-    observe:
+    - name: observe
       description: VM aktuális állapotának lekérdezése → state_surface
       input:
         - name: namespace
@@ -48,7 +47,7 @@ spec:
           type: list
           maps_to: state_surface.ip_addresses
 
-    apply:
+    - name: apply
       description: Config változás alkalmazása → config_surface → VM
       input:
         - name: cpu_cores
@@ -59,7 +58,7 @@ spec:
           maps_to: config_surface.memory_mb
       precondition: power_state == stopped
 
-    watch:
+    - name: watch
       description: Event stream feliratkozás — aszinkron állapotváltozások
       protocol: websocket
       events:
@@ -68,13 +67,13 @@ spec:
         - name: vm-error
           trigger: explicit
 
-    start:
+    - name: start
       description: VM indítása
       idempotent: true
       precondition: power_state == stopped
       postcondition: power_state == running
 
-    stop:
+    - name: stop
       description: VM leállítása
       idempotent: true
       input:
@@ -84,7 +83,7 @@ spec:
       precondition: power_state == running
       postcondition: power_state == stopped
 
-    restart:
+    - name: restart
       description: VM újraindítása
       idempotent: false
       input:
@@ -92,7 +91,7 @@ spec:
           type: boolean
           default: false
 
-    snapshot:
+    - name: snapshot
       description: VM pillanatkép készítése
       idempotent: false
       input:
@@ -103,7 +102,7 @@ spec:
         - name: snapshot_id
           type: string
 
-    migrate:
+    - name: migrate
       description: VM élő migráció másik hypervisorra
       idempotent: false
       input:
