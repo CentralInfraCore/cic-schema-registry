@@ -2,6 +2,7 @@ import yaml
 
 from tools.registry_validate import (
     _is_bundle,
+    _is_yang_block,
     _parse_min_schemas,
     check_base_references,
     check_schema_evolution,
@@ -38,6 +39,50 @@ def test_schema_evolution_skips_bundle_shaped_files_instead_of_false_passing(
     assert problems == []
     assert len(skipped) == 1
     assert "bundle-shaped" in skipped[0]
+
+
+def test_is_yang_block_detects_yang_dialect_shape():
+    assert _is_yang_block({"spec": {"kind": "YANGBlock", "config": []}})
+    assert not _is_yang_block({"spec": {"kind": "DomainComposition"}})
+    assert not _is_yang_block({"kind": "YANGBlock"})  # wrong nesting level
+    assert not _is_yang_block({})
+
+
+def test_schema_evolution_skips_yang_block_files_instead_of_false_passing(
+    tmp_path,
+):
+    """Before #28: extract_fields() doesn't know spec.config/spec.state
+    (direct lists, no config_surface/state_surface nodes: wrapper), so it
+    silently returned {} for both versions here and check_coverage()
+    reported a trivially-true "OK" — even though the fixture below actually
+    DROPS a field (oper_status) between versions, which the
+    DomainComposition dialect would flag as a hard "missing" violation."""
+    schema_dir = tmp_path / "standards" / "yang" / "ietf-interfaces-vlan"
+    _write(
+        schema_dir / "ietf-interfaces-vlan.v0.1.3-src2026.yaml",
+        "spec:\n"
+        "  kind: YANGBlock\n"
+        "  config:\n"
+        "    - name: vlan_id\n"
+        "      type: vlan-id\n"
+        "  state:\n"
+        "    - name: oper_status\n"
+        "      type: enum\n",
+    )
+    _write(
+        schema_dir / "ietf-interfaces-vlan.v0.1.4-src2026.yaml",
+        "spec:\n"
+        "  kind: YANGBlock\n"
+        "  config:\n"
+        "    - name: vlan_id\n"
+        "      type: vlan-id\n"
+        "  state: []\n",
+    )
+
+    problems, skipped = check_schema_evolution(tmp_path)
+    assert problems == []
+    assert len(skipped) == 1
+    assert "YANGBlock" in skipped[0]
 
 
 def test_base_references_skips_bundle_shaped_files(tmp_path):
