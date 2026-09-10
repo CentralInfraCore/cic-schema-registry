@@ -23,8 +23,7 @@ spec:
   protocol: "redfish-ipmi"
 
   operations:
-
-    observe:
+    - name: observe
       description: Fizikai szerver aktuális állapotának lekérdezése → state_surface
       input:
         - name: bmc_address
@@ -47,7 +46,7 @@ spec:
           maps_to: state_surface.cpu_temperature_celsius
           redfish_path: "/redfish/v1/Chassis/{id}/Thermal#Temperatures"
 
-    watch:
+    - name: watch
       description: IPMI SEL / Redfish SSE event stream
       protocol: redfish-sse
       fallback: ipmi-sel-polling
@@ -58,7 +57,7 @@ spec:
         - name: temperature-threshold-exceeded
           trigger: threshold
 
-    power_on:
+    - name: power_on
       description: Szerver bekapcsolása
       idempotent: true
       redfish_action: "POST /redfish/v1/Systems/{id}/Actions/ComputerSystem.Reset"
@@ -66,7 +65,7 @@ spec:
       ipmi_fallback: "ipmitool chassis power on"
       postcondition: power_state == on
 
-    power_off:
+    - name: power_off
       description: Szerver leállítása
       idempotent: true
       input:
@@ -79,14 +78,14 @@ spec:
       ipmi_fallback: "ipmitool chassis power off"
       postcondition: power_state == off
 
-    reset:
+    - name: reset
       description: Hard reset
       idempotent: false
       redfish_action: "POST /redfish/v1/Systems/{id}/Actions/ComputerSystem.Reset"
       redfish_body: '{"ResetType": "ForceRestart"}'
       ipmi_fallback: "ipmitool chassis power reset"
 
-    provision:
+    - name: provision
       description: OS telepítése PXE/network boot alapján
       idempotent: false
       input:

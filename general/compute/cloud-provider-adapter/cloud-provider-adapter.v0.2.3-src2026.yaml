@@ -45,8 +45,7 @@ spec:
         description: Instance azonosítója a provider rendszerében
 
   operations:
-
-    observe:
+    - name: observe
       description: Instance aktuális állapotának lekérdezése → state_surface normalizálva
       input: address
       output:
@@ -81,7 +80,7 @@ spec:
           optional: true
           maps_to: state_surface.spot_interrupted
 
-    watch:
+    - name: watch
       description: Aszinkron állapotváltozás stream — push vagy polling
       protocol: event-stream
       fallback: polling
@@ -92,13 +91,13 @@ spec:
         - name: spot-interrupted
           trigger: explicit
 
-    start:
+    - name: start
       description: Instance indítása
       idempotent: true
       precondition: power_state == stopped
       postcondition: power_state == running
 
-    stop:
+    - name: stop
       description: Instance leállítása
       idempotent: true
       input:
@@ -108,7 +107,7 @@ spec:
       precondition: power_state == running
       postcondition: power_state == stopped
 
-    restart:
+    - name: restart
       description: Instance újraindítása
       idempotent: false
       input:
@@ -118,7 +117,7 @@ spec:
       precondition: power_state == running
       postcondition: power_state == running
 
-    terminate:
+    - name: terminate
       description: Instance végleges törlése — IRREVERSIBLE, MANUAL ONLY
       idempotent: false
       input:
@@ -132,7 +131,7 @@ spec:
         Kizárólag explicit operátori megerősítéssel (confirm: true).
         Az objektum terminated állapotban marad amíg az adapter teljesen eltávolítja.
 
-    resize:
+    - name: resize
       description: >
         Erőforrás módosítása cpu_cores/memory_mb/disk_gb alapján.
         Az adapter dönti el a fordítási stratégiát:
