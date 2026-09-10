@@ -561,7 +561,6 @@ spec:
               physical: rack/zone azonosítója vagy "-" ha a datacenter kezeli
           - name: id
             type: string
-    adapter: compute-adapter
     adapter_capabilities:
       description: >
         Az adapter deklarálja a támogatott capability-ket a binding rétegben.
