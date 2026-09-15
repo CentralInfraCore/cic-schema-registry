@@ -6,6 +6,7 @@ from tools.registry_validate import (
     _parse_min_schemas,
     check_base_references,
     check_schema_evolution,
+    check_yang_extends,
     main,
 )
 
@@ -322,3 +323,138 @@ spec:
     )
     monkeypatch.chdir(tmp_path)
     assert main(["--min-schemas=1"]) == 0
+
+
+# ── check_yang_extends (#45) ─────────────────────────────────────────────────
+
+
+def _write_yang_block(path, *, extends=None, state_yaml=""):
+    extends_yaml = ""
+    if extends is not None:
+        extends_yaml = f"  extends:\n    name: {extends}\n    version: v0.0.dev\n"
+    _write(
+        path,
+        f"""---
+metadata:
+  name: {path.stem.split(".")[0]}
+spec:
+  kind: YANGBlock
+{extends_yaml}{state_yaml}
+""",
+    )
+
+
+def test_check_yang_extends_flags_a_silently_narrowed_inherited_enum(tmp_path):
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-base"
+        / "ietf-interfaces-base.v0.1.3-src2026.yaml",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down, testing, unknown, dormant, not_present, "
+            "lower_layer_down]\n"
+        ),
+    )
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-tunnel"
+        / "ietf-interfaces-tunnel.v0.1.3-src2026.yaml",
+        extends="ietf-interfaces-base",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down, unknown]\n"
+        ),
+    )
+
+    problems, skipped = check_yang_extends(tmp_path)
+
+    assert len(problems) == 1
+    assert "oper_status" in problems[0]
+    assert "ietf-interfaces-tunnel" in problems[0]
+
+
+def test_check_yang_extends_passes_once_values_are_acknowledged_not_implemented(
+    tmp_path,
+):
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-base"
+        / "ietf-interfaces-base.v0.1.3-src2026.yaml",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down, testing, unknown, dormant, not_present, "
+            "lower_layer_down]\n"
+        ),
+    )
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-tunnel"
+        / "ietf-interfaces-tunnel.v0.1.4-src2026.yaml",
+        extends="ietf-interfaces-base",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values:\n"
+            "        - up\n"
+            "        - down\n"
+            "        - unknown\n"
+            "        - value: testing\n"
+            "          conformance: not_implemented\n"
+            "        - value: dormant\n"
+            "          conformance: not_implemented\n"
+            "        - value: not_present\n"
+            "          conformance: not_implemented\n"
+            "        - value: lower_layer_down\n"
+            "          conformance: not_implemented\n"
+        ),
+    )
+
+    problems, skipped = check_yang_extends(tmp_path)
+
+    assert problems == []
+
+
+def test_check_yang_extends_ignores_a_block_that_does_not_extend_anything(tmp_path):
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-base"
+        / "ietf-interfaces-base.v0.1.3-src2026.yaml",
+        state_yaml="  state:\n    - name: oper_status\n      type: enum\n      values: [up, down]\n",
+    )
+
+    problems, skipped = check_yang_extends(tmp_path)
+
+    assert problems == []
+
+
+def test_check_yang_extends_flags_a_dangling_extends_reference(tmp_path):
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-tunnel"
+        / "ietf-interfaces-tunnel.v0.1.3-src2026.yaml",
+        extends="no-such-block",
+    )
+
+    problems, skipped = check_yang_extends(tmp_path)
+
+    assert len(problems) == 1
+    assert "no-such-block" in problems[0]

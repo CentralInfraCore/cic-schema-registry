@@ -27,6 +27,7 @@ has enough real version history to test against.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -109,7 +110,13 @@ def _shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def check_coverage(
-    old_doc: dict[str, Any], new_doc: dict[str, Any], *, major_bump: bool
+    old_doc: dict[str, Any],
+    new_doc: dict[str, Any],
+    *,
+    major_bump: bool,
+    check_missing: bool = True,
+    extract: Callable[[dict[str, Any]], dict[str, dict[str, Any]]] = extract_fields,
+    shape: Callable[[dict[str, Any]], tuple[Any, ...]] = _shape_signature,
 ) -> CoverageResult:
     """Compare an OLD version of a schema against a NEW version (either a
     later version of the same schema, or a derived schema's own declaration
@@ -119,15 +126,31 @@ def check_coverage(
     MAJOR — the caller is responsible for determining that from the two
     versions' `spec.identity.version`/filenames; this function only applies
     the resulting policy.
+
+    `check_missing=False` turns off the "every old field must still appear"
+    rule — needed for `extends` (YANGBlock, #45), whose inheritance model is
+    implicit full inheritance (a child's own field list holds only NEW or
+    OVERRIDDEN fields; everything else is inherited unchanged, so its
+    absence from the child's list is not a removal). `identity.base`
+    (DomainComposition, proposals/schema-registry §4) is the opposite —
+    explicit full restatement is required there — so its callers keep the
+    default `True`.
+
+    `extract`/`shape` are pluggable so the same missing/mutated logic
+    serves both field vocabularies (DomainComposition's `shape_type`/
+    `scalar_type`/`nodes:`-wrapped surfaces vs. YANGBlock's `type`/
+    `item_type`/direct `config`/`state` lists) without duplicating the
+    comparison itself — see extract_yang_fields()/yang_shape_signature()
+    below.
     """
-    old_fields = extract_fields(old_doc)
-    new_fields = extract_fields(new_doc)
+    old_fields = extract(old_doc)
+    new_fields = extract(new_doc)
     result = CoverageResult()
 
     for name, old_node in old_fields.items():
         new_node = new_fields.get(name)
         if new_node is None:
-            if not major_bump:
+            if check_missing and not major_bump:
                 result.violations.append(
                     Violation(
                         field=name,
@@ -142,17 +165,93 @@ def check_coverage(
                 )
             continue  # removed at a major bump: allowed, nothing further to check
 
-        if _shape_signature(old_node) != _shape_signature(new_node) and not major_bump:
+        if shape(old_node) != shape(new_node) and not major_bump:
             result.violations.append(
                 Violation(
                     field=name,
                     kind="mutated",
                     message=(
-                        f"field '{name}' changed shape/contract in place "
-                        f"({_SHAPE_KEYS} differ) without a MAJOR version bump — "
-                        "introduce a new field name instead, or deprecate this one"
+                        f"field '{name}' changed shape in place without a MAJOR "
+                        "version bump — introduce a new field name instead, or "
+                        "explicitly deprecate this one"
                     ),
                 )
             )
 
     return result
+
+
+# ── YANGBlock dialect (#28, #45) ────────────────────────────────────────────
+# spec.config/spec.state as direct lists (no config_surface/state_surface
+# nodes: wrapper), fields shaped with `type`/`item_type`/`values`, not
+# `shape_type`/`scalar_type`/`collection_variant`/`contract`.
+
+_YANG_LIST_KEYS = ("config", "state")
+
+# The sub-fields that define a YANGBlock field's "shape" for mutation
+# purposes, per cic-yang-block-schema's field_schema (standards/yang/
+# cic-yang-block-schema): `type` for the base type, `item_type` for list
+# element type. Enum `values` is handled separately, below
+# (_yang_enum_value_names) -- its vocabulary (the SET of legal values) is
+# what counts as the shape, not which of them a given block currently
+# implements; see that function's docstring for why a not_implemented
+# value must not read as a narrower vocabulary.
+_YANG_SHAPE_KEYS = ("type", "item_type")
+
+
+def extract_yang_fields(doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """extract_fields()'s counterpart for the YANGBlock dialect — flattens
+    spec.config + spec.state's direct lists into {field_name: field_dict}."""
+    spec = _spec_of(doc)
+    fields: dict[str, dict[str, Any]] = {}
+    for key in _YANG_LIST_KEYS:
+        nodes = spec.get(key)
+        if not isinstance(nodes, list):
+            continue
+        for node in nodes:
+            if isinstance(node, dict) and "name" in node:
+                fields[node["name"]] = node
+    return fields
+
+
+def _yang_enum_value_names(values: Any) -> tuple[str, ...] | None:
+    """Normalizes an enum `values` list to a sorted tuple of bare value
+    names, whichever of the Access atom's two equivalent forms each entry
+    uses (primitives-group/primitives/schemas/atomic/access.yaml):
+
+        - up                                   # short form
+        - value: testing                       # long form
+          conformance: not_implemented
+
+    Sorted (order-independent) and conformance-blind on purpose: the SHAPE
+    of an enum is the set of values it can legitimately take, not the order
+    they're declared in or which ones a given block currently implements.
+    A `not_implemented` value is still part of the vocabulary per the
+    Access atom's own definition ("field exists... but not on the device")
+    — narrowing which values a block IMPLEMENTS is not narrowing the
+    vocabulary itself, and must not read as a shape mutation (that's the
+    whole reason the not_implemented form exists instead of just deleting
+    the value)."""
+    if not isinstance(values, list):
+        return None
+    names = []
+    for entry in values:
+        if isinstance(entry, str):
+            names.append(entry)
+        elif isinstance(entry, dict) and "value" in entry:
+            names.append(entry["value"])
+        else:
+            return None  # malformed -- let the raw comparison below catch it
+    return tuple(sorted(names))
+
+
+def yang_shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
+    sig = tuple(node.get(k) for k in _YANG_SHAPE_KEYS)
+    values = node.get("values")
+    normalized = _yang_enum_value_names(values)
+    # normalized is None either for a non-enum field (no `values` at all)
+    # or a malformed one the normalizer couldn't parse -- fall back to
+    # comparing the raw structure in both cases, so a genuine format error
+    # still shows up as a mismatch instead of silently passing.
+    value_sig = normalized if normalized is not None else values
+    return sig + (value_sig,)
