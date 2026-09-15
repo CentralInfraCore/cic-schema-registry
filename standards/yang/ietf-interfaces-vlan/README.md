@@ -7,6 +7,18 @@ VLAN interfész — az RFC 8343 `ietf-interfaces-base` közös mezőit
 kiterjeszti. Lásd `../ietf-interfaces-base/README.md` a kiterjesztési
 mechanizmus és a `registrylib`-rés részleteiért.
 
+**⚠ [#47](https://github.com/CentralInfraCore/cic-schema-registry/issues/47)
+szerint két fogalmilag különböző dolgot ír le egy blokkban** — egy VLAN
+interfész-entitást (`vlan_id`, `name`, `dhcp_service`, `oper_status`,
+`mac_table_entries`) ÉS egy switchport VLAN policy-t (`vlan_mode`,
+`allowed_vlans`, `native_vlan`). Ez a fájl (`v0.1.5`) VÁLTOZATLAN marad —
+aláírt, lezárt — de a szétválasztott utódja már létezik:
+`../ietf-interfaces-l2vlan/` (interfész-entitás) +
+`../cic-switchport-vlan/` (port-policy). Az adapterek (`switch-netconf-
+adapter`, `ovs-adapter`) egyelőre még ezt a blokkot referenciázzák — az
+átállás egy külön, szándékosan nem itt elvégzett lépés (lásd a két új
+blokk README-jét).
+
 ## Eredet / provenance / aláírás-ellenőrzés
 
 Byte-azonos másolat `yang/@v0.1.3`-ból (`schemas/ietf/ietf-interfaces-

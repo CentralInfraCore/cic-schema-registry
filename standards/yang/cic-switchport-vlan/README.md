@@ -1,0 +1,38 @@
+# cic-switchport-vlan
+
+**Réteg:** `standards/yang/` — CIC-natív séma (nincs közvetlen RFC alap)
+**Kind:** `YANGBlock`, `standalone: false`, nincs `extends` — mixin-mintázat,
+ugyanaz mint `../ietf-ip-v4/`/`../ietf-ip-v6/`-nél.
+
+Switchport **VLAN policy** — `vlan_mode` (access/trunk/hybrid),
+`allowed_vlans`, `native_vlan`. Ez egy Ethernet/LAG **port**
+konfigurációja (mit enged be/ki taggelve/untaggelve), nem egy VLAN
+interfész-entitás saját tulajdonsága — ezért nincs saját interfész-
+identitása (`extends: ietf-interfaces-base` hiányzik szándékosan), mindig
+egy fizikai/LAG porthoz kompozit, ugyanúgy, ahogy `ietf-ip-v4`/`ietf-ip-v6`
+mindig egy interfészhez van kötve `extends` nélkül.
+
+## #47 — kiválasztva ietf-interfaces-vlan-ból
+
+Lásd `../ietf-interfaces-l2vlan/README.md` a testvér-blokk és a teljes
+indoklás részleteiért.
+
+**Tartalom-eredet:** byte-szintű részhalmaz `../ietf-interfaces-vlan/
+ietf-interfaces-vlan.v0.1.5-src2026.yaml`-ból — `vlan_mode`/
+`allowed_vlans`/`native_vlan` átemelve.
+
+## native_vlan — szándékosan eltávolított default
+
+A régi blokkban `native_vlan: default: 1` volt. A `#47` javaslata szerint
+ez túl erős, vendor-specifikus állítás egy standard building blockban
+(pl. Cisco "VLAN 1" konvenció — nem minden vendor/adapter ugyanezt
+feltételezi). Itt a `default` mező hiányzik — a defaultot az
+adapternek/vendor-profilnak kell megadnia, nem a sémának.
+
+**⚠ Adapter-migráció még nincs elvégezve.** Lásd
+`../ietf-interfaces-l2vlan/README.md`.
+
+Fájlonkénti release-aláírás: `v0.1.0` a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén).
