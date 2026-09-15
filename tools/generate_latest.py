@@ -40,6 +40,7 @@ ENROLLED = [
     "standards/yang/cic-yang-block-schema",
     "standards/yang/ietf-interfaces-tunnel",
     "standards/yang/ietf-interfaces-vlan",
+    "standards/yang/ietf-interfaces-physical",
 ]
 
 
