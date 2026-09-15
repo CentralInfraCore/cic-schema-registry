@@ -1,18 +1,22 @@
 ---
 metadata:
   name: ietf-lldp
-  source: RFC 8516 — A YANG Data Model for LLDP
-  version: v0.1.3
+  source: IEEE 802.1ABcu-2021 — LLDP YANG Data Model
+  version: v0.1.4
   description: >
     LLDP (Link Layer Discovery Protocol) building block — IEEE 802.1AB alapú
-    szomszéd discovery. RFC 8516 ietf-lldp YANG modul CIC adaptációja.
+    szomszéd discovery. ieee802-dot1ab-lldp YANG modul CIC adaptációja.
     Interface szinten konfigurálja az LLDP hirdetést és exposolja a felfedezett
     szomszédok adatait a state_surface-en.
+    v0.1.4: source/yang_source/yang_module javítva — a v0.1.3 tévesen
+    RFC 8516-ra hivatkozott (az egy CoAP hibakód, "Too Many Requests",
+    sosem volt LLDP YANG forrás). A helyes forrás IEEE 802.1ABcu-2021
+    (modul: ieee802-dot1ab-lldp). Lásd issue #42.
   owner: Gabor Zoltan Sinko
   tags:
     - yang-block
-    - ietf
-    - rfc8516
+    - ieee
+    - ieee8021ab
     - lldp
   validatedBy:
     name: cic-primitives
@@ -20,8 +24,8 @@ metadata:
 
 spec:
   kind: YANGBlock
-  yang_module: ietf-lldp
-  yang_source: RFC 8516
+  yang_module: ieee802-dot1ab-lldp
+  yang_source: IEEE 802.1ABcu-2021
   standalone: false     # mindig interfészhez kötött
 
   config:
@@ -30,21 +34,21 @@ spec:
       required_on_create: false
       default: true
       description: LLDP engedélyezése ezen az interfészen
-      origin: rfc8516
+      origin: ieee8021ab
 
     - name: lldp_transmit
       type: boolean
       required_on_create: false
       default: true
       description: LLDP PDU küldés engedélyezése
-      origin: rfc8516
+      origin: ieee8021ab
 
     - name: lldp_receive
       type: boolean
       required_on_create: false
       default: true
       description: LLDP PDU fogadás engedélyezése
-      origin: rfc8516
+      origin: ieee8021ab
 
     - name: lldp_tlvs
       type: list
@@ -53,13 +57,13 @@ spec:
       description: >
         Hirdetett TLV-k listája (management-address, port-description,
         system-capabilities, system-description, system-name)
-      origin: rfc8516
+      origin: ieee8021ab
 
   state:
     - name: lldp_neighbors
       type: list
       description: Felfedezett LLDP szomszédok listája
-      origin: rfc8516
+      origin: ieee8021ab
       item_fields:
         - name: chassis_id
           type: string

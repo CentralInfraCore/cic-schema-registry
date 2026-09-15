@@ -1,11 +1,14 @@
 ---
 metadata:
   name: cic-yang-block-schema
-  version: v0.1.3
+  version: v0.1.4
   description: >
     Meta-schema a cic-yang YANGBlock fájlok belső struktúrájának validálásához.
     Az index.yaml csak kind/yang_module/yang_source kötelezőségét ellenőrzi.
     Ez a schema a config/state/notifications mezők belső konzisztenciáját validálja.
+    v0.1.4: az origin enum (field_schema és notifications egyaránt) rfc8516
+    értéke ieee8021ab-re cserélve — a v0.1.3 tévesen engedte az rfc8516-ot
+    LLDP forrásként, ami valójában egy CoAP hibakód. Lásd issue #42.
   owner: Gabor Zoltan Sinko
   tags:
     - meta-schema
@@ -71,8 +74,12 @@ spec:
 
           origin:
             type: string
-            enum: [rfc8343, rfc8344, rfc8516, openconfig, cic-extension]
-            description: Mező eredete — RFC-ből jön vagy CIC normalizáció
+            enum: [rfc8343, rfc8344, ieee8021ab, openconfig, cic-extension]
+            description: >
+              Mező eredete — RFC-ből, IEEE szabványból, vagy CIC normalizációból.
+              rfc8516 szándékosan nincs itt: az egy CoAP hibakód (RFC 8516,
+              "Too Many Requests"), sosem volt LLDP YANG — lásd #42. Az LLDP
+              szabványos forrása IEEE 802.1ABcu-2021, nem IETF RFC.
 
           capability:
             type: string
@@ -230,7 +237,7 @@ spec:
                   type: string
                 origin:
                   type: string
-                  enum: [rfc8343, rfc8344, rfc8516, openconfig, cic-extension]
+                  enum: [rfc8343, rfc8344, ieee8021ab, openconfig, cic-extension]
                 payload:
                   type: array
                   items:
