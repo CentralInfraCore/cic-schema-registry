@@ -45,4 +45,17 @@ felett, mindkettő érvényes, ugyanaz a 2026-os CA-lánc, mint minden korábbi
 migrációnál. Itt (ellentétben a `cic-kubernetes` esettel) a legfrissebb
 tag (`v0.1.3`) MÁR rendben, teljes kettős aláírással rendelkezik.
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: még nincs, ez a fájl (`v0.1.4`) nincs
+felvéve a `tools/generate_latest.py` `ENROLLED` listájába.
+
+## v0.1.4 — mtu origin javítva ([#46](https://github.com/CentralInfraCore/cic-schema-registry/issues/46))
+
+A `config.mtu` mezőnek eddig egyáltalán nem volt `origin` mezője, miközben
+a fájl `source`/`tags` szinten RFC 8343-ra hivatkozik. Az RFC 8343 §4
+(Design) kifejezetten kimondja, hogy az `ifMtu` objektum NINCS leképezve
+az `ietf-interfaces` modulra — az MTU-t interfésztípus-specifikus
+modulokra hárítja (ami valójában az RFC 8344 `ietf-ip` cím-család-szintű
+`mtu` leafjeiben jelenik meg). A generikus `mtu` itt CIC normalizáció
+(egy interfész-szintű kényelmi egyszerűsítés), most `origin: cic-extension`
+jelöléssel. Az RFC-szöveg ténylegesen ellenőrizve (`rfc-editor.org/rfc/rfc8343.txt`),
+nem feltételezés alapján.

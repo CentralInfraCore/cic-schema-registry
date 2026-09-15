@@ -17,4 +17,26 @@ ellenőrzött, kettős aláírás, mint `../ietf-interfaces-base/`-nál.
 Fájlonkénti release-aláírás: `v0.1.4` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
-a fájl végén).
+a fájl végén). A `v0.1.5` (LATEST, lásd lent) még nincs aláírva.
+
+## v0.1.5 — speed/duplex origin javítva ([#46](https://github.com/CentralInfraCore/cic-schema-registry/issues/46))
+
+`config.speed`/`config.duplex` eddig `origin: rfc8343` volt. Ténylegesen
+ellenőrizve (`rfc-editor.org/rfc/rfc8343.txt`): az RFC 8343 normatív base
+modulban a `speed` leaf READ-ONLY (`config false`, "An estimate of the
+interface's current bandwidth"), nem konfigurálható; a konfigurálható
+`speed`/`duplex` pár kizárólag az RFC A. függelékének nem-normatív,
+illusztratív `ethernet` példamoduljában jelenik meg (`namespace
+http://example.com/ethernet`), nem magában az `ietf-interfaces` modulban.
+Mindkét mező most `origin: cic-extension`. A `state.speed_actual`
+megtartja az `rfc8343` origint — az az RFC saját READ-ONLY `speed`
+leaf-jének (`ifSpeed`/`ifHighSpeed`) valódi megfelelője.
+
+**Kapcsolódó, de itt szándékosan nem javított lelet:** `state.duplex_actual`
+és a `notifications: link-up`/`link-down` szintén `origin: rfc8343`-mal
+vannak jelölve, de az RFC 8343 normatív szövegében nincs `duplex` leaf a
+base modulban (csak a nem-normatív A. függelékben), és nincs YANG
+`notification` definíció sem (csak egy `link-up-down-trap-enable` SNMP
+trap-vezérlő config leaf). Ugyanaz a mintázat, mint a most javított
+mezőknél, de az `#46` eredeti scope-ja nem terjedt ki rájuk — külön
+issue-ban követendő.

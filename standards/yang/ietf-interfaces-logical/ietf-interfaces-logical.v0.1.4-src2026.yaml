@@ -1,0 +1,77 @@
+---
+metadata:
+  name: ietf-interfaces-logical
+  source: RFC 8343 — A YANG Data Model for Interface Management
+  version: v0.1.4
+  description: >
+    Logikai hálózati interfész building block — loopback, bridge (OVS/Linux),
+    önálló logikai interfészek. Fizikai szülő opcionális — létezhet standalone.
+    Kiterjeszti az ietf-interfaces-base közös mezőit.
+    v0.1.4: lower_layer_if/higher_layer_if origin cic-extension-re javítva —
+    RFC 8343 §3.3 kifejezetten kimondja, hogy nincs generikus konfigurációs
+    mechanizmus az interfész-rétegzésre (minden interfésztípus saját maga
+    definiálja), és a generikus higher-layer-if/lower-layer-if leaf-listák
+    az RFC-ben READ-ONLY (config false) állapot-nézetek, nem konfigurálható
+    mezők. Lásd issue #46.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - logical
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  extends:
+    name: ietf-interfaces-base
+    version: v0.0.dev
+  interface_types:
+    - softwareLoopback    # loopback interfész (RFC 8343)
+    - bridge              # Linux bridge / OVS bridge
+    - other               # általános logikai interfész (SVI, subinterface)
+
+  config:
+    - name: logical_type
+      type: enum
+      values: [loopback, bridge, subinterface, svi, other]
+      required_on_create: true
+      description: >
+        Logikai interfész altípusa (CIC-szintű pontosítás — nem ütközik a YANG
+        iana-if-type interface_types mezőjével).
+      origin: cic-extension
+
+    # Szülő-gyerek relációk — CIC generikus, írható változat
+    - name: lower_layer_if
+      type: list
+      item_type: interface-ref
+      required_on_create: false
+      description: >
+        Alsó réteg interfészek — bridge esetén tag/untag portok,
+        bond esetén taginterfészek, OVS bridge esetén az uplink fizikai port.
+        RFC 8343 §3.3: "There is no generic mechanism for how an interface
+        is configured to be layered on top of some other interface. It is
+        expected that interface-type-specific models define their own data
+        nodes for interface layering." Az RFC saját "lower-layer-if"
+        leaf-listája ezzel szemben generikus, de READ-ONLY (config false)
+        állapot-nézet — nem konfigurálható mező. A generikus, írható
+        lower_layer_if itt CIC egyszerűsítés (egy közös logical building
+        block minden altípushoz, típusonkénti saját config helyett), nem
+        RFC 8343 tartalom.
+      origin: cic-extension
+
+    - name: higher_layer_if
+      type: interface-ref
+      required_on_create: false
+      description: >
+        Felső réteg interfész — ha ez az interfész egy bridge portja vagy
+        egy fizikai interfész subinterface-e. Ugyanaz az indoklás, mint
+        lower_layer_if-nél: az RFC 8343 higher-layer-if generikus, de
+        READ-ONLY állapot-nézet, a konfigurálható rétegzés pedig
+        típusonként saját mechanizmust igényel — ez a mező CIC
+        egyszerűsítés.
+      origin: cic-extension
