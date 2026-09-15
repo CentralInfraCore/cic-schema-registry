@@ -180,3 +180,80 @@ def test_frozen_edits_ignores_files_outside_enrolled_dirs(tmp_path):
 
     # not enrolled -> not checked, even though it was edited in place
     assert check_no_frozen_edits(tmp_path, enrolled=["ietf-lldp"]) == []
+
+
+# ── gaining a release signature (tools/registry_sign.py, proposals/
+# schema-registry §5) is the one sanctioned exception to "never edit a
+# published file" -- born directly from signing ietf-nat AFTER #52 had
+# already enrolled it, which the checker (correctly, before this fix)
+# treated as a repeat of #49. ────────────────────────────────────────────
+
+
+def test_frozen_edits_clean_when_a_file_only_gains_a_release_signature(tmp_path):
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    # registry_sign.py's append_signature_blocks() -- appends release:/
+    # cic_countersign: at the top level, touches nothing else.
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n  sign: vault:v1:...\n"
+        "cic_countersign:\n  sign: vault:v1:...\n",
+    )
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == []
+
+
+def test_frozen_edits_still_flags_a_real_edit_disguised_next_to_a_signature(tmp_path):
+    """The exception is narrow: adding release:/cic_countersign: AND
+    changing something else at the same time must still be caught."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\n  source: RFC 8512\nspec:\n  kind: YANGBlock\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\n  source: WRONG CITATION\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n",
+    )
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
+        "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
+    ]
+
+
+def test_frozen_edits_flags_re_signing_an_already_signed_file(tmp_path):
+    """A file that already carries release:/cic_countersign: and gets
+    modified again (whatever the reason) is a real edit, not a first-time
+    signing -- the exception may fire once, not repeatedly."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add already-signed ietf-nat", cwd=tmp_path)
+
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: def456\n",
+    )
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
+        "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
+    ]
