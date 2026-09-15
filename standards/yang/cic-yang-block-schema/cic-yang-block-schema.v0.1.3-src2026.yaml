@@ -71,8 +71,12 @@ spec:
 
           origin:
             type: string
-            enum: [rfc8343, rfc8344, rfc8516, openconfig, cic-extension]
-            description: Mező eredete — RFC-ből jön vagy CIC normalizáció
+            enum: [rfc8343, rfc8344, ieee8021ab, openconfig, cic-extension]
+            description: >
+              Mező eredete — RFC-ből, IEEE szabványból, vagy CIC normalizációból.
+              rfc8516 szándékosan nincs itt: az egy CoAP hibakód (RFC 8516,
+              "Too Many Requests"), sosem volt LLDP YANG — lásd #42. Az LLDP
+              szabványos forrása IEEE 802.1ABcu-2021, nem IETF RFC.
 
           capability:
             type: string
@@ -230,7 +234,7 @@ spec:
                   type: string
                 origin:
                   type: string
-                  enum: [rfc8343, rfc8344, rfc8516, openconfig, cic-extension]
+                  enum: [rfc8343, rfc8344, ieee8021ab, openconfig, cic-extension]
                 payload:
                   type: array
                   items:
