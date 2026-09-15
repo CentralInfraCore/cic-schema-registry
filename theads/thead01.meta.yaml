@@ -54,20 +54,81 @@ rejected:
     bármelyike ki lenne kényszerítve. Ez saját, a threadben nem szereplő
     észrevétel."
 
+# ── Frissítve 2026-09-16 — a threadből nyitott issue-k és azok kimenete ──────
+resolved:
+  - issue: "#42"
+    cím: "ietf-lldp RFC 8516 -> IEEE 802.1ABcu-2021"
+    pr: "#49 (rosszul, helyben szerkesztve) -> #51 (helyreigazítva, v0.1.4)"
+    állapot: "zárva, main-en él"
+    megjegyzés: >
+      #49 a lezárt v0.1.3 fájlt szerkesztette helyben -- a user jelezte,
+      #51 byte-pontosan visszaállította és új v0.1.4 fájlba tette a
+      javítást. Ebből született #52 (LATEST.yaml + frozen-file guard).
+  - issue: "#52 (nem a threadből, a #49 hibájából született)"
+    cím: "LATEST.yaml generált marker + frozen-file kikényszerítés"
+    pr: "#52"
+    állapot: "zárva, main-en él, ietf-lldp-vel indult, azóta 5 könyvtárra bővült"
+  - issue: "#45"
+    cím: "extends override/refine/merge szemantika"
+    pr: "#54"
+    állapot: "zárva, main-en él"
+    megjegyzés: >
+      check_coverage() bekötve az extends-hez YANGBlock-tudatosan
+      (extract_yang_fields/yang_shape_signature/check_yang_extends).
+      A valódi corpuson lefuttatva azonnal elkapta a tunnel/vlan
+      oper_status 7->3 szűkítését -- javítva Access-atom conformance
+      jelöléssel, nem törléssel.
+  - issue: "#43"
+    cím: "Role enum -> cic-primitives@v0.2.0 három tengely"
+    pr: "#57"
+    állapot: "zárva (automatikusan, main-re mergelve), main-en él"
+    megjegyzés: >
+      A pontos instance-forma a proposals/atom-grammar/instance-grammar.
+      schema.yaml-ből átvéve, nem kitalálva. Adatmigráció nem kellett --
+      a corpuszon kizárólag `role: key` fordul elő, ami rövid alakként
+      változatlanul érvényes marad.
+  - issue: "#44"
+    cím: "physical dangling interface_type hivatkozás"
+    pr: "#58"
+    állapot: "zárva (automatikusan), main-en él"
+    megjegyzés: >
+      Az ietf-interfaces-logical logical_type mintáját követve valódi
+      config mező lett belőle.
+
+still_open:
+  - "#46 -- RFC provenance több mezőn: nem RFC-szöveg-szinten ellenőrizve,
+    csak elfogadott irányként kezelve, mielőtt bárki hozzányúl."
+  - "#47 -- VLAN interface-entity vs switchport-policy szétválasztás:
+    tervezési javaslat, nincs kezdve."
+  - "#48 -- dedikált NAT YANGBlock: tervezési javaslat, explicit nem-most
+    jelölve, RFC 8512-alapú."
+
 státusz:
   - "cic-primitives: aktív (nem archivált), devel HEAD a v0.2.0 release
     előtt jár (960ee0f), a Role három-tengelyes modellje kiadva."
   - "cic-yang (a standards/yang eredeti forrása): archivált, v0.1.3-on
     fagyott — a #19 VLAN-javítás (v0.1.4) csak a cic-schema-registry
     másolatában él, nincs visszavezetve."
-  - "standards/yang/ jelenlegi gépi lefedettsége: nulla — a #28
-    (registry_validate SKIPPED-fix) az egyetlen kód, ami egyáltalán
-    tudomást vesz a YANGBlock dialektusról, és az is csak kihagyja."
-  - "Ebből a threadből nyitott issue-k még nem lettek felvéve — az a
-    következő lépés (lásd a repo issue listáját thead01 után)."
+  - "standards/yang/ gépi lefedettsége már NEM nulla: check_yang_extends
+    (#45) valódi shape-diffet futtat az extends-kapcsolatokon, a
+    LATEST.yaml guard (#52) 5 könyvtáron kikényszeríti, hogy lezárt
+    verziófájlt senki ne szerkesszen helyben. A #28-as SKIPPED-jelzés
+    (evolution check YANGBlock-fájlokon belül) továbbra is fennáll --
+    az egy másik tengely (azonos séma egymást követő verziói), amit
+    check_yang_extends nem fed le."
+  - "devel branch megszűnt 2026-09-15-én (cic-factory/CIC/CLAUDE.md és
+    a repo saját döntése) -- minden PR mostantól közvetlenül main-t
+    célozza, ezért a Closes #N automatika végre valóban működik
+    (#43/#44 óta megfigyelve)."
 
 kapcsolódó:
-  - "standards/yang/ietf-lldp/ietf-lldp.v0.1.3-src2026.yaml"
-  - "standards/yang/cic-yang-block-schema/cic-yang-block-schema.v0.1.3-src2026.yaml"
-  - "standards/yang/ietf-interfaces-physical/ietf-interfaces-physical.v0.1.3-src2026.yaml"
+  - "standards/yang/ietf-lldp/ietf-lldp.v0.1.4-src2026.yaml"
+  - "standards/yang/cic-yang-block-schema/cic-yang-block-schema.v0.1.6-src2026.yaml"
+  - "standards/yang/ietf-interfaces-physical/ietf-interfaces-physical.v0.1.4-src2026.yaml"
+  - "standards/yang/ietf-interfaces-tunnel/ietf-interfaces-tunnel.v0.1.4-src2026.yaml"
+  - "standards/yang/ietf-interfaces-vlan/ietf-interfaces-vlan.v0.1.5-src2026.yaml"
+  - "tools/registrylib/coverage.py (extract_yang_fields, yang_shape_signature)"
+  - "tools/registry_validate.py (check_yang_extends)"
+  - "tools/generate_latest.py + tools/registrylib/latest.py (LATEST.yaml guard)"
   - "primitives-group/primitives/schemas/atomic/role.yaml (primitives/@v0.2.0)"
+  - "primitives-group/primitives/proposals/atom-grammar/instance-grammar.schema.yaml"
