@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI entrypoint for the registry-specific checks (proposals/schema-registry).
 
-Two independent checks, both driven purely by walking general/standards/
+Three independent checks, all driven purely by walking general/standards/
 providers — no committed index:
 
 1. schema evolution — within each schema's own directory, every step from
@@ -23,6 +23,13 @@ providers — no committed index:
    declare their shape via `slots`/`fields`, not surface node-lists, so
    coverage against them is reported SKIPPED, not silently passed.
 
+3. extends coverage (#45) — every YANGBlock whose `spec.extends` names a
+   parent block must not silently mutate a field it shares with that
+   parent (e.g. narrowing an inherited enum). Unlike `identity.base`
+   above, `extends` is implicit full inheritance, not explicit
+   restatement, so only the "mutated in place" rule applies, not "every
+   field must be restated".
+
 This does NOT replace `tools/compiler.py validate` (the inherited, bundle-
 oriented meta-schema check) — it is additive, and is not yet wired into
 `make validate`. See CLAUDE.md "Jelenlegi, valódi állapot".
@@ -37,7 +44,12 @@ import yaml
 
 from .registrylib.bundle import find_kernel_type
 from .registrylib.bundle import is_bundle as _is_bundle
-from .registrylib.coverage import check_coverage, extract_fields
+from .registrylib.coverage import (
+    check_coverage,
+    extract_fields,
+    extract_yang_fields,
+    yang_shape_signature,
+)
 from .registrylib.identity import build_type_index, iter_schema_dirs, parse_pin
 from .registrylib.paths import list_versions, resolve_pin
 
@@ -170,6 +182,76 @@ def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
     return problems, skipped
 
 
+def check_yang_extends(registry_root: Path) -> tuple[list[str], list[str]]:
+    """Every YANGBlock whose `spec.extends` names a parent block must not
+    silently mutate a field it shares with that parent (#45) -- e.g.
+    ietf-interfaces-tunnel narrowing the base's 7-value oper_status enum to
+    3 values, with nothing ever flagging it.
+
+    Unlike `identity.base` (check_base_references above, DomainComposition,
+    proposals/schema-registry §4), `extends` is implicit full inheritance:
+    a child's own config/state lists hold only its NEW or OVERRIDDEN
+    fields -- everything else is inherited unchanged, so a base field's
+    absence from the child's own list is not a removal. Only the
+    "mutated in place" rule applies here (check_coverage(...,
+    check_missing=False)); the "every field must be restated" rule is
+    deliberately not used.
+
+    `extends.version` is a placeholder (`v0.0.dev`) on every block in the
+    corpus today, not a real content-version pin like `identity.base` uses
+    -- there is nothing yet to parse as an exact version, so this resolves
+    to the base's LATEST content version instead. Once extends.version
+    pins are real, this should switch to resolve_pin() like
+    check_base_references() does, and stop being the odd one out."""
+    problems: list[str] = []
+    skipped: list[str] = []
+    yang_root = registry_root / "standards" / "yang"
+    for schema_dir in iter_schema_dirs(registry_root):
+        versions = list_versions(schema_dir)
+        newest = max(versions)
+        doc = _load(newest.path)
+        if not _is_yang_block(doc):
+            continue
+        extends = (doc.get("spec") or {}).get("extends")
+        if not isinstance(extends, dict):
+            continue  # e.g. ietf-interfaces-base itself: abstract, extends nothing
+        base_name = extends.get("name")
+        if not base_name:
+            problems.append(f"{newest.path}: extends block has no 'name'")
+            continue
+        base_dir = yang_root / base_name
+        base_versions = list_versions(base_dir)
+        if not base_versions:
+            problems.append(
+                f"{newest.path}: extends {base_name!r} — no such YANGBlock "
+                f"directory under {yang_root.relative_to(registry_root)}"
+            )
+            continue
+        base_version = max(base_versions)
+        base_doc = _load(base_version.path)
+        if not _is_yang_block(base_doc):
+            skipped.append(
+                f"{newest.path}: extends {base_name!r}, which is not itself "
+                "YANGBlock-kind — unexpected shape, skipped rather than "
+                "silently comparing 0 fields"
+            )
+            continue
+        result = check_coverage(
+            base_doc,
+            doc,
+            major_bump=False,
+            check_missing=False,
+            extract=extract_yang_fields,
+            shape=yang_shape_signature,
+        )
+        for violation in result.violations:
+            problems.append(
+                f"{newest.path} (extends {base_name}@"
+                f"{base_version.content_version_str}): {violation.message}"
+            )
+    return problems, skipped
+
+
 def _parse_min_schemas(argv: list[str]) -> int:
     """--min-schemas=N — a floor on how many schema directories this run
     must have scanned, so an accidentally-empty or broken checkout (wrong
@@ -207,8 +289,9 @@ def main(argv: list[str] | None = None) -> int:
 
     evolution_problems, evolution_skipped = check_schema_evolution(registry_root)
     base_problems, base_skipped = check_base_references(registry_root)
-    problems = evolution_problems + base_problems
-    skipped = evolution_skipped + base_skipped
+    extends_problems, extends_skipped = check_yang_extends(registry_root)
+    problems = evolution_problems + base_problems + extends_problems
+    skipped = evolution_skipped + base_skipped + extends_skipped
 
     if skipped:
         print("registry_validate: SKIPPED (unsupported shape, not a failure)")
