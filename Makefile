@@ -98,6 +98,17 @@ registry.validate:
 	@echo "--- Registry: base-chain coverage + version-evolution rules ---"
 	@docker compose exec builder python -m tools.registry_validate --min-schemas=20
 
+# registry.latest: guards the mistake #49 made — editing an already-published
+# -src<year>.yaml file in place instead of adding a new version file. Checks
+# (1) LATEST.yaml (tools/registrylib/latest.py) is up to date for every
+# enrolled schema dir, and (2) no enrolled, versioned file's content has
+# changed since the commit that first added it. ENROLLED in
+# tools/generate_latest.py starts at exactly one directory on purpose — see
+# #42/#49/#51 — extend it one schema at a time, not all at once.
+registry.latest:
+	@echo "--- Registry: LATEST.yaml drift + frozen-file guard ---"
+	@docker compose exec builder python -m tools.generate_latest --check
+
 release:
 ifeq ($(VERSION),)
 	$(error VERSION is required for the release command. Usage: make release VERSION=1.0.0)
