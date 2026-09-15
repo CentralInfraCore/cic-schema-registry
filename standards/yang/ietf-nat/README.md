@@ -30,4 +30,7 @@ Nem migrált tartalom — újonnan írva ebben a repóban, `issue #48` alapján,
 a `theads/thead01.txt` NAT-javaslatát követve. RFC 8512 modulnév
 (`ietf-nat`) ellenőrizve: [datatracker.ietf.org/doc/rfc8512](https://datatracker.ietf.org/doc/rfc8512/).
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: `v0.1.0` a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén).
