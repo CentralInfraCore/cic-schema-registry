@@ -6,12 +6,10 @@ on:
     branches:
       - main
       - master
-      - devel
   pull_request:
     branches:
       - main
       - master
-      - devel
 
 jobs:
   lint_and_test:
