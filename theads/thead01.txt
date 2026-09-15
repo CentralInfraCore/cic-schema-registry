@@ -1,0 +1,493 @@
+na jó akkor nézd meg
+https://github.com/CentralInfraCore/cic-schema-registry/tree/main/standards/yang könyvtárban levő schemalírásokat
+
+Megnéztem a teljes standards/yang készletet, a VLAN v0.1.3 → v0.1.4 változását is. Az összkép szerintem kifejezetten jó irány, de jelenleg ez még nem egy tisztán „standard YANG registry": inkább egy YANG-ból származtatott CIC-normalizációs réteg. Ezzel nincs baj — sőt CIC szempontból szerintem ez a helyes irány — csak ezt most még néhány helyen összemossa a metadata azzal, mintha közvetlen RFC-reprezentáció lenne.
+
+A három legfontosabb probléma közül az egyik konkrétan tárgyi hiba.
+
+Terület    Súly    Amit találtam
+ietf-lldp    P0    Az RFC 8516 nem LLDP YANG, hanem CoAP „Too Many Requests".
+cic-yang-block-schema    P0/P1    A role modell lemaradt a jelenlegi cic-primitives v0.2.0 mögött.
+ietf-interfaces-physical    P1    Feltételek hivatkoznak egy nem létező interface_type mezőre.
+inheritance    P1    extends.version: v0.0.dev, miközben tényleges verziózott base van.
+tunnel/VLAN    P1    Örökölt state mezők újradefiniálása explicit override-szemantika nélkül.
+RFC provenance    P1    Több CIC-normalizált mező origin: rfc... értéket kapott akkor is, amikor nem közvetlenül az RFC-ből származik.
+
+1. A meta-schema a legfontosabb javítandó pont
+
+A cic-yang-block-schema alapötlete szerintem nagyon jó: nem magát a YANG AST-t akarod tárolni, hanem egy CIC számára kezelhető köztes reprezentációt. Viszont a jelenlegi field_schema még a régi, egydimenziós Role-modellt fogadja:
+
+key | config | state | operational | reference
+
+miközben a jelenlegi cic-primitives v0.2.0 már helyesen három ortogonális tengelyre bontja ezt: authority = config/state/operational, structural = key/reference, lifecycle = derived/volatile.
+
+Ez nem kozmetikai eltérés. Például egy LLDP szomszédreferencia teljesen jogosan lehet egyszerre state + reference + volatile. A mostani YANGBlock nyelv ezt nem képes kifejezni.
+
+Ráadásul a meta-schema nested validációja túl sekély. Az item_fields csak type: array, nincs benne rekurzív $ref; az object properties csak type: object; a notification payload elemei gyakorlatilag tetszőleges objectek. Az enum esetén nincs kikényszerítve a values, listánál nincs megkövetelve item_type vagy item_fields, refnél nincs kötelező target_kind.
+
+Magyarul: a felszíni séma validnak tűnhet úgy is, hogy a belső szemantika hibás. Proof-chain szempontból ezt javítanám legelőször, mert különben pontosan, reprodukálhatóan tudsz aláírni egy gyengén validált állítást.
+
+2. Az ietf-interfaces-base jó bontás, de nem egészen RFC 8343
+
+A base struktúrája jó: name, description, enabled, majd read-only admin/oper state, MAC, last-change és statisztikák.
+
+Viszont az RFC 8343 valódi interface modelljében ott van a type, if-index, higher-layer-if, lower-layer-if, speed, és részletesebb counter-fa. A higher/lower-layer-if kifejezetten read-only state, a speed szintén read-only és bit/s egységű.
+
+Ehhez képest nálad:
+
+nincs közös interface_type;
+nincs if_index;
+nincs base higher_layer_if / lower_layer_if state;
+nincs RFC-s speed state;
+viszont van általános mtu, ami inkább az RFC 8344 IP address-family modelljében jelenik meg.
+
+Nem azt mondom, hogy az MTU-t vedd ki — CIC szempontból teljesen értelmes lehet ott. Azt mondom, hogy akkor legyen origin: cic-extension vagy valamilyen explicit derived_from, mert különben elveszítjük azt a nagyon értékes különbséget, hogy mit állít az eredeti standard, és mit normalizált rá CIC.
+
+3. A logical modellben van egy tényleges szemantikai keveredés
+
+Most a lower_layer_if és higher_layer_if a config alatt van, és origin: rfc8343.
+
+Az RFC 8343 pont azt mondja, hogy nincs generikus konfigurációs mechanizmus az interface layeringre; azt a konkrét interface-type modelleknek kell definiálniuk. A generikus higher-layer-if és lower-layer-if csak az eredmény read-only nézete.
+
+Tehát CIC-ben nyugodtan legyen konfigurálható alsó/felső kapcsolat, csak akkor én ezt így választanám szét:
+
+config.base_interface / member_interfaces → CIC/interface-specific intent
+
+és
+
+state.lower_layer_if / higher_layer_if → RFC 8343 observed topology.
+
+Ez egyébként nagyon szépen illene a CIC desired → observed → drift modelljébe.
+
+4. A physical sémában van egy konkrét referenciahiba
+
+A LAG mezők ezt használják:
+
+applicable_when.field: interface_type
+
+illetve required_when.field: interface_type.
+
+Csakhogy ilyen mező nincs sem a physical configban, sem a base-ben. Van egy top-level interface_types metadata-lista, de az nem instance-mező.
+
+Ez jelenleg szerintem egyszerűen dangling semantic reference.
+
+És van egy másik probléma: a konfigurálható speed és duplex origin: rfc8343. Az RFC 8343 normatív közös modelljében a speed read-only állapot; a konfigurálható Ethernet speed/duplex az RFC-ben példamodellként jelenik meg, nem az ietf-interfaces standard configjaként.
+
+Itt sokkal korrektebb lenne:
+
+origin: cic-extension
++
+derived_from/reference: RFC8343 Appendix A / IEEE model
+
+Így nem dobsz el semmilyen tudást, csak pontosabb lesz a provenance.
+
+5. Tunnel: jó modell, de ütközik az inheritance-szel
+
+A VXLAN/GRE/IPIP/Geneve blokk szerintem kifejezetten használható CIC absztrakció. Jó a required_when, capability, VNI, endpoint modell.
+
+Viszont a child újra definiálja az örökölt:
+
+oper_status
+és
+statistics
+
+mezőket. A base oper_status hét állapotú, a tunnel háromra szűkíti; a statistics szerkezete is megváltozik.
+
+A YANGBlock meta-schema viszont jelenleg nem definiálja, hogy az inheritance során ez:
+
+override, refinement, merge vagy schema error?
+
+Ezt determinisztikusan le kell zárni. CIC-nél én nem hagynék implicit shadowingot.
+
+6. VLAN: a v0.1.4 javítás jó, de két absztrakció csúszott össze
+
+A v0.1.4-ben a native_vlan már trunk + hybrid módban is használható, míg a v0.1.3 csak trunknál engedte. Ez szerintem helyes javítás, és a kommentben leírt indoklás is jó.
+
+A nagyobb kérdés viszont az, hogy a modell jelenleg két dolgot kever:
+
+VLAN interface: l2vlan, vlan_id, parent/base interface
+
+és
+
+switchport VLAN policy: access/trunk/hybrid, allowed_vlans, native_vlan.
+
+Az első egy interface entity. A második egy Ethernet/LAG port konfigurációja. A mostani blokk egyszerre próbál mindkettő lenni.
+
+Én ezt hosszabb távon szétválasztanám például ietf-interface-l2vlan és cic-switchport-vlan blokkokra. Ettől az adapter mapping is sokkal tisztább lesz.
+
+A native_vlan: default: 1-et is újragondolnám: ez elég erős konfigurációs állítás. Inkább adapter/vendor profile adjon defaultot, mint a standard building block.
+
+7. IPv4/IPv6: jó CIC host-network profile, de nem „csak RFC 8344"
+
+Ezek használhatók. DHCP, gateway, DNS, route, metric, overrides — egy host networking adapter számára kifejezetten praktikus struktúrák.
+
+Viszont az RFC 8344 alapmodellje enabled, forwarding, mtu, address és neighbor struktúrát definiál; nálad ehhez hozzájön Netplan-szerű DHCP/gateway/DNS/route modell, miközben néhány RFC-mező eltűnik.
+
+Ezért itt is inkább azt mondanám:
+
+„CIC IP profile derived from RFC 8344"
+
+és nem azt, hogy ez egyszerűen az ietf-ip leképezése.
+
+IPv6-nál különösen figyelnék az accept_ra-ra: nálad origin: rfc8344, de a Router Advertisement kezelés nem az RFC 8344 ietf-ip alapmodell része; a routing/RA modell külön RFC 8022-es vonalon van.
+
+A privacy_extensions pedig jó CIC egyszerűsítés, de az RFC 8344 részletesebben create-temporary-addresses és lifetime mezőkkel modellezi.
+
+Még egy gyakorlati hiba: a route listákban a to a key. Ez nem elég egyértelmű az ECMP/multiple-table világhoz, ahol ugyanahhoz a prefixhez több via, metric vagy table tartozhat.
+
+8. Az LLDP-t viszont tényleg azonnal javítanám
+
+A fájl ezt állítja:
+
+source: RFC 8516 — A YANG Data Model for LLDP
+és
+yang_module: ietf-lldp.
+
+Ez téves. RFC 8516 a CoAP „Too Many Requests" válaszkódról szól.
+
+Az LLDP szabványos YANG modellje az IEEE 802.1ABcu-2021 vonalon van, és az IEEE nyilvántartásában az ieee802-dot1ab-lldp.yang modul szerepel.
+
+Ráadásul ezt a hibát a meta-schema is bebetonozta, mert az origin enum explicit engedi az rfc8516 értéket.
+
+Ezt P0-nak venném, mert provenance-registryben a rossz forrásazonosító pont azt rontja el, amit bizonyítani akarunk.
+
+Mit csinálnék most?
+cic-yang-block-schema v0.2.0: igazítás cic-primitives v0.2.0 Role-modellhez, rekurzív field validáció, type-specifikus invariánsok és additionalProperties: false a kontrollált részeken.
+LLDP source correction: IEEE 802.1ABcu-2021 + valódi modulnév; rfc8516 törlése a provenance enumából.
+Inheritance formalizálás: extends valós verzióra pinelve; explicit extend/refine/override szemantika.
+Standard vs CIC-normalization szétválasztása: minden mezőn világos origin/derived_from; ne nevezzünk RFC-originnek olyat, amit CIC átalakított.
+Interface javítások: interface_type bekerül az alapmodellbe; generic layering state visszakerül; physical speed/duplex provenance javul; VLAN interface és switchport policy szétválik.
+Utána jöhet egy új YANG block release, és az egész készlet újravalidálása a jelenlegi cic-primitives v0.2.0 ellen.
+
+A lényeg: nem dobnám újra ezeket a sémákat. Az architektúra jó. A probléma inkább az, hogy időközben maga a CIC primitive grammar felnőtt a YANGBlock meta-schema fölé, és most a standards réteget utána kell húzni. A legérdekesebb része pedig pont az, hogy ha ezt megcsinálod, akkor már nem pusztán YANG-sémákat tárolsz: bizonyíthatóan meg tudod mondani egy CIC mezőről, hogy mely standardból jött, milyen normalizáción ment át, milyen authority/lifecycle szerepe van, és melyik adapter képes ténylegesen érvényesíteni. Ez már nagyon CIC.
+
+Igen. Ha NAT bekerül, akkor ne fél NAT legyen. A három alapműveletet külön szemantikával tenném bele:
+
+SNAT – explicit source address/port fordítás.
+DNAT – explicit destination address/port fordítás.
+MASQUERADE – dinamikus SNAT, ahol a kimenő interfész aktuális címe lesz a forrás.
+
+Az RFC 8512 már lefedi a NAT44/NAPT és destination NAT modellezést, valamint statikus és dinamikus mappingeket. A MASQUERADE viszont inkább runtime/vendor-operációs szemantika; Linux/nftables szerint konkrétan az SNAT speciális esete, ahol a source address automatikusan az output interface címe.
+
+Én ezért nem három külön YANGBlockot csinálnék, hanem egy rendes ietf-nat / CIC-normalizált NAT blokkot, amelyben a rule translation típusa egyértelmű:
+
+config:
+  - name: rules
+    type: list
+    item_fields:
+
+      - name: name
+        type: string
+        role: key
+
+      - name: translation_type
+        type: enum
+        values:
+          - snat
+          - dnat
+          - masquerade
+
+      - name: source_prefix
+        type: ip-prefix
+        required_on_create: false
+
+      - name: destination_prefix
+        type: ip-prefix
+        required_on_create: false
+
+      - name: protocol
+        type: enum
+        values: [tcp, udp, icmp, any]
+        default: any
+
+      - name: source_port
+        type: integer
+        required_on_create: false
+
+      - name: destination_port
+        type: integer
+        required_on_create: false
+
+      - name: inbound_interface
+        type: interface-ref
+        required_on_create: false
+
+      - name: outbound_interface
+        type: interface-ref
+        required_on_create: false
+
+      - name: translated_address
+        type: ip-address
+        required_on_create: false
+
+      - name: translated_port
+        type: integer
+        required_on_create: false
+
+És erre nagyon szigorú required_when/applicable_when szabályok kellenek.
+
+SNAT:
+
+source_prefix:       10.10.0.0/16
+outbound_interface:  wan0
+translated_address:  203.0.113.17
+
+→ 10.10.x.x → 203.0.113.17
+
+Nftables szemantikával ez ténylegesen snat to 203.0.113.17; az RFC 8512-ben pedig a basic NAT44/NAPT világába illeszkedik.
+
+DNAT:
+
+inbound_interface:    wan0
+destination_address:  203.0.113.17
+protocol:             tcp
+destination_port:     443
+
+translated_address:   10.10.20.15
+translated_port:      8443
+
+azaz:
+
+203.0.113.17:443
+        ↓
+10.10.20.15:8443
+
+Ez már a klasszikus port-forwarding is. RFC 8512 explicit Destination NAT támogatást definiál IP-re és destination portra.
+
+MASQUERADE viszont szándékosan ne kérjen translated_address-t:
+
+source_prefix:       10.10.100.0/24
+outbound_interface:  wan0
+translation_type:    masquerade
+
+jelentése:
+
+translated source =
+current address(wan0)
+
+Ez fontos különbség. A masquerade nem egyszerűen „SNAT más névvel": a fordítandó cím runtime binding az interfész aktuális címéhez. Emiatt DHCP-s/PPPoE-s/dinamikus WAN-on is helyesen működik. Az nftables dokumentációja is pontosan így definiálja.
+
+CIC szempontból ez különösen érdekes, mert:
+
+MASQUERADE rule
+       │
+       │ reference
+       ▼
+   Interface wan0
+       │
+       ▼
+ StateSurface.address
+       │
+       ▼
+ runtime translation
+
+Vagyis itt már van egy valódi state-dependent config semantic.
+
+És én még tovább vinném. Ha már NAT-ot rendesen modellezünk, ne álljunk meg a három elnevezésnél. A rule modell tudjon:
+
+SNAT
+├── single address
+├── address pool
+├── address + port
+└── address pool + port range
+
+DNAT
+├── address
+├── address + port
+├── port range
+└── prefix/static mapping
+
+MASQUERADE
+├── interface address
+├── optional port range
+├── random
+├── fully-random
+└── persistent
+
+A pooling és port translation is normális NAT-funkció; nftables explicit támogat source address poolokat és port range-eket, az RFC 8512 pedig NAPT/static mappings/port ranges modellezését is tartalmazza.
+
+A state oldal pedig legalább:
+
+state:
+  - name: active_mappings
+    type: list
+
+  - name: active_sessions
+    type: integer
+
+  - name: translated_packets
+    type: integer
+
+  - name: translated_octets
+    type: integer
+
+  - name: allocation_failures
+    type: integer
+
+Így CIC-ben már ezt is tudod ellenőrizni:
+
+INTENT
+10.10.100.0/24 → masquerade → wan0
+
+OBSERVED
+wan0 = 203.0.113.41
+active mappings = 37
+translated packets = 183420
+
+PROOF
+rule installed
+interface binding resolved
+translation operational
+
+És még egy fontos modellbeli döntés: SNAT/DNAT/MASQ legyenek semantic operations, ne Linux chain-nevek.
+
+Tehát CIC-ben:
+
+translation_type: snat
+
+és az adapter eldönti:
+
+nftables:
+   postrouting snat
+
+iptables:
+   POSTROUTING -j SNAT
+
+VyOS:
+   nat source rule
+
+FortiGate:
+   ippool / policy NAT
+
+OCI:
+   ahol az adott funkció egyáltalán leképezhető
+
+Ez illik igazán a CIC modellhez.
+
+Szóval a korábbi listát korrigálnám: NAT nem opcionális P1 mellékág, hanem az optimális network-domain készletben alapvető blokk, és minimum a teljes SNAT + DNAT + MASQUERADE/NAPT szemantikát lefedném. Sőt, ha most egyszer megcsináljuk, rögtön beletenném a pool/port-range/state mapping modellt is, hogy később emiatt se kelljen visszajönni.
+
+ez durván hány sor lesz tipped szerint?
+
+Ha most kifejezetten a teljes NAT YANGBlockra gondolsz — SNAT + DNAT + MASQUERADE, poolokkal, port range-ekkel, feltételekkel és state-tel — akkor én kb. 350–500 sor YAML-ra számítanék.
+
+Durván így oszlana meg:
+
+metadata + alapstruktúra: ~30–40 sor
+közös rule selectorok: ~70–100
+SNAT specifikus rész: ~50–70
+DNAT specifikus rész: ~60–80
+MASQUERADE: ~30–50
+address/port pool struktúrák: ~50–70
+applicable_when / required_when / contractok: ~50–80
+state / counters / active mappings: ~60–100
+
+Tehát egy rendesen megírt, nem összecsapott NAT blokk ~400 sor körül szerintem teljesen reális.
+
+Viszont ha arra gondolsz, amit az előbb „optimális network vocabularyként" összeraktunk — vagyis a mostani interface/VLAN/IP mellé:
+
+system
+NTP
+LACP
+bridge
+STP
+switchport
+network-instance
+routing
+IPv4/IPv6 routing
+routing-policy
+OSPF
+BGP
+BFD
+VRRP
+DHCPv4 server
+DHCPv4 relay
+DHCPv6 server
+DHCPv6 relay
+DNS
+ACL
+stateful firewall
+NAT
+QoS
+topology
+L2 topology
+L3 topology
+...
+
+akkor az már más nagyságrend.
+
+Tippem: 8 000–12 000 sor YAML.
+
+És ha nem csak skeleton, hanem olyan részletességűek lesznek, mint a mostani sémáid, rendes descriptionökkel, provenance-szal, config/state bontással, feltételekkel és capabilitykkel, akkor inkább 10–15 ezer sor.
+
+Ez elsőre soknak hangzik, de ~25–30 blokkra szétdobva csak:
+
+300–500 sor/blokk átlagosan.
+
+A komolyabbak:
+
+BGP                 800–1200
+OSPF                600–900
+stateful firewall   500–800
+NAT                 350–500
+DHCP server         400–600
+routing-policy      500–700
+QoS                 500–800
+
+A kisebbek meg:
+
+NTP                 150–250
+VRRP                250–350
+BFD                 250–400
+DHCP relay          200–300
+network-instance    250–400
+
+Tehát szerintem ~12 000 sor környéke lenne a reális cél, ha egyszer rendesen akarjuk lezárni a network domain első komoly verzióját.
+
+És ebben pont igazad van: AI-val 12 ezer strukturált YAML sor legenerálása és konzisztenciaellenőrzése sokkal kisebb probléma, mint fél év alatt négyszer visszajönni és mindig újra felvenni, hogy „na hol tartottunk a routing-policy/BGP/NAT viszonnyal?"
+
+ez hány A4 oldal lenne?
+
+Ha a ~12 000 sor YAML-ra gondolunk, akkor A4-ben, kódformátumban ez nagyjából 200–270 oldal lenne.
+
+Reális tördeléssel egy A4-es oldalon kb. 45–60 kódsor fér el 9–10 pontos monospace betűvel. Így:
+
+8 000 sor → kb. 135–180 oldal
+10 000 sor → kb. 170–220 oldal
+12 000 sor → kb. 200–270 oldal
+15 000 sor → kb. 250–330 oldal
+
+Tehát az általunk felvázolt optimális network YANGBlock készlet fizikailag már egy ~250 oldalas műszaki specifikáció nagyságrendje lenne.
+
+És ebben még nincs külön dokumentáció, diagram, példa-konfiguráció vagy magyarázó README — csak maga a strukturált schema YAML. Ha ezeket is hozzászámoljuk, könnyen 300–400 A4 oldalnyi anyag lesz belőle.
+
+---
+
+[Claude Sonnet 5 review, 2026-09-15]
+
+A user kérésére ellenőriztem a fenti anyag legkeményebb, tényszerű állításait,
+mielőtt bármit elhinnék belőle:
+
+- RFC 8516 valóban NEM LLDP — WebSearch-csel megerősítve: "'Too Many Requests'
+  Response Code for the Constrained Application Protocol" (CoAP hibakód).
+  https://www.rfc-editor.org/rfc/rfc8516.html
+- RFC 8512 valóban NAT/NPT YANG modul — megerősítve.
+  https://datatracker.ietf.org/doc/html/rfc8512
+- A cic-primitives v0.2.0 Role-modell háromtengelyes felbontása NEM feltételezés:
+  lekértem az élő (nem archivált) cic-primitives repót, van kiadott
+  `primitives/@v0.2.0` tag, és a schemas/atomic/role.yaml SZÓ SZERINT ezt a
+  három tengelyt (authority/structural/lifecycle) tartalmazza, ugyanazzal a
+  "last seen peer" indoklással, mint amit a fenti anyag idéz.
+- A dangling `interface_type` hivatkozást én magam is megtaláltam, függetlenül,
+  a mai session korábbi részében, mielőtt ezt az anyagot megkaptam volna.
+- A `speed`/`duplex` RFC 8343-hoz kötésének pontossága (state vs config az
+  eredeti szövegben) NEM lett RFC-szöveg szintjén ellenőrizve — elfogadott
+  irányként, nem tényként kezelve.
+
+Saját észrevétel, amit az anyag nem tárgyal: a mai session grep-elte a teljes
+`tools/`-t — semmilyen kód nem olvassa a `yang_refs`/`yang_composition`/
+`applicable_when`/`required_when`/`contract` mezőket. A standards/yang réteg
+ma tisztán dokumentáció, semmi nem kényszeríti ki gépileg. A meta-séma-javítás
+és a tartalmi javítások helyesek és jó irányba mutatnak, de a 12 000 soros
+teljes network vocabulary bővítés korai, amíg a jelenlegi ~950 sor sincs
+gépileg kikényszerítve — ez egy önálló, nyitott kérdés, nem ennek a theadnek
+a lezárása dönti el.

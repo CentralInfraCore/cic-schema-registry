@@ -1,0 +1,73 @@
+thread: thead01
+status: reviewed
+date_reviewed: 2026-09-15
+
+summary: |
+  thead01 a standards/yang/ teljes készletét vizsgálta — a 9 YANGBlock fájlt
+  és a v0.1.3→v0.1.4 VLAN-javítást (#19). Két kör: egy külső, részletes
+  hiba- és javaslat-lista, majd egy tényellenőrző review (Claude Sonnet 5),
+  ami a legkeményebb állításokat külön forrásból (WebSearch, élő
+  cic-primitives repo) igazolta, mielőtt bármit elfogadott volna belőle.
+
+accepted:
+  - "ietf-lldp: source: RFC 8516 téves — RFC 8516 a CoAP \"Too Many Requests\"
+    válaszkód, nem LLDP. Megerősítve: rfc-editor.org/rfc/rfc8516"
+  - "cic-yang-block-schema role enumja (key/config/state/operational/reference,
+    5 érték) lemaradt a kiadott cic-primitives@v0.2.0 mögött, ami a Role-t
+    három ortogonális tengelyre bontja: authority (config/state/operational),
+    structural (key/reference), lifecycle (derived/volatile). Megerősítve
+    az élő (nem archivált) cic-primitives repóban, primitives/@v0.2.0 tag,
+    schemas/atomic/role.yaml — szó szerint ugyanaz az indoklás és példa
+    (\"last seen peer\" / LLDP-szomszéd), mint amit a thead independensen adott."
+  - "ietf-interfaces-physical: a lag_members/lag_mode applicable_when/
+    required_when egy nem létező interface_type mezőre hivatkozik — sem a
+    base, sem a physical config nem definiálja instance-mezőként (csak egy
+    top-level spec.interface_types metadata-lista van). Ezt a session
+    korábbi részében, függetlenül is megtaláltam."
+  - "A YANGBlock extends mechanizmusnak nincs definiált override/refine/merge
+    szemantikája — a tunnel és a vlan blokk csendben újradefiniálja az
+    örökölt oper_status-t (7 érték -> 3, ill. máshogy) és statistics-et,
+    anélkül hogy a meta-séma megmondaná, ez engedélyezett shadowing-e vagy
+    hiba."
+  - "extends.version: v0.0.dev minden konkrét blokkban, miközben van valódi,
+    verziózott base (ietf-interfaces-base v0.1.3) — nincs valós pin."
+  - "Több CIC-normalizált mező (mtu a base-ben, speed/duplex a physicalben)
+    origin: rfc8343-at kap, holott ezek RFC-appendix-példák vagy CIC-bővítés,
+    nem a normatív bázis-modell része. Ez a konkrét RFC-szöveg-szintű
+    részlet NEM lett külön ellenőrizve, csak elfogadott irányként kezelve."
+  - "RFC 8512 valóban NAT/NPT YANG modul (SNAT/DNAT/NAPT, statikus+dinamikus
+    mapping) — a NAT-javaslat alapja valós. Megerősítve: datatracker.ietf.org/doc/html/rfc8512"
+  - "Design-javaslat: ietf-interfaces-vlan kettéválasztása interface-entity
+    (l2vlan, vlan_id) és switchport-policy (access/trunk/hybrid,
+    allowed_vlans, native_vlan) blokkra — koherens irány, nincs kezdve."
+  - "Design-javaslat: dedikált NAT YANGBlock (SNAT/DNAT/MASQUERADE,
+    RFC 8512-alapú, pool/port-range/state modellel) — koherens irány,
+    nincs kezdve."
+
+rejected:
+  - "A 12 000 soros / 25-30 blokkos \"teljes network vocabulary\" bővítés
+    MOST, ebben a körben — nem azért mert rossz irány, hanem mert semmilyen
+    kód nem olvassa ma a standards/yang/ tartalmát (grep-elve tools/*.py +
+    tools/registrylib/*.py: yang_refs/yang_composition/applicable_when/
+    required_when/contract egyike sem gépi). A mennyiségi bővítés tízszeresére
+    növelné az ellenőrizetlen dokumentációt, mielőtt a meglévő ~950 sor
+    bármelyike ki lenne kényszerítve. Ez saját, a threadben nem szereplő
+    észrevétel."
+
+státusz:
+  - "cic-primitives: aktív (nem archivált), devel HEAD a v0.2.0 release
+    előtt jár (960ee0f), a Role három-tengelyes modellje kiadva."
+  - "cic-yang (a standards/yang eredeti forrása): archivált, v0.1.3-on
+    fagyott — a #19 VLAN-javítás (v0.1.4) csak a cic-schema-registry
+    másolatában él, nincs visszavezetve."
+  - "standards/yang/ jelenlegi gépi lefedettsége: nulla — a #28
+    (registry_validate SKIPPED-fix) az egyetlen kód, ami egyáltalán
+    tudomást vesz a YANGBlock dialektusról, és az is csak kihagyja."
+  - "Ebből a threadből nyitott issue-k még nem lettek felvéve — az a
+    következő lépés (lásd a repo issue listáját thead01 után)."
+
+kapcsolódó:
+  - "standards/yang/ietf-lldp/ietf-lldp.v0.1.3-src2026.yaml"
+  - "standards/yang/cic-yang-block-schema/cic-yang-block-schema.v0.1.3-src2026.yaml"
+  - "standards/yang/ietf-interfaces-physical/ietf-interfaces-physical.v0.1.3-src2026.yaml"
+  - "primitives-group/primitives/schemas/atomic/role.yaml (primitives/@v0.2.0)"
