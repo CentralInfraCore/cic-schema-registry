@@ -15,9 +15,9 @@ interfész-entitást (`vlan_id`, `name`, `dhcp_service`, `oper_status`,
 aláírt, lezárt — de a szétválasztott utódja már létezik:
 `../ietf-interfaces-l2vlan/` (interfész-entitás) +
 `../cic-switchport-vlan/` (port-policy). Az adapterek (`switch-netconf-
-adapter`, `ovs-adapter`) egyelőre még ezt a blokkot referenciázzák — az
-átállás egy külön, szándékosan nem itt elvégzett lépés (lásd a két új
-blokk README-jét).
+adapter`, `ovs-adapter`, `../../../general/network/network-interface/`)
+`v0.4.2` óta már a két új blokkot referenciázzák, nem ezt — ez a fájl
+mostantól csak történeti/olvasási célból marad a registryben.
 
 ## Eredet / provenance / aláírás-ellenőrzés
 

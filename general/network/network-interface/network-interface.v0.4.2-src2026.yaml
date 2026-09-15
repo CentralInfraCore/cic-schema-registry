@@ -1,0 +1,1040 @@
+---
+metadata:
+  name: NetworkInterface
+  version: v0.4.2
+  description: >
+    Egységes hálózati interfész erőforrás — fizikai switch port, logikai interfész
+    (OVS bridge, loopback), VLAN szegmens és tunnel (VXLAN/GRE) egyaránt leírható.
+    RFC 8343 (ietf-interfaces) alapú, cic-yang building blockok felhasználásával.
+
+    Scope: L2 switching és overlay hálózat. Service réteg (routing protokollok,
+    NAT, DHCP szerver, cloud VPC) — NEM ide tartozik.
+
+    A type mező (RFC 8343 ifType alapján) határozza meg a konkrét interfész kategóriát.
+    A platform különbség (fizikai switch vs OVS vs Linux bridge) az adapter rétegben van.
+
+    v0.4.2: ietf-interfaces-vlan lecserélve a #47 szerint szétválasztott
+    ietf-interfaces-l2vlan + cic-switchport-vlan blokk-párra, mind a
+    yang_refs listában, mind a switch-netconf-adapter yang_blocks
+    referenciájában — összhangban a switch-netconf-adapter.v0.4.2/
+    ovs-adapter.v0.4.2 migrációval.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+    - rfc8343
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: schemas/aggregate/managed-entity.yaml
+
+  yang_refs:
+    - block: ietf-interfaces-base
+      source: cic-yang@v0.1.3
+    - block: ietf-interfaces-physical
+      source: cic-yang@v0.1.3
+    - block: ietf-interfaces-logical
+      source: cic-yang@v0.1.3
+    - block: ietf-interfaces-l2vlan
+      source: cic-schema-registry
+    - block: cic-switchport-vlan
+      source: cic-schema-registry
+    - block: ietf-interfaces-tunnel
+      source: cic-yang@v0.1.3
+    - block: ietf-ip-v4
+      source: cic-yang@v0.1.3
+    - block: ietf-ip-v6
+      source: cic-yang@v0.1.3
+    - block: ietf-lldp
+      source: cic-yang@v0.1.3
+
+  # ── PolicySurface ─────────────────────────────────────────────────────────────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: schemas/atomic/identity.yaml
+    kind: NetworkInterface
+    namespace: "cic:network"
+    version: v0.3.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: RFC 8343 alapú hálózati interfész erőforrás
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: schemas/aggregate/config-surface.yaml
+    yang_source: ietf-interfaces-base (cic-yang@v0.1.3)
+    nodes:
+
+      # ── Core (ietf-interfaces-base) ──────────────────────────────────────────
+      - name: type
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: >
+          RFC 8343 ifType alapú interfész kategória.
+          physical: Ethernet port, LAG/bond (ethernetCsmacd, ieee8023adLag)
+          logical: bridge, loopback, SVI (softwareLoopback, bridge, other)
+          vlan: L2 VLAN szegmens (l2vlan) — mindig szülőhöz kötött
+          tunnel: VXLAN, GRE, IPIP encapsulation
+          bond: port-channel, LACP aggregáció (ieee8023adLag)
+          loopback: loopback interfész (softwareLoopback)
+        contract:
+          - type: enum
+            expression: [physical, logical, vlan, tunnel, bond, loopback]
+
+      - name: description
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: Emberi olvasható leírás
+
+      - name: enabled
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: true
+        description: Adminisztrációs állapot
+
+      - name: mtu
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: config
+        optional: true
+        default: 1500
+        contract:
+          - type: range
+            expression: "68..9216"
+
+      # ── Physical-specifikus (ietf-interfaces-physical) ────────────────────────
+      - name: speed
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: config
+        optional: true
+        capability: physical
+        description: Konfigurált port sebesség (Mbps) — null = auto-negotiate
+
+      - name: duplex
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        default: auto
+        capability: physical
+        contract:
+          - type: enum
+            expression: [full, half, auto]
+
+      # ── Typed sub-collections ─────────────────────────────────────────────────
+
+      - name: vlans
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: >
+          VLAN szegmensek ezen az interfészen (ietf-interfaces-vlan alapján).
+          Minden elem: ref (CIC address) VAGY inline VLAN definíció.
+          applicable_when: type in [physical, logical, bond]
+        item_fields:
+          - name: ref
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            description: CIC address pointer — ha meg van adva, az inline mezők opcionálisak
+          - name: vlan_id
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: VLAN azonosító (1-4094) — kötelező ha ref nincs megadva
+          - name: vlan_mode
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            default: access
+            contract:
+              - type: enum
+                expression: [access, trunk, hybrid]
+          - name: allowed_vlans
+            shape_type: collection
+            collection_variant: list
+            optional: true
+            description: Engedélyezett VLAN ID-k trunk módban
+          - name: dhcp_service
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            description: DHCP service CIC address referencia (service réteg)
+
+      - name: logical_interfaces
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: >
+          Logikai subinterfészek / SVI-k (ietf-interfaces-logical + ietf-ip-v4/v6 alapján).
+          Minden elem: ref VAGY inline logikai interfész definíció + opcionális IP konfig.
+          applicable_when: type in [physical, logical, bond]
+        item_fields:
+          - name: ref
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            description: CIC address pointer megosztott logikai interfészre
+          - name: logical_type
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            contract:
+              - type: enum
+                expression: [subinterface, svi, other]
+          - name: vlan_ref
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: VLAN ID amire ez a logikai interfész épül
+          - name: ip
+            shape_type: object
+            optional: true
+            description: IP konfiguráció (ietf-ip-v4/v6 alapján, netplan-kompatibilis)
+            properties:
+              - name: addresses
+                shape_type: collection
+                collection_variant: list
+                optional: true
+                description: Statikus IP cím(ek) CIDR formátumban (IPv4 és/vagy IPv6)
+              - name: gateway4
+                shape_type: scalar
+                scalar_type: string
+                optional: true
+                description: Default IPv4 gateway
+              - name: gateway6
+                shape_type: scalar
+                scalar_type: string
+                optional: true
+                description: Default IPv6 gateway
+              - name: nameservers
+                shape_type: object
+                optional: true
+                properties:
+                  - name: addresses
+                    shape_type: collection
+                    collection_variant: list
+                    optional: true
+                  - name: search
+                    shape_type: collection
+                    collection_variant: list
+                    optional: true
+              - name: routes
+                shape_type: collection
+                collection_variant: list
+                optional: true
+                description: Statikus route-ok
+                item_fields:
+                  - name: to
+                    shape_type: scalar
+                    scalar_type: string
+                    role: key
+                  - name: via
+                    shape_type: scalar
+                    scalar_type: string
+                    optional: true
+                  - name: metric
+                    shape_type: scalar
+                    scalar_type: integer
+                    optional: true
+                    default: 100
+              - name: dhcp4
+                shape_type: scalar
+                scalar_type: boolean
+                optional: true
+                default: false
+              - name: dhcp6
+                shape_type: scalar
+                scalar_type: boolean
+                optional: true
+                default: false
+              - name: accept_ra
+                shape_type: scalar
+                scalar_type: boolean
+                optional: true
+                default: true
+
+      - name: vxlans
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: >
+          VXLAN tunnel interfészek (ietf-interfaces-tunnel alapján).
+          applicable_when: type in [logical, bridge]
+        item_fields:
+          - name: ref
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            description: CIC address pointer megosztott tunnel definícióra
+          - name: vni
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: VXLAN Network Identifier (1-16777215)
+          - name: local_endpoint
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            description: Helyi tunnel végpont IP cím (IPv4 vagy IPv6)
+          - name: remote_endpoint
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+            description: Távoli tunnel végpont — point-to-point vagy multicast
+          - name: learning
+            shape_type: scalar
+            scalar_type: boolean
+            optional: true
+            default: true
+            description: MAC learning — false = BGP EVPN vezérelt
+          - name: ip
+            shape_type: object
+            optional: true
+            description: IP konfiguráció a tunnel interfészen (netplan-kompatibilis)
+
+      # ── STP / Spanning Tree (capability: stp) ────────────────────────────────
+      - name: stp
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: stp
+        description: Spanning Tree Protocol konfiguráció (IEEE 802.1D/Q/w/s)
+        properties:
+          - name: enabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+          - name: mode
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [stp, rstp, mstp]
+            default: rstp
+          - name: port_priority
+            shape_type: scalar
+            scalar_type: integer
+            default: 128
+            description: STP port prioritás (0-240, 16-os lépésekben)
+          - name: path_cost
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: STP path cost (null = auto, sebességből számított)
+          - name: edge_port
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+            description: Edge port / PortFast — uplink nélküli végpont portok
+          - name: bpdu_guard
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+            description: BPDU Guard — edge porton BPDU érkezésekor port shutdown
+          - name: bpdu_filter
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+            description: BPDU Filter — BPDU küldés/fogadás tiltása
+          - name: root_guard
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+            description: Root Guard — megakadályozza hogy ez a port root legyen
+
+      # ── PoE (capability: poe) ─────────────────────────────────────────────────
+      - name: poe
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: poe
+        description: Power over Ethernet konfiguráció (IEEE 802.3at/bt)
+        properties:
+          - name: enabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+          - name: mode
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [auto, static, never]
+            default: auto
+            description: auto=eszköz igénye alapján, static=fix osztás, never=tiltott
+          - name: priority
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [low, high, critical]
+            default: low
+            description: PoE prioritás — teljesítmény túllépésnél alacsony prioritású portok zárnak le
+          - name: power_limit_mw
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Maximum kiosztott teljesítmény milliwattban (null = automatikus)
+
+      # ── Storm control (capability: storm_control) ─────────────────────────────
+      - name: storm_control
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: storm_control
+        description: Broadcast/multicast flood korlát
+        properties:
+          - name: broadcast_threshold_pct
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Broadcast forgalom maximum sávszélesség %-ban (1-100)
+          - name: multicast_threshold_pct
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Multicast forgalom maximum sávszélesség %-ban
+          - name: unknown_unicast_threshold_pct
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Unknown unicast maximum sávszélesség %-ban
+          - name: action
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [drop, shutdown]
+            default: drop
+            description: Küszöb átlépésekor — drop=forgalom eldobás, shutdown=port leállítás
+
+      # ── QinQ / 802.1ad (capability: qinq) ────────────────────────────────────
+      - name: qinq
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: qinq
+        description: "QinQ double tagging konfiguráció (IEEE 802.1ad)"
+        properties:
+          - name: enabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+          - name: outer_vlan_id
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Külső VLAN tag (service VLAN / S-VLAN, 1-4094)
+          - name: inner_vlan_id
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Belső VLAN tag (customer VLAN / C-VLAN, 1-4094)
+          - name: tpid
+            shape_type: scalar
+            scalar_type: string
+            default: "0x88a8"
+            description: "Külső tag TPID — 0x88a8 (IEEE 802.1ad) vagy 0x8100 (legacy)"
+
+      # ── LACP részletek (capability: lacp) ────────────────────────────────────
+      - name: lacp
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: lacp
+        description: LACP (Link Aggregation Control Protocol) részletes konfiguráció
+        properties:
+          - name: interval
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [fast, slow]
+            default: slow
+            description: "LACP PDU küldési intervallum — fast: 1s, slow: 30s"
+          - name: system_priority
+            shape_type: scalar
+            scalar_type: integer
+            default: 32768
+            description: LACP rendszer prioritás (1-65535, kisebb = magasabb prioritás)
+          - name: port_priority
+            shape_type: scalar
+            scalar_type: integer
+            default: 32768
+            description: LACP port prioritás (1-65535)
+          - name: min_links
+            shape_type: scalar
+            scalar_type: integer
+            default: 1
+            description: Minimális aktív taginterfészek száma — alatta a LAG leáll
+          - name: max_links
+            shape_type: scalar
+            scalar_type: integer
+            optional: true
+            description: Maximum aktív taginterfészek száma (null = korlátlan)
+
+      # ── LLDP (capability: lldp) ───────────────────────────────────────────────
+      - name: lldp
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: lldp
+        description: LLDP konfiguráció (RFC 8516, ietf-lldp cic-yang@v0.1.3)
+        properties:
+          - name: enabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+          - name: transmit
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+          - name: receive
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+          - name: tlvs
+            shape_type: collection
+            collection_variant: list
+            optional: true
+            description: Hirdetett TLV-k (system-name, port-description, management-address stb.)
+
+      # ── Port mirroring / SPAN (capability: port_mirror) ──────────────────────
+      - name: port_mirror
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: config
+        optional: true
+        capability: port_mirror
+        description: Port tükrözés / SPAN — forgalom másolása monitoring portra
+        properties:
+          - name: enabled
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+          - name: direction
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [rx, tx, both]
+            default: both
+            description: Tükrözött forgalom iránya
+          - name: destination
+            shape_type: scalar
+            scalar_type: string
+            description: Célport interface neve ahová a tükrözött forgalom megy
+
+      # ── Szülő-gyerek reláció (RFC 8343 higher/lower-layer-if) ─────────────────
+      - name: lower_layer_if
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: >
+          Alsó réteg interfészek — OVS bridge esetén az uplink port,
+          bond esetén a taginterfészek nevei.
+        item_fields:
+          - name: name
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: schemas/aggregate/state-surface.yaml
+    source: network-adapter
+    freshness:
+      ttl: 30s
+      strategy: event-driven
+    nodes:
+
+      - name: oper_status
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: >
+          Operációs állapot (RFC 8343 ifOperStatus).
+          Adapter normalizálja a platform-specifikus értékeket.
+        contract:
+          - type: enum
+            expression: [up, down, testing, unknown, dormant, not_present, lower_layer_down]
+
+      - name: phys_address
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        optional: true
+        description: MAC cím
+
+      - name: speed_actual
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: physical
+        description: Tényleges tárgyalt sebesség (Mbps)
+
+      - name: assigned_addresses
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: state
+        optional: true
+        description: Ténylegesen kiosztott IP cím(ek) — statikus + DHCP-s
+        item_fields:
+          - name: address
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: origin
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [static, dhcp, dhcpv6, slaac, link_local, other]
+
+      - name: statistics
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: operational
+        optional: true
+        capability: statistics
+        description: Forgalmi számlálók
+        properties:
+          - name: in_pkts
+            shape_type: scalar
+            scalar_type: integer
+          - name: in_octets
+            shape_type: scalar
+            scalar_type: integer
+          - name: in_errors
+            shape_type: scalar
+            scalar_type: integer
+          - name: out_pkts
+            shape_type: scalar
+            scalar_type: integer
+          - name: out_octets
+            shape_type: scalar
+            scalar_type: integer
+          - name: out_errors
+            shape_type: scalar
+            scalar_type: integer
+
+      # capability: stp
+      - name: stp_state
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: state
+        optional: true
+        capability: stp
+        description: STP port állapot
+        properties:
+          - name: port_state
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [discarding, learning, forwarding, disabled]
+          - name: port_role
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [root, designated, alternate, backup, disabled]
+          - name: designated_root
+            shape_type: scalar
+            scalar_type: string
+            description: Root bridge MAC cím
+          - name: root_path_cost
+            shape_type: scalar
+            scalar_type: integer
+
+      # capability: poe
+      - name: poe_state
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: state
+        optional: true
+        capability: poe
+        description: PoE aktuális állapot
+        properties:
+          - name: status
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [delivering, searching, fault, disabled, test, other_fault]
+          - name: power_mw
+            shape_type: scalar
+            scalar_type: integer
+            description: Aktuálisan kiosztott teljesítmény milliwattban
+          - name: poe_class
+            shape_type: scalar
+            scalar_type: integer
+            description: IEEE 802.3 PoE osztály (0-8)
+
+      # capability: lldp
+      - name: lldp_neighbors
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: state
+        optional: true
+        capability: lldp
+        description: Felfedezett LLDP szomszédok (RFC 8516)
+        item_fields:
+          - name: chassis_id
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: port_id
+            shape_type: scalar
+            scalar_type: string
+          - name: system_name
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+          - name: system_description
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+          - name: port_description
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+          - name: capabilities
+            shape_type: collection
+            collection_variant: list
+            optional: true
+          - name: ttl_seconds
+            shape_type: scalar
+            scalar_type: integer
+          - name: management_addresses
+            shape_type: collection
+            collection_variant: list
+            optional: true
+
+      # capability: lacp
+      - name: lacp_state
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: object
+        role: state
+        optional: true
+        capability: lacp
+        description: LACP aggregáció aktuális állapota
+        properties:
+          - name: active_links
+            shape_type: scalar
+            scalar_type: integer
+            description: Aktív taginterfészek száma
+          - name: standby_links
+            shape_type: scalar
+            scalar_type: integer
+            description: Standby taginterfészek száma
+          - name: aggregation_id
+            shape_type: scalar
+            scalar_type: string
+            description: LACP aggregáció azonosítója
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: schemas/aggregate/operation-surface.yaml
+    operations:
+
+      - name: enable
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: true
+        description: Interfész adminisztrációs engedélyezése
+        input: null
+        output:
+          - name: oper_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: disable
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: true
+        description: Interfész adminisztrációs tiltása
+        input: null
+        output:
+          - name: oper_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: flush_mac_table
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: false
+        capability: vlan
+        description: MAC cím tábla ürítése (switch VLAN-on)
+        input: null
+        output: null
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: link-state-changed
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: info
+        description: Interfész oper_status megváltozott (RFC 8343 linkUp/linkDown)
+        payload:
+          - name: previous_status
+            shape_type: scalar
+            scalar_type: string
+          - name: current_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: address-changed
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: info
+        description: IP cím kiosztva vagy visszavonva
+        payload:
+          - name: address
+            shape_type: scalar
+            scalar_type: string
+          - name: origin
+            shape_type: scalar
+            scalar_type: string
+          - name: action
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [assigned, released]
+
+      - name: error-threshold-exceeded
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: threshold
+        severity: warning
+        capability: statistics
+        description: Hibaszámláló küszöböt átlépett
+        payload:
+          - name: counter
+            shape_type: scalar
+            scalar_type: string
+          - name: value
+            shape_type: scalar
+            scalar_type: integer
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: schemas/atomic/address.yaml
+        schema_path: "/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network"
+        key_fields:
+          - name: backend
+            type: enum
+            values: [switch, ovs]
+            description: >
+              switch: fizikai managed switch (NETCONF/RESTCONF)
+              ovs: OVS / Linux bridge (OVS-VSCTL/OVSDB)
+          - name: provider
+            type: string
+            description: >
+              switch: switch azonosítója (pl. juniper-01, cisco-core)
+              ovs: hypervisor/host azonosítója (pl. proxmox-01, ovs-host-a)
+          - name: location
+            type: string
+            description: Rack / panel / "-" ha a provider kezeli
+          - name: id
+            type: string
+            description: >
+              switch: interface neve (pl. ge-0/0/1, Gi1/0/1)
+              ovs: bridge/port neve (pl. ovs-br0, vmbr0, tap100)
+    adapter: network-adapter
+    adapter_capabilities:
+      known_adapters:
+        - name: switch-netconf-adapter
+          backend: switch
+          yang_blocks: [ietf-interfaces-physical, ietf-interfaces-l2vlan, cic-switchport-vlan]
+          capabilities: [physical, vlan, statistics]
+        - name: ovs-adapter
+          backend: ovs
+          yang_blocks: [ietf-interfaces-logical, ietf-interfaces-tunnel, ietf-ip-v4, ietf-ip-v6]
+          capabilities: [logical, vlan, statistics]
+
+# ── Levezetési lánc ───────────────────────────────────────────────────────────
+derivation_chain:
+
+  yang:
+    status: specification-only
+    module: cic-network
+    namespace: "urn:cic:network"
+    base_module: ietf-interfaces
+    note: >
+      A cic-network:interface lista az ietf-interfaces:interface lista CIC adaptációja.
+      A yang_refs mezők jelzik melyik cic-yang building blockból származnak a mezők.
+
+  restconf:
+    collection: "GET /restconf/data/cic-network:interfaces"
+    instance: "GET /restconf/data/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}"
+    config:
+      read: "GET   /restconf/data/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/config"
+      update: "PUT   /restconf/data/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/config"
+      patch: "PATCH /restconf/data/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/config"
+    state:
+      read: "GET   /restconf/data/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/state"
+    operations:
+      enable: "POST /restconf/operations/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/enable"
+      disable: "POST /restconf/operations/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/disable"
+      flush_mac_table: "POST /restconf/operations/cic-network:interfaces/interface={backend}, {provider}, {location}, {id}/flush-mac-table"
+    events:
+      stream: "GET /restconf/streams/cic-network-events"
+
+  runtime:
+    reconcile_loop: |
+      1. observe:  adapter.get(backend, provider, location, id) → state_surface
+      2. compare:  diff(config_surface, state_surface) → drift?
+      3. if drift:
+           enabled mismatch → enable/disable
+           vlan config changed → adapter reconfigures VLAN membership
+           ip changed → adapter updates address config (static) vagy dhcp flag
+      4. emit: link-state-changed, address-changed events
+release:
+  createdBy:
+    name: Gabor Zoltan Sinko
+    email: sinkog@centralinfracore.hu
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICBjCCAaygAwIBAgIUSnRMR6RPnEbg296XWPOqq/u5PCwwCgYIKoZIzj0EAwIw
+
+      QzELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxGTAXBgNV
+
+      BAMMEENJQyBEZXZlbG9wZXIgQ0EwHhcNMjYwMzIwMTMyMjU5WhcNMjYxMjMxMTMy
+
+      MjU5WjBFMQswCQYDVQQGEwJIVTEZMBcGA1UECgwQQ2VudHJhbEluZnJhQ29yZTEb
+
+      MBkGA1UEAwwSR2Fib3IgWm9sdGFuIFNpbmtvMFkwEwYHKoZIzj0CAQYIKoZIzj0D
+
+      AQcDQgAEIG2CVmTfmLB9pLLclj7YmP2eedAjklpy4LGrU2ijoiy6Xqpuybv7OgJe
+
+      i+ez31s65NEV8+X/ByeX1cstR988z6N8MHowCQYDVR0TBAIwADAdBgNVHQ4EFgQU
+
+      yZN6AIX/TNnIJ9GwAa/NRN3ujHAwHwYDVR0jBBgwFoAUXn6CHYzPUqU4JVP8g+OS
+
+      WeDYjhcwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEF
+
+      BQcDBDAKBggqhkjOPQQDAgNIADBFAiEA+bFzXRoJ4PCQbhAAtpkcMjt0vNj5rEW0
+
+      lOMBGDNyaWkCIB1vmM7PcZzv/c9bIrxF5kqv6QXomouhByUfeNUTbpKW
+
+      -----END CERTIFICATE-----
+
+      '
+  build_hash: lVTzy8oe14KBQ9LlgIsQ+313C8KLSp6tAEof6ZBbVXM=
+  sign: vault:v1:MEUCIGISFqSLCR/0w3grOj+dH4YClCd51CRGT9wZxO5sSvrXAiEA5EXeDgf0wi6+fb8M8CfPR/gVJ328aqYSu8YQBZbjXvM=
+cic_countersign:
+  authority:
+    name: CIC Source CA
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICMDCCAdagAwIBAgIUStyiR+g40cCBauhK8nOUNLIj0iIwCgYIKoZIzj0EAwIw
+
+      PjELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNV
+
+      BAMMC0NJQyBSb290IENBMB4XDTI2MDMyMDEzMjIzOVoXDTI2MTIzMTEzMjIzOVow
+
+      QDELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFjAUBgNV
+
+      BAMMDUNJQyBTb3VyY2UgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARuSq7+
+
+      gRkRwiZYbZBp8aWzFyK36YMBQ58PwUTtoL6Gzu5QZS2tDGLWvFqDY/BRavqcOfel
+
+      I6y+P9WlhntH4oI6o4GvMIGsMB0GA1UdDgQWBBTXWkl+CqRrqaEpr/fUmVHc6B7I
+
+      OTBnBgNVHSMEYDBegBSiQtbuMt81/vweajD7O4ogMMaKGqFCpEAwPjELMAkGA1UE
+
+      BhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBS
+
+      b290IENBggIQBDASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBhjAK
+
+      BggqhkjOPQQDAgNIADBFAiEA25x0lXd37TAiRROTXQtqXNoMiwl0wCZln3m/DMBR
+
+      YcQCID3gc64TnA9Y7QL96lY1nYhAl2NWeMjK8pFXXN2Dymuf
+
+      -----END CERTIFICATE-----
+
+      '
+    root_certificate: "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number: 4100\
+      \ (0x1004)\n        Signature Algorithm: ecdsa-with-SHA256\n        Issuer: C=HU, O=CentralInfraCore,\
+      \ CN=CIC Root CA\n        Validity\n            Not Before: Mar 19 12:59:30 2026 GMT\n         \
+      \   Not After : Dec 31 23:59:59 2026 GMT\n        Subject: C=HU, O=CentralInfraCore, CN=CIC Root\
+      \ CA\n        Subject Public Key Info:\n            Public Key Algorithm: id-ecPublicKey\n     \
+      \           Public-Key: (256 bit)\n                pub:\n                    04:cd:07:56:3a:e7:28:41:c4:99:76:3a:e8:5e:90:\n\
+      \                    39:54:be:e7:7d:42:ab:65:49:05:f0:f8:84:63:5f:\n                    5f:05:22:56:d1:29:e0:ac:7d:67:e3:cf:ac:8f:9c:\n\
+      \                    e2:be:71:6f:a8:91:00:e4:6c:af:1f:f2:86:3f:6d:\n                    03:1d:36:c7:f4\n\
+      \                ASN1 OID: prime256v1\n                NIST CURVE: P-256\n        X509v3 extensions:\n\
+      \            X509v3 Subject Key Identifier: \n                A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \            X509v3 Authority Key Identifier: \n                keyid:A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \                DirName:/C=HU/O=CentralInfraCore/CN=CIC Root CA\n                serial:10:04\n\
+      \            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:3\n          \
+      \  X509v3 Key Usage: critical\n                Digital Signature, Certificate Sign, CRL Sign\n \
+      \   Signature Algorithm: ecdsa-with-SHA256\n    Signature Value:\n        30:45:02:20:51:b0:f6:e5:50:ac:3b:f8:2e:d1:af:7a:7a:b3:\n\
+      \        42:7b:5d:8e:1d:d0:7d:e0:5c:60:48:42:aa:6b:f0:24:8b:a0:\n        02:21:00:d8:c6:94:12:db:f1:a8:b8:3b:45:46:b9:30:88:36:\n\
+      \        6c:f3:e2:56:76:02:35:f6:17:0b:b5:3a:7b:80:5d:16:24\n-----BEGIN CERTIFICATE-----\nMIICHDCCAcKgAwIBAgICEAQwCgYIKoZIzj0EAwIwPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMB4X\nDTI2MDMxOTEyNTkzMFoXDTI2MTIzMTIzNTk1OVowPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMFkw\nEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzQdWOucoQcSZdjroXpA5VL7nfUKrZUkF\n\
+      8PiEY19fBSJW0SngrH1n48+sj5zivnFvqJEA5GyvH/KGP20DHTbH9KOBrzCBrDAd\nBgNVHQ4EFgQUokLW7jLfNf78Hmow+zuKIDDGihowZwYDVR0jBGAwXoAUokLW7jLf\n\
+      Nf78Hmow+zuKIDDGihqhQqRAMD4xCzAJBgNVBAYTAkhVMRkwFwYDVQQKDBBDZW50\ncmFsSW5mcmFDb3JlMRQwEgYDVQQDDAtDSUMgUm9vdCBDQYICEAQwEgYDVR0TAQH/\n\
+      BAgwBgEB/wIBAzAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwIDSAAwRQIgUbD2\n5VCsO/gu0a96erNCe12OHdB94FxgSEKqa/Aki6ACIQDYxpQS2/GouDtFRrkwiDZs\n\
+      8+JWdgI19hcLtTp7gF0WJA==\n-----END CERTIFICATE-----\n"
+  signed_payload: build_hash
+  sign: vault:v1:MEQCIHwRXayiZOnbQTUUQWVZS/teLs6Np9stvuVd7qJFrsHWAiBVZ2F/d3bi4cEl2i3OQVwc9NQMXVfMB5uGPYYJHscunA==
+  workflow: cic-schema-registry-sign@v1
+  ts: '2026-09-15T23:54:52Z'

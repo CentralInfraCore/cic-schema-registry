@@ -29,8 +29,13 @@ ez túl erős, vendor-specifikus állítás egy standard building blockban
 feltételezi). Itt a `default` mező hiányzik — a defaultot az
 adapternek/vendor-profilnak kell megadnia, nem a sémának.
 
-**⚠ Adapter-migráció még nincs elvégezve.** Lásd
-`../ietf-interfaces-l2vlan/README.md`.
+Adapter-migráció elvégezve — lásd `../ietf-interfaces-l2vlan/README.md`.
+
+**Fontos: a `default: 1` hiánya adapter-oldalon SZÁNDÉKOSAN NEM lett
+pótolva** a migráció során — sem a `switch-netconf-adapter.v0.4.2`, sem
+az `ovs-adapter.v0.4.2` nem ír elő vendor-specifikus native_vlan
+defaultot. Ha egy konkrét adapter/vendor-profil ilyet igényel, azt ott
+kell explicit hozzáadni, nem itt.
 
 Fájlonkénti release-aláírás: `v0.1.0` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
