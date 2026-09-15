@@ -19,6 +19,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          # Full history, not the default shallow depth-1 clone: `make
+          # registry.latest` walks each enrolled schema file's git log to
+          # find its original add commit, which a shallow clone can't see.
+          fetch-depth: 0
 
       - name: Build Docker images
         run: make build
@@ -42,6 +47,9 @@ jobs:
 
       - name: Validate registry (base-chain coverage + version evolution)
         run: make registry.validate
+
+      - name: Check schema version discipline (LATEST.yaml + frozen-file guard)
+        run: make registry.latest
 
       - name: Upload coverage report artifact
         uses: actions/upload-artifact@v4
