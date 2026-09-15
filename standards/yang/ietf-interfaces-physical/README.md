@@ -17,8 +17,9 @@ ellenőrzött, kettős aláírás, mint `../ietf-interfaces-base/`-nál.
 Fájlonkénti release-aláírás: `v0.1.4` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
-a fájl végén). A `v0.1.5` (LATEST, lásd lent) szintén valódi Vault
-author-aláírással és CICSourceCA ellenjegyzéssel van ellátva.
+a fájl végén). A `v0.1.5` és a `v0.1.6` (LATEST, lásd lent) szintén
+valódi Vault author-aláírással és CICSourceCA ellenjegyzéssel van
+ellátva.
 
 ## v0.1.5 — speed/duplex origin javítva ([#46](https://github.com/CentralInfraCore/cic-schema-registry/issues/46))
 
@@ -33,11 +34,15 @@ Mindkét mező most `origin: cic-extension`. A `state.speed_actual`
 megtartja az `rfc8343` origint — az az RFC saját READ-ONLY `speed`
 leaf-jének (`ifSpeed`/`ifHighSpeed`) valódi megfelelője.
 
-**Kapcsolódó, de itt szándékosan nem javított lelet:** `state.duplex_actual`
-és a `notifications: link-up`/`link-down` szintén `origin: rfc8343`-mal
-vannak jelölve, de az RFC 8343 normatív szövegében nincs `duplex` leaf a
-base modulban (csak a nem-normatív A. függelékben), és nincs YANG
-`notification` definíció sem (csak egy `link-up-down-trap-enable` SNMP
-trap-vezérlő config leaf). Ugyanaz a mintázat, mint a most javított
-mezőknél, de az `#46` eredeti scope-ja nem terjedt ki rájuk — külön
-issue-ban követendő.
+**Ez a lelet a `#63`-ban javítva lett — lásd lent.**
+
+## v0.1.6 — state.duplex_actual és notifications origin javítva ([#63](https://github.com/CentralInfraCore/cic-schema-registry/issues/63))
+
+`state.duplex_actual` és a `notifications: link-up`/`link-down` eddig
+szintén `origin: rfc8343`-mal voltak jelölve. Ugyanaz az RFC 8343-szöveg
+(`rfc-editor.org/rfc/rfc8343.txt`), amit a `v0.1.5`/`#46` javításakor már
+ellenőriztem: a normatív base modulban nincs `duplex` leaf sehol (csak a
+nem-normatív A. függelék illusztratív `ethernet` példamoduljában), és
+nincs YANG `notification` definíció sem — csak egy
+`link-up-down-trap-enable` SNMP trap-vezérlő config leaf, ami nem YANG
+notification statement. Mindhárom mező most `origin: cic-extension`.
