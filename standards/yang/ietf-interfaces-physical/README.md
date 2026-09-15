@@ -17,7 +17,8 @@ ellenőrzött, kettős aláírás, mint `../ietf-interfaces-base/`-nál.
 Fájlonkénti release-aláírás: `v0.1.4` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
-a fájl végén). A `v0.1.5` (LATEST, lásd lent) még nincs aláírva.
+a fájl végén). A `v0.1.5` (LATEST, lásd lent) szintén valódi Vault
+author-aláírással és CICSourceCA ellenjegyzéssel van ellátva.
 
 ## v0.1.5 — speed/duplex origin javítva ([#46](https://github.com/CentralInfraCore/cic-schema-registry/issues/46))
 
