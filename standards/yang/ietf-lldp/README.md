@@ -1,10 +1,12 @@
 # ietf-lldp
 
-**Réteg:** `standards/yang/` — külső szabvány szerinti séma (RFC 8516)
+**Réteg:** `standards/yang/` — külső szabvány szerinti séma (IEEE 802.1ABcu-2021)
 **Kind:** `YANGBlock` — önálló, nincs `extends`
 
-LLDP (Link Layer Discovery Protocol) building block (RFC 8516 — A YANG
-Data Model for the Link Layer Discovery Protocol). Önálló darab, mint
+LLDP (Link Layer Discovery Protocol) building block. **⚠ 2026-09-15-ig
+tévesen `RFC 8516`-ra hivatkozott** — az egy CoAP hibakód ("Too Many
+Requests"), sosem volt LLDP forrás. A valódi forrás IEEE 802.1ABcu-2021
+(modul: `ieee802-dot1ab-lldp`), javítva `#42`-ben. Önálló darab, mint
 `../ietf-ip-v4/`/`../ietf-ip-v6/`.
 
 ## Eredet / provenance / aláírás-ellenőrzés

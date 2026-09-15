@@ -1,0 +1,300 @@
+---
+metadata:
+  name: ietf-nat
+  source: RFC 8512 — A YANG Module for Network Address Translation (NAT) and
+    Network Prefix Translation (NPT)
+  version: v0.1.0
+  description: >
+    NAT building block — SNAT (statikus forrás-cím fordítás), DNAT
+    (cél-cím/port fordítás, port-forwarding), és MASQUERADE (dinamikus
+    SNAT, a kimenő interfész aktuális címére). RFC 8512 CIC-normalizált
+    adaptációja — egy szabály-lista, translation_type mezővel
+    megkülönböztetve, nem három külön blokk.
+
+    A translation_type szemantikai művelet, nem Linux chain-név — az
+    adapter fordítja platform-specifikusra (nftables/iptables/VyOS/
+    FortiGate/OCI stb.).
+
+    Scope (v0.1.0): egyetlen cím/port rule-onként — cím-pool és
+    port-range támogatás (SNAT/DNAT/MASQUERADE mindegyikére elvben
+    értelmes) SZÁNDÉKOSAN NINCS ebben a verzióban. Ez a scope-metszés
+    lásd issue #48 threadjében.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8512
+    - nat
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-nat
+  yang_source: RFC 8512
+  standalone: true    # nem interfészhez kötött augmentáció, önálló szabály-lista
+
+  config:
+    - name: rules
+      type: list
+      required_on_create: false
+      description: NAT szabályok listája
+      item_fields:
+        - name: name
+          type: string
+          role: key
+          description: Szabály egyedi azonosítója
+
+        - name: translation_type
+          type: enum
+          values: [snat, dnat, masquerade]
+          required_on_create: true
+          description: >
+            snat: explicit forrás-cím/port fordítás.
+            dnat: explicit cél-cím/port fordítás (port-forwarding).
+            masquerade: dinamikus snat — a fordított forrás-cím a
+            outbound_interface AKTUÁLIS címe (StateSurface.address),
+            nem egy itt megadott statikus érték — ezért nincs is
+            translated_address mezője.
+
+        - name: source_prefix
+          type: ip-prefix
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, masquerade]
+          required_when:
+            field: translation_type
+            in: [snat, masquerade]
+          description: Fordítandó forrás-hálózat (belső oldal)
+
+        - name: destination_prefix
+          type: ip-prefix
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            equals: dnat
+          description: Illesztendő cél-hálózat/cím (külső oldal)
+
+        - name: protocol
+          type: enum
+          values: [tcp, udp, icmp, any]
+          required_on_create: false
+          default: any
+          description: Szűrt protokoll
+
+        - name: source_port
+          type: integer
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          description: Forrás port (opcionális szűrés)
+
+        - name: destination_port
+          type: integer
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          required_when:
+            field: translation_type
+            equals: dnat
+          description: Cél port — DNAT-nál jellemzően kötelező (port-forwarding)
+
+        - name: inbound_interface
+          type: interface-ref
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            equals: dnat
+          required_when:
+            field: translation_type
+            equals: dnat
+          description: Melyik interfészen érkező forgalomra vonatkozik (DNAT)
+
+        - name: outbound_interface
+          type: interface-ref
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, masquerade]
+          required_when:
+            field: translation_type
+            in: [snat, masquerade]
+          description: >
+            Melyik interfészen kimenő forgalomra vonatkozik. MASQUERADE
+            esetén ennek az interfésznek az AKTUÁLIS címéből származik a
+            fordított forrás-cím — futásidőben, nem itt megadva.
+
+        - name: translated_address
+          type: ip-address
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          required_when:
+            field: translation_type
+            in: [snat, dnat]
+          description: >
+            A fordított cím. SNAT-nál az új forrás-cím, DNAT-nál az új
+            cél-cím. MASQUERADE-nél SZÁNDÉKOSAN nincs — lásd
+            translation_type leírását.
+
+        - name: translated_port
+          type: integer
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          description: A fordított port (DNAT port-forwardnál jellemző)
+
+  state:
+    - name: active_mappings
+      type: list
+      required_on_create: false
+      description: Jelenleg aktív NAT fordítások
+      item_fields:
+        - name: rule_name
+          type: string
+          description: >
+            Az active_mappings elemet létrehozó szabály neve (config.rules
+            beli elem). Szándékosan nincs role: reference jelölve — a
+            Role atom structural:[reference] a Shape cic-reference
+            szemantikus típusát követeli meg (domain-entity-k közötti
+            logical_id hivatkozás), ez viszont ugyanazon dokumentum egy
+            listaelemére mutat, más fogalom.
+        - name: original_address
+          type: ip-address
+        - name: original_port
+          type: integer
+        - name: translated_address
+          type: ip-address
+        - name: translated_port
+          type: integer
+        - name: protocol
+          type: enum
+          values: [tcp, udp, icmp]
+
+    - name: active_sessions
+      type: integer
+      description: Aktív fordított session-ök száma
+
+    - name: translated_packets
+      type: integer
+      description: Összesen fordított csomagok száma
+
+    - name: translated_octets
+      type: integer
+      description: Összesen fordított byte-ok száma
+
+    - name: allocation_failures
+      type: integer
+      description: >
+        Sikertelen fordítási kísérletek száma (pl. port-kimerülés egy
+        pool nélküli, egy-címes SNAT/MASQUERADE szabálynál)
+
+  notifications:
+    - name: allocation-failure
+      description: >
+        Egy NAT szabály nem tudott fordítást allokálni (pl. port-
+        kimerülés). Az allocation_failures számláló egyidejűleg nő.
+      origin: cic-extension
+      payload:
+        - name: rule_name
+          type: string
+        - name: reason
+          type: string
+release:
+  createdBy:
+    name: Gabor Zoltan Sinko
+    email: sinkog@centralinfracore.hu
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICBjCCAaygAwIBAgIUSnRMR6RPnEbg296XWPOqq/u5PCwwCgYIKoZIzj0EAwIw
+
+      QzELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxGTAXBgNV
+
+      BAMMEENJQyBEZXZlbG9wZXIgQ0EwHhcNMjYwMzIwMTMyMjU5WhcNMjYxMjMxMTMy
+
+      MjU5WjBFMQswCQYDVQQGEwJIVTEZMBcGA1UECgwQQ2VudHJhbEluZnJhQ29yZTEb
+
+      MBkGA1UEAwwSR2Fib3IgWm9sdGFuIFNpbmtvMFkwEwYHKoZIzj0CAQYIKoZIzj0D
+
+      AQcDQgAEIG2CVmTfmLB9pLLclj7YmP2eedAjklpy4LGrU2ijoiy6Xqpuybv7OgJe
+
+      i+ez31s65NEV8+X/ByeX1cstR988z6N8MHowCQYDVR0TBAIwADAdBgNVHQ4EFgQU
+
+      yZN6AIX/TNnIJ9GwAa/NRN3ujHAwHwYDVR0jBBgwFoAUXn6CHYzPUqU4JVP8g+OS
+
+      WeDYjhcwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEF
+
+      BQcDBDAKBggqhkjOPQQDAgNIADBFAiEA+bFzXRoJ4PCQbhAAtpkcMjt0vNj5rEW0
+
+      lOMBGDNyaWkCIB1vmM7PcZzv/c9bIrxF5kqv6QXomouhByUfeNUTbpKW
+
+      -----END CERTIFICATE-----
+
+      '
+  build_hash: 6hnWsQ8jlE3R+uVR2APSt/AUZxom80lPQ4bDxmLj9QA=
+  sign: vault:v1:MEQCIFjVFsKJ/ztM2z+G49d5G+HIsQfLAEOLWLoH6gx1aJQRAiAVw6kvHdc44ZCbx6OkhAQtkfYh4r/Z2bKtQBIq0JpHwQ==
+cic_countersign:
+  authority:
+    name: CIC Source CA
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICMDCCAdagAwIBAgIUStyiR+g40cCBauhK8nOUNLIj0iIwCgYIKoZIzj0EAwIw
+
+      PjELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNV
+
+      BAMMC0NJQyBSb290IENBMB4XDTI2MDMyMDEzMjIzOVoXDTI2MTIzMTEzMjIzOVow
+
+      QDELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFjAUBgNV
+
+      BAMMDUNJQyBTb3VyY2UgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARuSq7+
+
+      gRkRwiZYbZBp8aWzFyK36YMBQ58PwUTtoL6Gzu5QZS2tDGLWvFqDY/BRavqcOfel
+
+      I6y+P9WlhntH4oI6o4GvMIGsMB0GA1UdDgQWBBTXWkl+CqRrqaEpr/fUmVHc6B7I
+
+      OTBnBgNVHSMEYDBegBSiQtbuMt81/vweajD7O4ogMMaKGqFCpEAwPjELMAkGA1UE
+
+      BhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBS
+
+      b290IENBggIQBDASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBhjAK
+
+      BggqhkjOPQQDAgNIADBFAiEA25x0lXd37TAiRROTXQtqXNoMiwl0wCZln3m/DMBR
+
+      YcQCID3gc64TnA9Y7QL96lY1nYhAl2NWeMjK8pFXXN2Dymuf
+
+      -----END CERTIFICATE-----
+
+      '
+    root_certificate: "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number: 4100\
+      \ (0x1004)\n        Signature Algorithm: ecdsa-with-SHA256\n        Issuer: C=HU, O=CentralInfraCore,\
+      \ CN=CIC Root CA\n        Validity\n            Not Before: Mar 19 12:59:30 2026 GMT\n         \
+      \   Not After : Dec 31 23:59:59 2026 GMT\n        Subject: C=HU, O=CentralInfraCore, CN=CIC Root\
+      \ CA\n        Subject Public Key Info:\n            Public Key Algorithm: id-ecPublicKey\n     \
+      \           Public-Key: (256 bit)\n                pub:\n                    04:cd:07:56:3a:e7:28:41:c4:99:76:3a:e8:5e:90:\n\
+      \                    39:54:be:e7:7d:42:ab:65:49:05:f0:f8:84:63:5f:\n                    5f:05:22:56:d1:29:e0:ac:7d:67:e3:cf:ac:8f:9c:\n\
+      \                    e2:be:71:6f:a8:91:00:e4:6c:af:1f:f2:86:3f:6d:\n                    03:1d:36:c7:f4\n\
+      \                ASN1 OID: prime256v1\n                NIST CURVE: P-256\n        X509v3 extensions:\n\
+      \            X509v3 Subject Key Identifier: \n                A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \            X509v3 Authority Key Identifier: \n                keyid:A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \                DirName:/C=HU/O=CentralInfraCore/CN=CIC Root CA\n                serial:10:04\n\
+      \            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:3\n          \
+      \  X509v3 Key Usage: critical\n                Digital Signature, Certificate Sign, CRL Sign\n \
+      \   Signature Algorithm: ecdsa-with-SHA256\n    Signature Value:\n        30:45:02:20:51:b0:f6:e5:50:ac:3b:f8:2e:d1:af:7a:7a:b3:\n\
+      \        42:7b:5d:8e:1d:d0:7d:e0:5c:60:48:42:aa:6b:f0:24:8b:a0:\n        02:21:00:d8:c6:94:12:db:f1:a8:b8:3b:45:46:b9:30:88:36:\n\
+      \        6c:f3:e2:56:76:02:35:f6:17:0b:b5:3a:7b:80:5d:16:24\n-----BEGIN CERTIFICATE-----\nMIICHDCCAcKgAwIBAgICEAQwCgYIKoZIzj0EAwIwPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMB4X\nDTI2MDMxOTEyNTkzMFoXDTI2MTIzMTIzNTk1OVowPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMFkw\nEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzQdWOucoQcSZdjroXpA5VL7nfUKrZUkF\n\
+      8PiEY19fBSJW0SngrH1n48+sj5zivnFvqJEA5GyvH/KGP20DHTbH9KOBrzCBrDAd\nBgNVHQ4EFgQUokLW7jLfNf78Hmow+zuKIDDGihowZwYDVR0jBGAwXoAUokLW7jLf\n\
+      Nf78Hmow+zuKIDDGihqhQqRAMD4xCzAJBgNVBAYTAkhVMRkwFwYDVQQKDBBDZW50\ncmFsSW5mcmFDb3JlMRQwEgYDVQQDDAtDSUMgUm9vdCBDQYICEAQwEgYDVR0TAQH/\n\
+      BAgwBgEB/wIBAzAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwIDSAAwRQIgUbD2\n5VCsO/gu0a96erNCe12OHdB94FxgSEKqa/Aki6ACIQDYxpQS2/GouDtFRrkwiDZs\n\
+      8+JWdgI19hcLtTp7gF0WJA==\n-----END CERTIFICATE-----\n"
+  signed_payload: build_hash
+  sign: vault:v1:MEUCIE0X/3EirWI7eD3HcQxYK0u1NcVC3iFrrAR9CQxvVCcKAiEA05x86Xm+qkX+HT9WofuuUdv5wqb36BvOEKj9w4mlIHs=
+  workflow: cic-schema-registry-sign@v1
+  ts: '2026-09-15T23:04:27Z'

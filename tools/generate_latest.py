@@ -32,6 +32,8 @@ import subprocess  # nosec B404 -- fixed, local `git` invocations below, no shel
 import sys
 from pathlib import Path
 
+import yaml
+
 from .registrylib.latest import render_latest
 from .registrylib.paths import list_versions
 
@@ -41,6 +43,7 @@ ENROLLED = [
     "standards/yang/ietf-interfaces-tunnel",
     "standards/yang/ietf-interfaces-vlan",
     "standards/yang/ietf-interfaces-physical",
+    "standards/yang/ietf-nat",
 ]
 
 
@@ -103,12 +106,58 @@ def _first_add_commit(registry_root: Path, path: Path) -> str | None:
     return lines[-1]
 
 
+# Top-level keys a file gains ONLY when it receives its release signature
+# (tools/registry_sign.py, proposals/schema-registry §5) -- appended after
+# the fact, never touching anything that was already there. This is the
+# one sanctioned exception to "never edit a published file": signing a
+# file it wasn't wired into `make` when it was first merged (see #60's
+# thead) is a real gap, and backfilling it must not read as a repeat of
+# #49 -- the whole point is that #49 changed EXISTING content
+# (a citation, some origin tags), not that it added trailing keys.
+_SIGNATURE_KEYS = ("release", "cic_countersign")
+
+
+def _only_gained_release_signature(
+    registry_root: Path, first_commit: str, path: Path
+) -> bool:
+    """True if `path`'s current content differs from its first-committed
+    content ONLY by the presence of _SIGNATURE_KEYS -- i.e. every other
+    key, at the top level and below, is untouched. False (the safe
+    default) on any parse error, so a malformed file is never silently
+    waved through."""
+    result = subprocess.run(
+        ["git", "show", f"{first_commit}:{path.relative_to(registry_root)}"],
+        cwd=registry_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )  # nosec B603 B607
+    if result.returncode != 0:
+        return False
+    try:
+        original = yaml.safe_load(result.stdout) or {}
+        current = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError:
+        return False
+    if not isinstance(original, dict) or not isinstance(current, dict):
+        return False
+    stripped_current = {k: v for k, v in current.items() if k not in _SIGNATURE_KEYS}
+    # The signature keys may only be ADDED, never already present in the
+    # original -- a file that already had one and still differs is a real
+    # edit, not a first-time signing.
+    if any(k in original for k in _SIGNATURE_KEYS):
+        return False
+    return stripped_current == original
+
+
 def check_no_frozen_edits(
     registry_root: Path, enrolled: list[str] | None = None
 ) -> list[str]:
     """Paths (relative to registry_root) of enrolled, versioned schema
     files whose current content no longer matches the content they had
-    when first committed -- the actual guard against a repeat of #49."""
+    when first committed -- the actual guard against a repeat of #49.
+    Gaining a release signature (_only_gained_release_signature) is the
+    one sanctioned exception; everything else is a real violation."""
     problems: list[str] = []
     for rel in ENROLLED if enrolled is None else enrolled:
         schema_dir = registry_root / rel
@@ -122,7 +171,9 @@ def check_no_frozen_edits(
                 capture_output=True,
                 timeout=30,
             )  # nosec B603 B607
-            if result.returncode == 1:
+            if result.returncode == 1 and not _only_gained_release_signature(
+                registry_root, first_commit, v.path
+            ):
                 problems.append(str(v.path.relative_to(registry_root)))
     return problems
 
