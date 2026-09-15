@@ -95,13 +95,50 @@ resolved:
       Az ietf-interfaces-logical logical_type mintáját követve valódi
       config mező lett belőle.
 
+  - issue: "#46"
+    cím: "RFC provenance -- 4 mező origin: rfc8343/rfc8344 tévesen"
+    pr: "#62"
+    állapot: "zárva, main-en él"
+    megjegyzés: >
+      A 4 állítás ténylegesen ellenőrizve az RFC 8343/8344 szövege ellen
+      (rfc-editor.org, nem feltételezve), mielőtt bármi javítva lett --
+      mindegyik megerősítve. mtu/speed/duplex/lower_layer_if/
+      higher_layer_if/accept_ra origin cic-extension-re javítva.
+  - issue: "#63 (nem a threadből, a #46 verifikációja közben talált lelet)"
+    cím: "ietf-interfaces-physical state.duplex_actual/notifications
+      origin ugyanaz a hiba"
+    pr: "#65"
+    állapot: "zárva, main-en él"
+  - issue: "#48"
+    cím: "dedikált NAT YANGBlock (RFC 8512-alapú)"
+    pr: "#60"
+    állapot: "zárva, main-en él"
+    megjegyzés: >
+      Egy blokk (translation_type: snat/dnat/masquerade), nem három --
+      szándékosan pool/port-range nélkül első körben. Ez volt a session
+      első valóban ÚJ (nem migrált) YANGBlock tartalma.
+  - issue: "#47"
+    cím: "VLAN interface-entity vs switchport-policy szétválasztás"
+    pr: "#66 (1. lépés)"
+    állapot: "RÉSZBEN nyitva -- lásd still_open"
+    megjegyzés: >
+      ietf-interfaces-l2vlan + cic-switchport-vlan blokkok bevezetve,
+      signed. A régi ietf-interfaces-vlan változatlan marad. Az
+      adapter-migráció (switch-netconf-adapter/ovs-adapter átállítása
+      az új blokkokra) szándékosan külön lépés, nincs ebben a PR-ben.
+
 still_open:
-  - "#46 -- RFC provenance több mezőn: nem RFC-szöveg-szinten ellenőrizve,
-    csak elfogadott irányként kezelve, mielőtt bárki hozzányúl."
-  - "#47 -- VLAN interface-entity vs switchport-policy szétválasztás:
-    tervezési javaslat, nincs kezdve."
-  - "#48 -- dedikált NAT YANGBlock: tervezési javaslat, explicit nem-most
-    jelölve, RFC 8512-alapú."
+  - "#47 (2. lépés) -- switch-netconf-adapter és ovs-adapter migrálása
+    ietf-interfaces-vlan-ról ietf-interfaces-l2vlan + cic-switchport-vlan-ra.
+    Már aláírt AdapterContract fájlokat érintene, ezért külön PR."
+  - "A thead ~25-30 blokkos / ~12 000 soros 'teljes network vocabulary'
+    javaslata (LACP, bridge, STP, switchport, routing, BGP, OSPF, BFD,
+    VRRP, DHCP server/relay, DNS, ACL, stateful firewall, QoS, L2/L3
+    topology) -- ez a `rejected` szekcióban már lezárt döntés, NEM
+    elfelejtett munka: semmilyen kód nem olvassa ma a standards/yang/
+    tartalmát, a mennyiségi bővítés tízszeresére növelné az
+    ellenőrizetlen dokumentációt a meglévő tartalom kikényszerítése
+    előtt. Csak akkor érdemes újranyitni, ha ez az alapfeltétel változik."
 
 státusz:
   - "cic-primitives: aktív (nem archivált), devel HEAD a v0.2.0 release
@@ -111,11 +148,19 @@ státusz:
     másolatában él, nincs visszavezetve."
   - "standards/yang/ gépi lefedettsége már NEM nulla: check_yang_extends
     (#45) valódi shape-diffet futtat az extends-kapcsolatokon, a
-    LATEST.yaml guard (#52) 5 könyvtáron kikényszeríti, hogy lezárt
+    LATEST.yaml guard (#52) 8 könyvtáron kikényszeríti, hogy lezárt
     verziófájlt senki ne szerkesszen helyben. A #28-as SKIPPED-jelzés
     (evolution check YANGBlock-fájlokon belül) továbbra is fennáll --
     az egy másik tengely (azonos séma egymást követő verziói), amit
     check_yang_extends nem fed le."
+  - "Fájlonkénti release-aláírás (tools/registry_sign.py, proposals/
+    schema-registry §5) mostantól valóban élő -- Vault author-sign +
+    CICSourceCA ellenjegyzés minden ma keletkezett/módosított LATEST
+    fájlon (ietf-nat, ietf-lldp, cic-yang-block-schema, ietf-interfaces-
+    tunnel/vlan/physical/base/logical, ietf-ip-v6, ietf-interfaces-l2vlan,
+    cic-switchport-vlan). A registry TÖBBI, session előtti tartalma
+    (~32 fájl general/ + standards/yang/ régi verziók) még nincs aláírva
+    -- külön, nagyobb backfill döntés, nincs elkezdve."
   - "devel branch megszűnt 2026-09-15-én (cic-factory/CIC/CLAUDE.md és
     a repo saját döntése) -- minden PR mostantól közvetlenül main-t
     célozza, ezért a Closes #N automatika végre valóban működik
