@@ -29,10 +29,10 @@ ietf-interfaces-vlan.v0.1.5-src2026.yaml`-ból — `vlan_id`/`name`/
 `vlan_mode`/`allowed_vlans`/`native_vlan` kihagyva (azok a testvér
 `cic-switchport-vlan`-ban élnek).
 
-**⚠ Adapter-migráció még nincs elvégezve.** A `switch-netconf-adapter`/
-`ovs-adapter` egyelőre a régi `ietf-interfaces-vlan`-t referenciázza —
-az átállás erre a két blokkra szándékosan külön lépés (nem ennek a
-PR-nek a része), mert már aláírt `AdapterContract` fájlokat érintene.
+Adapter-migráció elvégezve — `switch-netconf-adapter`/`ovs-adapter`
+`v0.4.2` (és `../../../general/network/network-interface/` `v0.4.2`) már
+ezt a blokkot és a `cic-switchport-vlan`-t referenciázza, nem a régi
+`ietf-interfaces-vlan`-t.
 
 Fájlonkénti release-aláírás: `v0.1.0` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és

@@ -19,8 +19,11 @@ megnevezi**, melyik adapter melyik `standards/yang/` YANGBlock-okra épül:
 ```yaml
 - name: switch-netconf-adapter
   backend: switch
-  yang_blocks: [ietf-interfaces-physical, ietf-interfaces-vlan]
+  yang_blocks: [ietf-interfaces-physical, ietf-interfaces-l2vlan, cic-switchport-vlan]
 ```
+
+(`v0.4.2` óta — [#47](https://github.com/CentralInfraCore/cic-schema-registry/issues/47)
+szerint az `ietf-interfaces-vlan` szétválasztva.)
 
 Ez egy konkrét, valós bizonyíték arra, hogy a három-réteg (`general`/
 `standards`/`providers`) modell működik: a `general/` domain composition
@@ -57,4 +60,25 @@ korlátozottabb változat.
 CICSourceCA ellenjegyzés a `build_hash` felett, mindkettő érvényes, ugyanaz
 a 2026-os CA-lánc, mint minden korábbi migrációnál.
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: `v0.4.2` a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén).
+
+## v0.4.2 — ietf-interfaces-vlan lecserélve ([#47](https://github.com/CentralInfraCore/cic-schema-registry/issues/47))
+
+A `yang_refs` lista és a `binding_surface.adapter_capabilities.
+known_adapters.switch-netconf-adapter.yang_blocks` bejegyzése is
+lecserélve a `#47` szerint szétválasztott `ietf-interfaces-l2vlan` +
+`cic-switchport-vlan` blokk-párra, összhangban a `../switch-netconf-
+adapter/` és `../ovs-adapter/` `v0.4.2` migrációjával.
+
+**Talált, de itt szándékosan nem javított kérdés:** a `config_surface.
+vlans[]` inline mező-lista (`vlan_id`/`vlan_mode`/`allowed_vlans`/
+`dhcp_service` egy tömbben) leírása még mindig "(ietf-interfaces-vlan
+alapján)"-t mond — ez történetileg igaz marad (ez a struktúra innen
+származik), de maga a struktúra már most is összevonva tartalmazza mind
+az entitás-, mind a policy-mezőket egy flat objektumban. Ennek
+szétválasztása a `config_surface`-en (a ténylegesen géppel olvasott
+felületen, szemben a csak dokumentáló `yang_refs`-szel) egy jóval
+nagyobb, külön mérlegelendő váltás — nem ennek a PR-nek a része.
