@@ -37,6 +37,9 @@ from .registrylib.paths import list_versions
 
 ENROLLED = [
     "standards/yang/ietf-lldp",
+    "standards/yang/cic-yang-block-schema",
+    "standards/yang/ietf-interfaces-tunnel",
+    "standards/yang/ietf-interfaces-vlan",
 ]
 
 
