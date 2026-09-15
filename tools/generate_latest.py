@@ -44,6 +44,8 @@ ENROLLED = [
     "standards/yang/ietf-interfaces-vlan",
     "standards/yang/ietf-interfaces-physical",
     "standards/yang/ietf-nat",
+    "standards/yang/ietf-interfaces-l2vlan",
+    "standards/yang/cic-switchport-vlan",
 ]
 
 
