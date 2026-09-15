@@ -41,6 +41,7 @@ ENROLLED = [
     "standards/yang/ietf-interfaces-tunnel",
     "standards/yang/ietf-interfaces-vlan",
     "standards/yang/ietf-interfaces-physical",
+    "standards/yang/ietf-nat",
 ]
 
 

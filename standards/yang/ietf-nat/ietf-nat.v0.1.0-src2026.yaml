@@ -1,0 +1,208 @@
+---
+metadata:
+  name: ietf-nat
+  source: RFC 8512 — A YANG Module for Network Address Translation (NAT) and
+    Network Prefix Translation (NPT)
+  version: v0.1.0
+  description: >
+    NAT building block — SNAT (statikus forrás-cím fordítás), DNAT
+    (cél-cím/port fordítás, port-forwarding), és MASQUERADE (dinamikus
+    SNAT, a kimenő interfész aktuális címére). RFC 8512 CIC-normalizált
+    adaptációja — egy szabály-lista, translation_type mezővel
+    megkülönböztetve, nem három külön blokk.
+
+    A translation_type szemantikai művelet, nem Linux chain-név — az
+    adapter fordítja platform-specifikusra (nftables/iptables/VyOS/
+    FortiGate/OCI stb.).
+
+    Scope (v0.1.0): egyetlen cím/port rule-onként — cím-pool és
+    port-range támogatás (SNAT/DNAT/MASQUERADE mindegyikére elvben
+    értelmes) SZÁNDÉKOSAN NINCS ebben a verzióban. Ez a scope-metszés
+    lásd issue #48 threadjében.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8512
+    - nat
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.2
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-nat
+  yang_source: RFC 8512
+  standalone: true    # nem interfészhez kötött augmentáció, önálló szabály-lista
+
+  config:
+    - name: rules
+      type: list
+      required_on_create: false
+      description: NAT szabályok listája
+      item_fields:
+        - name: name
+          type: string
+          role: key
+          description: Szabály egyedi azonosítója
+
+        - name: translation_type
+          type: enum
+          values: [snat, dnat, masquerade]
+          required_on_create: true
+          description: >
+            snat: explicit forrás-cím/port fordítás.
+            dnat: explicit cél-cím/port fordítás (port-forwarding).
+            masquerade: dinamikus snat — a fordított forrás-cím a
+            outbound_interface AKTUÁLIS címe (StateSurface.address),
+            nem egy itt megadott statikus érték — ezért nincs is
+            translated_address mezője.
+
+        - name: source_prefix
+          type: ip-prefix
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, masquerade]
+          required_when:
+            field: translation_type
+            in: [snat, masquerade]
+          description: Fordítandó forrás-hálózat (belső oldal)
+
+        - name: destination_prefix
+          type: ip-prefix
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            equals: dnat
+          description: Illesztendő cél-hálózat/cím (külső oldal)
+
+        - name: protocol
+          type: enum
+          values: [tcp, udp, icmp, any]
+          required_on_create: false
+          default: any
+          description: Szűrt protokoll
+
+        - name: source_port
+          type: integer
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          description: Forrás port (opcionális szűrés)
+
+        - name: destination_port
+          type: integer
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          required_when:
+            field: translation_type
+            equals: dnat
+          description: Cél port — DNAT-nál jellemzően kötelező (port-forwarding)
+
+        - name: inbound_interface
+          type: interface-ref
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            equals: dnat
+          required_when:
+            field: translation_type
+            equals: dnat
+          description: Melyik interfészen érkező forgalomra vonatkozik (DNAT)
+
+        - name: outbound_interface
+          type: interface-ref
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, masquerade]
+          required_when:
+            field: translation_type
+            in: [snat, masquerade]
+          description: >
+            Melyik interfészen kimenő forgalomra vonatkozik. MASQUERADE
+            esetén ennek az interfésznek az AKTUÁLIS címéből származik a
+            fordított forrás-cím — futásidőben, nem itt megadva.
+
+        - name: translated_address
+          type: ip-address
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          required_when:
+            field: translation_type
+            in: [snat, dnat]
+          description: >
+            A fordított cím. SNAT-nál az új forrás-cím, DNAT-nál az új
+            cél-cím. MASQUERADE-nél SZÁNDÉKOSAN nincs — lásd
+            translation_type leírását.
+
+        - name: translated_port
+          type: integer
+          required_on_create: false
+          applicable_when:
+            field: translation_type
+            in: [snat, dnat]
+          description: A fordított port (DNAT port-forwardnál jellemző)
+
+  state:
+    - name: active_mappings
+      type: list
+      required_on_create: false
+      description: Jelenleg aktív NAT fordítások
+      item_fields:
+        - name: rule_name
+          type: string
+          description: >
+            Az active_mappings elemet létrehozó szabály neve (config.rules
+            beli elem). Szándékosan nincs role: reference jelölve — a
+            Role atom structural:[reference] a Shape cic-reference
+            szemantikus típusát követeli meg (domain-entity-k közötti
+            logical_id hivatkozás), ez viszont ugyanazon dokumentum egy
+            listaelemére mutat, más fogalom.
+        - name: original_address
+          type: ip-address
+        - name: original_port
+          type: integer
+        - name: translated_address
+          type: ip-address
+        - name: translated_port
+          type: integer
+        - name: protocol
+          type: enum
+          values: [tcp, udp, icmp]
+
+    - name: active_sessions
+      type: integer
+      description: Aktív fordított session-ök száma
+
+    - name: translated_packets
+      type: integer
+      description: Összesen fordított csomagok száma
+
+    - name: translated_octets
+      type: integer
+      description: Összesen fordított byte-ok száma
+
+    - name: allocation_failures
+      type: integer
+      description: >
+        Sikertelen fordítási kísérletek száma (pl. port-kimerülés egy
+        pool nélküli, egy-címes SNAT/MASQUERADE szabálynál)
+
+  notifications:
+    - name: allocation-failure
+      description: >
+        Egy NAT szabály nem tudott fordítást allokálni (pl. port-
+        kimerülés). Az allocation_failures számláló egyidejűleg nő.
+      origin: cic-extension
+      payload:
+        - name: rule_name
+          type: string
+        - name: reason
+          type: string
