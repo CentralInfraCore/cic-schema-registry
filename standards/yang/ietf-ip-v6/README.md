@@ -12,8 +12,10 @@ Byte-azonos másolat `yang/@v0.1.3`-ból (`schemas/ietf/ietf-ip-v6.yaml`),
 `metadata.version` → `v0.1.3`. Ugyanaz a ténylegesen ellenőrzött, kettős
 aláírás, mint `../ietf-interfaces-base/`-nál.
 
-Fájlonkénti release-aláírás: még nincs, ez a fájl (`v0.1.4`) nincs
-felvéve a `tools/generate_latest.py` `ENROLLED` listájába.
+Fájlonkénti release-aláírás: `v0.1.4` a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén).
 
 ## v0.1.4 — accept_ra origin javítva ([#46](https://github.com/CentralInfraCore/cic-schema-registry/issues/46))
 
