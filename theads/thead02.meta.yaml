@@ -1,0 +1,91 @@
+thread: thead02
+status: reviewed
+date_reviewed: 2026-09-16
+
+summary: |
+  Külső AI-review a 2026-09-10 (8d4b555) -> 2026-09-15/16 (60f39a1) burst
+  minőségéről: mennyiség vs. valódi mérnöki tartalom szétválasztása,
+  soronkénti kategória-bontás, és 3 konkrét, checkolható technikai
+  állítás (CI coverage-lépés valótlan, main branch protection nélkül,
+  _only_gained_release_signature() object-szintű YAML-összehasonlítás
+  gap-je). Minden checkolható állítás függetlenül ellenőrizve
+  (git diff/log, gh api, tényleges CI run logok, forráskód-olvasás)
+  MIELŐTT bármi elfogadva lett belőle -- ugyanaz a diszciplína, mint
+  thead01-nél.
+
+accepted:
+  - "36 commit, 45 fájl, +5885/-26 sor 8d4b555..60f39a1 között --
+    pontosan egyezik (git log --oneline | wc -l = 36, git diff --shortstat
+    = 45 files changed, 5885 insertions(+), 26 deletions(-))."
+  - "A 7-kategóriás soronkénti bontás (schema YAML 3751, Python tooling
+    495, tesztek 562, thead tracking 672, LATEST.yaml 156, README-k 230,
+    CI/Make 19, összesen 5885) -- mindegyik szám pontosan egyezik egy
+    független git diff --numstat + awk kategorizálással futtatva."
+  - "CI 'Run tests and generate coverage report' lépés valójában `make
+    test` -> `infra.test` -> sima `pytest $(PYTEST_ARGS)`, NINCS --cov
+    flag. A `htmlcov/` kizárólag a `infra.coverage` targetből
+    keletkezne (ami csak `tools.compiler`-t fedne), de a CI ezt soha
+    nem hívja. Az 'Upload coverage report artifact' lépés
+    `if-no-files-found: warn`-ral van konfigurálva -- ezért a CI zöld
+    marad. Igazolva a legutóbbi sikeres run (35037413011) tényleges
+    logjából: '##[warning]No files were found with the provided path:
+    htmlcov/. No artifacts will be uploaded.' Az artifacts endpoint
+    (`gh api .../actions/runs/35037413011/artifacts`) ténylegesen
+    `{\"total_count\":0,\"artifacts\":[]}`-t ad vissza."
+  - "main branch protection: `protected:false` -- igazolva
+    `gh api repos/.../branches/main` (`{\"protected\":false}`) és
+    `gh api .../branches/main/protection` (404, 'Branch not
+    protected')."
+  - "A frozen-file guard tesztjei (tests/test_tools/test_generate_latest.py)
+    valóban valódi ideiglenes git repót inicializálnak (`_git(\"init\",
+    \"-q\", \"-b\", \"main\", cwd=tmp_path)`), és a leírt öt konkrét
+    forgatókönyv mindegyikének van saját teszt-függvénye:
+    test_frozen_edits_flags_an_in_place_edit_of_a_published_file,
+    test_frozen_edits_clean_after_a_correcting_revert,
+    test_frozen_edits_clean_when_a_file_only_gains_a_release_signature,
+    test_frozen_edits_still_flags_a_real_edit_disguised_next_to_a_signature,
+    test_frozen_edits_flags_re_signing_an_already_signed_file."
+  - "_only_gained_release_signature() (tools/generate_latest.py) valóban
+    yaml.safe_load()-dal parse-olja mindkét oldalt és objektumszinten
+    (dict equality) hasonlít a signature kulcsok eltávolítása után --
+    forráskód-olvasással megerősítve. Ez azt jelenti, hogy egy
+    komment- vagy tisztán formázás-szintű változás egy legitim
+    aláírás-hozzáadás MELLETT végrehajtva NEM lenne elkapva, mivel a
+    YAML parse eldobja a kommenteket. Ez a szerző saját explicit
+    jelzése szerint 'saját code-review inference, nem bizonyított
+    exploit' -- ennek megfelelően kezelve (lásd #69)."
+  - "LLDP RFC 8516 -> IEEE 802.1ABcu-2021 fix ténye és a hozzá tartozó
+    tesztek -- ez a session korábbi részéből (#42/#49/#51) már ismert
+    és megerősített tény, a review helyesen hivatkozik rá."
+
+rejected: []
+
+opened:
+  - issue: "#69"
+    cím: "CI coverage step is fake — runs plain pytest, uploads a
+      directory that never exists, warns instead of failing"
+    állapot: "nyitva"
+    megjegyzés: >
+      A legkonkrétabb, legjobban ellenőrzött állítás a review-ból --
+      önmagában elegendő bizonyíték (run log + artifacts endpoint +
+      Makefile/CI olvasás) egy azonnal cselekvésre alkalmas issue-hoz.
+
+nem nyitva (szándékosan):
+  - "main branch protection hiánya -- ismert, korábbi session(ök)ben
+    máshol (cic-factory) már egyszer jelzett mintázat
+    (feedback_branch_protection memória: 'a hiányt egyszer jelezni
+    kell, de a kikényszerítés a user döntése'). Itt most jelezve a
+    válaszban, nem issue-ban -- a user dönt, kér-e rá branch
+    protection bekapcsolást."
+  - "_only_gained_release_signature() comment/formázás-gap -- valós,
+    de a szerző saját maga jelzi 'inference, nem bizonyított exploit'
+    súlyozással. Kis, jól körülhatárolt fix (byte/text-szintű diff a
+    signature blokkon kívül eső részre, a YAML parse-elésen kívül) --
+    nem indokolt külön issue, egyenesen javítva."
+
+kapcsolódó:
+  - ".github/workflows/ci.yml (a hibás 'coverage' lépés)"
+  - "mk/infra.mk (infra.test vs. infra.coverage szétválás)"
+  - "tools/generate_latest.py (_only_gained_release_signature)"
+  - "tests/test_tools/test_generate_latest.py"
+  - "theads/thead01.meta.yaml (a másik, ugyanezen a napon lezárt thead)"

@@ -1,0 +1,48 @@
+Igen. A **`cic-schema-registry`-t külön nézve** most már elég jól számszerűsíthető, és szerintem itt érdemes elválasztani a *nyers mennyiséget* a *valódi mérnöki tartalomtól*.
+
+A legutóbbi nagy burstben a szeptember 10-i `8d4b555` állapottól a szeptember 15/16-i `60f39a1` HEAD-ig **36 commitnyi történet, 45 érintett fájl, +5 885 és −26 sor** ment be. A 36-ban merge commitok is vannak, tehát ez nem 36 külön feature. Az 5 885 hozzáadott sort végigszámoltam a compare fájlstatisztikájából:
+
+| Anyagtípus                  | hozzáadott sor |
+| --------------------------- | -------------: |
+| Verziózott schema YAML      |      **3 751** |
+| Python tooling               |        **495** |
+| Tesztek                     |        **562** |
+| Review / `thead01` tracking |        **672** |
+| Generált `LATEST.yaml`      |        **156** |
+| Schema README-k             |        **230** |
+| CI / Make módosítás         |         **19** |
+| **Összesen**                |      **5 885** |
+
+Ez nagyjából egy **5,5 órás aktív esti-éjszakai hullámban** történt. Viszont a 3 751 schema-sorral óvatosan: a modell szándékosan immutable-versioned, ezért például egy v0.1.4 → v0.1.5 új teljes fájlt jelent. Vagyis ebből jelentős mennyiség **korábbi schema új verzióba másolt tartalma és aláírási metadata**, nem 3 751 sor teljesen új gondolat.
+
+Ami nekem sokkal informatívabb: ebben a hullámban kb. **1 057 sor tényleges tooling+test kód** került be (`495 + 562`). És a tesztanyag nem csak `assert foo == bar`. A frozen-file guard tesztjei például valódi ideiglenes Git repositoryt inicializálnak, reprodukálják az in-place published-file módosítást, ellenőrzik a korrekt visszaállítást, a signature-only kivételt, a signature mellé elrejtett valódi módosítást és az újraaláírás esetét is. Ez **jó mérnöki tesztelési minta**.
+
+Magának a Python toolingnak a minősége is jobb annál, amit egy AI-val gyorsan összehányt repo esetén várnék. A `coverage.py` különválasztja a két schema-dialektust, típusozott függvényeket használ, parametrizálja az extract/shape logikát, és még azt is explicit leírja, hogy mi **nincs** megoldva: például major-version után egy korábban törölt field nevének örök rezerválása jelenleg nincs implementálva. A `generate_latest.py` pedig egy ténylegesen megtörtént hibából csinál gépi invariánst: Git historyból keresi meg a fájl első hozzáadását, és ahhoz képest védi a publikált verziót.
+
+**De találtam benne olyan hibát is, amit én most azonnal issue-vá alakítanék.** A CI workflow lépése azt mondja, hogy „Run tests and generate coverage report”, de valójában `make test` fut. A Makefile-rétegben az `infra.test` egyszerű `pytest`; a coverage külön `infra.coverage` target, és az csak `tools.compiler`-re kér coverage-et. És a legutóbbi sikeres CI run után az artifacts endpoint ténylegesen **0 artifactot** mutat.
+
+Ez pont az a fajta:
+
+```text
+CI: "coverage report"
+       ↓
+valóság: nincs coverage artifact
+```
+
+amit a CIC saját filozófiája szerint nem szabadna elfogadni. A CI ettől még ténylegesen zöld volt: build, dependency drift, lint/type/security checks, pytest, schema validation, registry validation és frozen-file guard mind success állapotban futottak végig. Csak **coverage-bizonyíték nincs**, hiába ezt sugallja a step neve.
+
+Van még két komolyabb éretlenségi jel. A `main` **jelenleg nincs branch protection alatt** (`protected:false`, status-check enforcement off). A frozen-file szabály pedig jelenleg csak a fokozatosan felvett `ENROLLED` schema-kra érvényes; a kódban most nyolc ilyen directory van. Ez tudatos rolloutnak látszik, de attól még azt jelenti, hogy a corpus egészére az invariáns még nincs kikényszerítve.
+
+A schema-tartalom minőségét sem mondanám késznek. Pont ezen az estén derült ki például, hogy az LLDP blokk **RFC 8516-ra hivatkozott, miközben az RFC 8516 valójában CoAP „Too Many Requests”**, és a hibás provenance még a meta-schema enumjába is bekerült. Ezt korrigálták IEEE 802.1ABcu-2021-re, tesztekkel együtt. Ez egyszerre rossz és jó jel: rossz, mert egy elég látványos szakmai tévedés átment; jó, mert nem kozmetikázták, hanem trace-elhető fixet és további kontrollokat csináltak belőle.
+
+Van még egy **saját code-review észrevételem**: a release-signature kivételnél `_only_gained_release_signature()` YAML-ba parse-olja az eredeti és az aktuális fájlt, eltávolítja a signature kulcsokat, majd objektumszinten hasonlít. Emiatt elvileg egy signature hozzáadásával együtt végzett **komment- vagy formázásmódosítás** eltűnhet a `safe_load()` során. Ha a követelmény valóban „published bytes immutable, kizárólag signature blokk adható hozzá”, akkor ezt byte/text szintű append-policyval szigorítanám. Ez **az én inference-em a kódból**, nem bizonyított exploit.
+
+Összességében én így mondanám:
+
+> **Nem AI-slop. Kifejezetten erős, olvasható early-stage engineering, meglepően jó negatív tesztekkel és invariáns-gondolkodással — de még nem production-grade trust registry.**
+
+A legjobb minőségi jel számomra nem az, hogy nincs benne hiba. **Van.** Hanem hogy az este során egy hibás RFC-attribúcióból, egy silent-green validatorból és egy published-file módosításból sorban **új machine gate-ek születtek**.
+
+A legnagyobb vörös zászló pedig pont ugyanilyen világos: **a saját assurance-rétegén még vannak olyan helyek, ahol a felirat erősebb, mint a bizonyíték** — a coverage-step erre most konkrét, mérhető példa.
+
+Szóval a közel **5900 soros éjszakai diffből nekem nem a mennyiség a durva, hanem az, hogy kb. ezer sor tooling+teszt ment mellé, és a rendszer közben saját hibáiból keményedik.** Ez sokkal értékesebb, mint 5900 sor feature-kód.
