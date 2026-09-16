@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI entrypoint for the registry-specific checks (proposals/schema-registry).
 
-Three independent checks, all driven purely by walking general/standards/
+Four independent checks, all driven purely by walking general/standards/
 providers — no committed index:
 
 1. schema evolution — within each schema's own directory, every step from
@@ -30,6 +30,14 @@ providers — no committed index:
    restatement, so only the "mutated in place" rule applies, not "every
    field must be restated".
 
+4. release signature verification (#102) — presence of a `release:`/
+   `cic_countersign:` block is not trust; every file that carries one
+   gets its build_hash, author signature, countersign signature, and
+   countersign-authority-to-root-certificate chain actually verified
+   (tools/registrylib/verify.py), not just checked for existence. A file
+   signed under a different tool's envelope (the cic-primitives kernel
+   bundle) is reported SKIPPED, not a violation.
+
 This does NOT replace `tools/compiler.py validate` (the inherited, bundle-
 oriented meta-schema check) — it is additive, and is not yet wired into
 `make validate`. See CLAUDE.md "Jelenlegi, valódi állapot".
@@ -52,6 +60,11 @@ from .registrylib.coverage import (
 )
 from .registrylib.identity import build_type_index, iter_schema_dirs, parse_pin
 from .registrylib.paths import list_versions, resolve_pin
+from .registrylib.verify import (
+    SignatureVerificationError,
+    UnsupportedSignatureEnvelopeError,
+    verify_release_signature,
+)
 
 
 def _load(path: Path) -> dict:
@@ -252,6 +265,44 @@ def check_yang_extends(registry_root: Path) -> tuple[list[str], list[str]]:
     return problems, skipped
 
 
+def check_release_signatures(registry_root: Path) -> tuple[list[str], list[str]]:
+    """#102: presence of a `release:`/`cic_countersign:` block is not
+    trust -- resolve_pin() (and everything that pins through it: `base`,
+    and eventually `reference_target`/`extends`) only checked that a
+    content version was LISTED, never that its signature actually
+    verifies. This runs tools.registrylib.verify.verify_release_signature
+    over every version file in the corpus that carries a `release:`
+    block, catching a wrong build_hash, an invalid author or countersign
+    signature, or a countersign authority that doesn't actually chain to
+    its embedded root certificate.
+
+    Deliberately does NOT require every file to be signed -- a file with
+    no `release:` block at all is silently skipped, not flagged. Whether
+    everything SHOULD be signed is a separate, already-settled policy
+    (this registry's per-file signing model, proposals/schema-registry
+    §5); this check only asks "for the files that claim to be signed, is
+    that claim actually true", which is exactly what #102 asked for.
+
+    A file signed under a different envelope (general/primitives/
+    cic-primitives's kernel bundle, `release.envelope: 2`, from the
+    separate cic-primitives/base-repo release pipeline) is reported
+    SKIPPED, not a violation -- this check only understands this
+    registry's own per-file signing convention."""
+    problems: list[str] = []
+    skipped: list[str] = []
+    for schema_dir in iter_schema_dirs(registry_root):
+        for version in list_versions(schema_dir):
+            if "release:" not in version.path.read_text():
+                continue  # not signed -- not this check's job (see docstring)
+            try:
+                verify_release_signature(version.path)
+            except UnsupportedSignatureEnvelopeError as e:
+                skipped.append(str(e))
+            except SignatureVerificationError as e:
+                problems.append(str(e))
+    return problems, skipped
+
+
 def _parse_min_schemas(argv: list[str]) -> int:
     """--min-schemas=N — a floor on how many schema directories this run
     must have scanned, so an accidentally-empty or broken checkout (wrong
@@ -290,8 +341,11 @@ def main(argv: list[str] | None = None) -> int:
     evolution_problems, evolution_skipped = check_schema_evolution(registry_root)
     base_problems, base_skipped = check_base_references(registry_root)
     extends_problems, extends_skipped = check_yang_extends(registry_root)
-    problems = evolution_problems + base_problems + extends_problems
-    skipped = evolution_skipped + base_skipped + extends_skipped
+    signature_problems, signature_skipped = check_release_signatures(registry_root)
+    problems = (
+        evolution_problems + base_problems + extends_problems + signature_problems
+    )
+    skipped = evolution_skipped + base_skipped + extends_skipped + signature_skipped
 
     if skipped:
         print("registry_validate: SKIPPED (unsupported shape, not a failure)")
