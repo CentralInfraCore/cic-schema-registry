@@ -21,4 +21,7 @@ release verziójára (`v0.2.3`) állítva. Ugyanabban a release bundle-ben
 van, mint a `compute-resource` — ugyanaz a ténylegesen ellenőrzött kettős
 aláírás (lásd `../compute-resource/README.md` "Eredet / provenance" szakasza).
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: v0.2.3 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén, minden létező verzión).

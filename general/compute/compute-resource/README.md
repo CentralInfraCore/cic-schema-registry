@@ -65,8 +65,10 @@ feltételezve):
   2026-os évjárat, mint a `cic-primitives` kernelnél és a `cic-storage`
   tartalomnál) — ez indokolja a `-src2026` jelölést.
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben —
-ez a fájl NEM hordoz saját `release`/`cic_countersign` blokkot.
+Fájlonkénti release-aláírás: v0.2.3, v0.2.4, v0.2.5 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén, minden létező verzión).
 
 ## v0.2.4 — registry-native tartalmi javítás (NEM a `cic-compute`-ból jön)
 
