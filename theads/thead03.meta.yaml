@@ -1,0 +1,101 @@
+thread: thead03
+status: reviewed
+date_reviewed: 2026-09-16
+
+summary: |
+  Külső AI-review a standards/yang réteg architektúrájáról (nem csak
+  provenance-hibákról, mint thead01, hanem a validáció/meta-séma/
+  identity/CI mélyebb szerkezetéről). 7 prioritált kritikus pont + egy
+  "next level" javaslat (pinned upstream YANG parse-alapú verifikáció).
+  Minden checkolható állítás függetlenül ellenőrizve forráskód-olvasással
+  MIELŐTT bármi elfogadva lett belőle -- ugyanaz a diszciplína, mint
+  thead01/thead02-nél. Minden egyes checkolható állítás igaznak
+  bizonyult, több esetben a review-nál is súlyosabb formában.
+
+accepted:
+  - "P0: `make validate` -> `tools.compiler validate --dry-run` ->
+    ReleaseManager.run_validation() (tools/infra.py:435-456) explicit
+    placeholder -- betölti a `canonical_source_file`-t (project.yaml:
+    `schemas/index.yaml`), logolja hogy betöltődött, majd literálisan
+    kiírja: \"✓ Schema validation logic to be fully implemented here.\",
+    és utána sikert jelent. A review állításánál is súlyosabb: a
+    betöltött fájl (`schemas/index.yaml`) NEM a registry valódi
+    51 fájlos corpusának indexe, hanem egy `metadata.name:
+    \"template-schema\"` sablon-placeholder (\"This is a template for
+    creating new schemas\") -- a `general/`/`standards/`/`providers/`
+    tényleges tartalmát a `make validate` lépés SOHA nem éri el."
+  - "extends.version mindig v0.0.dev -- ellenőrizve mind a 12 extends-
+    használaton standards/yang alatt (l2vlan, logical x2, physical x4,
+    tunnel x2, vlan x3), kivétel nélkül."
+  - "cic-yang-block-schema meta-séma field_schema `required: [name,
+    type]` -- values/item_type/item_fields/target_kind mind egyszerű
+    opcionális property, nincs feltételes (if/then) megkövetelés
+    type=enum/list/ref esetén. `range` pattern szigorúan
+    `^[0-9]+\\.\\.[0-9]+$`, csak pozitív n..m. `applicable_when`/
+    `required_when` -- nulla találat a teljes tools/ fában, semmi nem
+    ellenőrzi hogy a hivatkozott mező létezik."
+  - "origin enum [rfc8343, rfc8344, ieee8021ab, openconfig,
+    cic-extension] -- nincs rfc8512. ietf-nat.v0.1.0 teljes fájljában
+    PONTOSAN EGY `origin:` sor van, az is cic-extension -- a NAT mezők
+    gyakorlatilag egyike sem hordoz field-level RFC 8512 origint,
+    mert a modell nem tudja kifejezni."
+  - "ietf-lldp: metadata.name=ietf-lldp, de spec.yang_module=
+    ieee802-dot1ab-lldp, spec.yang_source='IEEE 802.1ABcu-2021' --
+    identity és provenance ellentmond egymásnak. A meta-séma name
+    pattern-je (`^(ietf|openconfig|cic)-[a-z0-9-]+$`) ténylegesen csak
+    ietf/openconfig/cic prefixet enged, ieee-t nem."
+  - "registry_validate SKIPPED nem failure -- `python -m
+    tools.registry_validate --min-schemas=20` exit code 0 annak
+    ellenére, hogy 13 YANGBlock-fájl SKIPPED-ként van jelezve
+    (#28 -- a spec.config/spec.state dialektus evolúciós
+    ellenőrzése nincs bekötve)."
+
+rejected: []
+
+opened:
+  - issue: "#74"
+    cím: "make validate never touches the real schema corpus — it's an
+      unimplemented placeholder validating a template file"
+    állapot: "nyitva"
+    megjegyzés: >
+      A review saját P0 besorolását követve -- egyértelmű, nem
+      design-vitás korrektségi hiba, ugyanabba a kategóriába tartozik,
+      mint a #69-ben már javított hamis coverage-lépés. Nem javítva
+      ebben a session-ben -- a valódi javítás (mi legyen a "meta-schema
+      validation" tartalma a 3-réteg modellben) tervezési kérdés, a
+      user döntése kell hozzá, mielőtt bárki implementálja.
+
+nem nyitva (szándékosan, roadmap-szintű design-kérdések):
+  - "extends exact-version + content/build-hash pin (2. pont) --
+    strukturális váltás, érinti a check_yang_extends logikát is."
+  - "YANGBlock meta-séma szigorítása (if/then feltételes required,
+    applicable_when/required_when mező-létezés ellenőrzés) (3. pont)."
+  - "strukturált provenance modell (authority/document/module/
+    revision/path/relation) az enumos origin helyett (4. pont)."
+  - "IEEE/IETF identity-névtér rendezése (5. pont) -- érinti a
+    meta-séma name pattern-jét és minden meglévő ietf-* artifact
+    nevét, ha a döntés átnevezés mellett esik."
+  - "conformance_mode: mirror|profile|normalization|extension
+    artifact-szintű jelölés (6. pont)."
+  - "SKIPPED != PASS policy a production-státuszú standards/yang
+    artifactokra (7. pont) -- ütközik a #28 jelenlegi, szándékos
+    'ne hazudjon OK-t amit nem ért' filozófiájával, ezt tisztázni
+    kell mielőtt bármi változik."
+  - "'nagy szintlépés': pinned upstream .yang -> pyang/libyang parse ->
+    canonical AST -> CIC forrás-ellenőrzés pipeline -- ez egy önálló,
+    nagy kezdeményezés, messze túlmutat egy PR-en."
+  - "Mindegyik fenti pont a user explicit priorizálását igényli,
+    mielőtt implementáció kezdődne -- ugyanaz az elv, mint #25-nél:
+    ne találjunk ki sémát/architektúrát valós döntés nélkül."
+
+kapcsolódó:
+  - "tools/infra.py (run_validation, a P0 hely)"
+  - "schemas/index.yaml (a template-placeholder fájl, amit ténylegesen
+    validál)"
+  - "project.yaml (canonical_source_file: schemas/index.yaml)"
+  - "standards/yang/cic-yang-block-schema/ (meta-séma, 3./5. pont)"
+  - "standards/yang/ietf-nat/ (4. pont, origin-enum gap)"
+  - "standards/yang/ietf-lldp/ (5. pont, identity/provenance ütközés)"
+  - "tools/registry_validate.py (check_yang_extends, 2./7. pont)"
+  - "theads/thead01.meta.yaml, theads/thead02.meta.yaml (korábbi,
+    ugyanezen a napon lezárt theadek)"
