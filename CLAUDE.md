@@ -2,13 +2,22 @@
 
 ## Branch szabály — KÖTELEZŐ
 
-**Érdemi fejlesztés kizárólag a `devel` ágon történhet** (ha még nincs
-`devel` ág, elsőként azt kell létrehozni `main`-ből).
+**A `devel` ág és a két-ágas modell 2026-09-15-én tudatosan visszavonva**
+(`77a709b`, "chore(ci): drop devel from CI triggers, retire the
+two-branch workflow") — sem branch protection nem volt egyik ágon sem,
+sem valódi tartalmi divergencia nem alakult ki a `devel`→`main`
+promóciók között (minden promóció 1:1 pass-through volt). A `devel` ág
+azóta törölve, sem lokálisan, sem a remote-on nem létezik.
+
+**Jelenlegi modell:**
 
 - `main` — csak merge fogad, közvetlen commit tilos
-- `devel` — ez az aktív fejlesztési ág
-- fájlonkénti issue-branch-ek (pl. `issue-142-storage-resource-v1.2.0`) — egy
-  séma-verzió-változtatásra, PR után törlendő (nem perzisztens ág)
+- fájlonkénti/issue-branch-ek (pl. `fix/46-rfc-provenance-origin`,
+  `feature/dhcp-service-schema`) — egy változtatásra, PR-ral `main`
+  ellen, merge után törlendő (nem perzisztens ág)
+
+Munkafolyamat: branch `main`-ből → módosítás → PR `main` ellen → CI zöld
+→ merge → branch törlése. Nincs köztes integrációs ág.
 
 ## Mi ez a rendszer
 
@@ -53,74 +62,88 @@ Amíg ez nincs meg, ne tegyél tényállításokat a registry állapotáról.
 
 ---
 
-## Jelenlegi, valódi állapot (2026-09-09-i frissítés)
+## Jelenlegi, valódi állapot (2026-09-16-i frissítés)
 
-A bootstrap óta a hat elsődleges primitives-group repó tartalma (kernel +
-5 domain) migrálva lett — a `general/`/`standards/` könyvtárak **NEM üresek**:
+30 séma-könyvtár (`general/`: 18, `standards/yang/`: 12), 52 tartalmi
+fájl (verziók összesen), `providers/` még mindig üres (`.gitkeep` only —
+nincs provider-modul mapping):
 
-| Réteg | Fájlszám | Forrás |
-|---|---:|---|
-| `general/primitives/` | 1 (bundle) | `cic-primitives` `primitives/@v0.2.0` |
-| `general/compute/` | 4 | `cic-compute` `compute/@v0.2.3` |
-| `general/storage/` | 2 | `cic-storage` `storage/@v0.1.2` |
-| `general/kubernetes/` | 7 | `cic-kubernetes` `kubernetes/@v0.1.2` |
-| `general/network/` | 3 | `cic-network` `network/@v0.4.1` |
-| `standards/yang/` | 9 | `cic-yang` `yang/@v0.1.3` |
-| `providers/` | 0 | — még nincs provider-modul mapping |
+| Réteg | Fájlszám (verziók összesen) |
+|---|---:|
+| `general/primitives/` | 1 (bundle) |
+| `general/compute/` | 6 |
+| `general/storage/` | 4 |
+| `general/kubernetes/` | 9 |
+| `general/network/` | 7 (`network-interface`, `switch-netconf-adapter`, `ovs-adapter`, `dhcp-service`) |
+| `standards/yang/` | 25 (`ietf-lldp`, `cic-yang-block-schema`, `ietf-interfaces-{base,physical,logical,tunnel,vlan,l2vlan}`, `cic-switchport-vlan`, `ietf-ip-v4`, `ietf-ip-v6`, `ietf-nat`) |
+| `providers/` | 0 |
 
-`tools/registrylib/` (`paths.py`, `identity.py`, `coverage.py`) és a hozzá
-tartozó `tools/registry_validate.py` CLI **meg vannak írva és tesztelve** —
-ez registry-specifikus, additív a `tools/compiler.py`/`tools/infra.py`
-örökölt, bundle-alapú logikájához képest (azt NEM helyettesíti).
-`tools/registry_sign.py` (+ `tools/registrylib/signing.py` +
-`tools/vault-mtls-client/`) is megvan: fájlonkénti, bundle nélküli aláírás
-Vault Transit + CICSourceCA ellenjegyzéssel, élő teszttel bizonyítva.
+**Aláírás: 52/52 tartalmi fájl valódi Vault Transit + CICSourceCA
+ellenjegyzéssel aláírva** (`grep -L '^release:'` a teljes
+`general/`+`standards/` fán üres találatot ad) — `tools/registry_sign.py`
+(+ `tools/registrylib/signing.py` + `tools/vault-mtls-client/`), minden
+egyes verzió saját, önálló aláírt egység (nem bundle).
+
+**`tools/generate_latest.py` + `make registry.latest`** — `LATEST.yaml`
+generálás + frozen-file guard: minden `ENROLLED`-be felvett könyvtárban
+(jelenleg 9: `standards/yang/{ietf-lldp,cic-yang-block-schema,
+ietf-interfaces-tunnel,ietf-interfaces-vlan,ietf-interfaces-physical,
+ietf-nat,ietf-interfaces-l2vlan,cic-switchport-vlan}`,
+`general/network/dhcp-service`) kikényszeríti, hogy egy már közzétett
+`-src<év>.yaml` fájlt senki ne szerkesszen helyben — csak a
+release-aláírás felvétele a kivétel. Fokozatos rollout: **4 könyvtár
+NINCS ENROLLED-ban** (`ietf-interfaces-base`, `ietf-interfaces-logical`,
+`ietf-ip-v4`, `ietf-ip-v6`) — ezekre a guard nem vonatkozik.
 
 **Ennek ellenére a validáció ma nagyon kevés tényleges garanciát ad — ne
 higgy a zöld futásnak félrevezető magabiztossággal:**
 
 - `make validate` (`tools/compiler.py validate` → `run_validation()` a
-  `tools/infra.py`-ban) **placeholder** — betölti és logolja a
-  `canonical_source_file`-t, de a validációs logika szó szerint
-  "to be fully implemented here". Nem érinti a migrált tartalmat.
-- `make registry.validate` valódi, de a jelenlegi corpuson **0
-  verzióátmenetet ellenőriz** (minden séma pontosan egy tartalmi
-  verzióval létezik). A `reference_target` mezőt semmi nem oldja fel,
-  csak a docstringben szerepel.
-- **Javítva**: az 5 domain-kompozíció `base:` mezője mostantól pontos
-  verzióra pin-el (`cic:core:ManagedEntity@v0.2.0`), és
+  `tools/infra.py`-ban) **NEM placeholder többé, de NEM is corpus-check**
+  — mostantól explicit warningot ad, hogy csak egy örökölt bundle-
+  template-et (`schemas/index.yaml`) tölt be és resolve-ol, a valódi
+  `general/standards/providers` tartalmat SOSEM éri el. Ezért a CI-ből
+  ki lett véve (lásd `.github/workflows/ci.yml` komment) — a
+  `registry.validate` a valódi corpus-check.
+- `make registry.validate` valódi és MOST már több séma esetén tényleges
+  verzióátmenetet ellenőriz (pl. `compute-resource` v0.2.3→v0.2.4→v0.2.5,
+  `storage-resource` v0.1.2→...→v0.1.4) — de a `standards/yang/`
+  YANGBlock-dialektusú fájlok (spec.config/spec.state, nem
+  config_surface/state_surface) evolúció-ellenőrzése továbbra is
+  explicit SKIPPED (nem hazudik OK-t, de nem is fut le). A
+  `reference_target` mezőt semmi nem oldja fel, csak a docstringben
+  szerepel.
+- Az 5+ domain-kompozíció `identity.base:` mezője pontos verzióra
+  pin-el (`cic:core:ManagedEntity@v0.2.0`), és
   `tools/registrylib/identity.py` `build_type_index()`-e a
   `cic-primitives` bundle `specs[]`-ébe is bemászik, hogy ezt fel tudja
-  oldani (`tools/registrylib/bundle.py`). A pin most már ténylegesen
-  feloldódik és látszik a `SKIPPED` jelentésben — de a kernel típusai
+  oldani (`tools/registrylib/bundle.py`). A pin ténylegesen feloldódik
+  és látszik a `SKIPPED` jelentésben — de a kernel típusai
   (`ManagedEntity` is) `slots`/`fields`-en át írják le magukat, nem a
   `config_surface`/`state_surface`/... node-listákon, amit
   `coverage.py` ért — ezért a mezőkompatibilitás-ellenőrzés a kernel
-  ellen **még mindig nem fut le**, csak most már EXPLICIT, pontos okkal
-  jelzett SKIPPED-ként, nem néma `continue`-ként.
+  ellen **még mindig nem fut le**, csak EXPLICIT, pontos okkal jelzett
+  SKIPPED-ként.
 - `tools/registrylib/coverage.py` a mezőket surface-től függetlenül,
-  pusztán névre lapítja — egy azonos nevű, azonos típusú mező
-  `config_surface`→`state_surface` áthelyezése major-váltás nélkül átmegy,
-  pedig a fogyasztói szerződés megváltozik.
+  pusztán névre lapítja, és csak a felső szintet hasonlítja — egy
+  azonos nevű, azonos típusú mező `config_surface`→`state_surface`
+  áthelyezése, vagy egy beágyazott mezőtípus-változás major-váltás
+  nélkül átmegy.
 - `tools/registrylib/paths.py` `resolve_pin()` a legfrissebb `-src<év>`-et
   numerikusan választja ki, tanúsítvány/aláírás-érvényesség ellenőrzése
-  nélkül — jelenlét = bizalom.
-- **Javítva**: a CI (`.github/workflows/ci.yml`) mostantól `make check`/
-  `make test` után lefuttatja `make validate`-et ÉS `make registry.validate`-et
-  is (utóbbi `--min-schemas=20` küszöbbel — ha a scannelt könyvtárak száma
-  ez alá esik, a CI hibázik, nem sikeres "OK"-t jelent egy üres/törött
-  corpuson). **Figyelem**: a workflow trigger-je (`on: push/pull_request:
-  branches: [main, master]`) NEM változott — ez a `devel`-en végzett
-  munkára (mint pl. ez a commit is) nem fut le, csak ha `main`-re kerül
-  PR-ral/push-sal. `devel`-en dolgozva a `make check`/`make registry.validate`
-  helyi futtatása marad az egyetlen visszajelzés, amíg nincs `main`-promóció.
-- A migrált 26 fájl közül **1 van aláírva** (a `cic-primitives` bundle, a
-  forrás repóból byte-verbatim átvett, eredeti aláírásával) — a másik 25
-  egyike sem lett a `registry_sign.py`-jal aláírva.
+  nélkül — jelenlét = bizalom, nem kriptográfiai bizonyíték.
+- A CI (`.github/workflows/ci.yml`) `make check` (most `infra.fmt-check`-
+  kel, ami nem ír felül csendben) → `make test` → `make infra.coverage`
+  (valódi, `tools/` egészére, `--cov=tools`) → `make registry.validate`
+  → `make registry.latest` láncot futtatja. `make validate` szándékosan
+  KI van véve, lásd fent.
 
 Ne állítsd egyik fentiről se, hogy "kész" vagy "működik" pusztán azért,
 mert `make check`/`make registry.validate` zöld — nézd meg pontosan, mit
-NEM ellenőriz.
+NEM ellenőriz. A fenti réseknek megfelelő, még nyitott issue-k:
+`#79`/`#80`/`#88`/`#94`/`#96` (coverage/meta-séma mélység),
+`#100`/`#102` (pin-érvényesség), `#92`/`#93` (frozen-file guard vakfoltjai)
+— lásd `#109` az összefoglaló roadmap-javaslatért.
 
 ---
 
@@ -139,9 +162,14 @@ NEM ellenőriz.
 ## Mérce
 
 ```bash
-make validate            # örökölt bundle-check — jelenleg PLACEHOLDER, nem validál semmit érdemben
-make registry.validate   # valódi, de a jelenlegi corpuson 0 verzióátmenetet és 0 pinnelt base-t lát
+make registry.validate   # valódi corpus-check — base-chain coverage + verzió-evolúció, de sekély (lásd fent)
+make registry.latest     # LATEST.yaml + frozen-file guard, 9/30 könyvtáron
+make check               # fmt-check (nem ír felül) + lint + typecheck + security
+make test                # pytest
+make infra.coverage      # valódi coverage report, tools/ egészére
 ```
 
-Egyik zöld futás sem jelenti azt, hogy a migrált tartalom valóban
-ellenőrzött — lásd fent "Jelenlegi, valódi állapot".
+`make validate` szándékosan NEM része a mércének — lásd fent, örökölt
+bundle-template-et tölt be, nem a registry tartalmát. Egyik zöld futás
+sem jelenti azt, hogy a tartalom mélyen ellenőrzött — lásd fent
+"Jelenlegi, valódi állapot".
