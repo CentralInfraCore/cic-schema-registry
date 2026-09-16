@@ -221,18 +221,44 @@ class TestInfraCoverage:
             "tools.infra.load_and_resolve_schema",
             side_effect=ValueError("Some value error"),
         )
-        with pytest.raises(ReleaseError, match="Schema validation failed"):
+        with pytest.raises(ReleaseError, match="Legacy bundle template failed to load"):
             manager.run_validation()
-        manager.logger.critical.assert_any_call("VALIDATION FAILED: Some value error")
+        manager.logger.critical.assert_any_call(
+            "TEMPLATE LOAD FAILED: Some value error"
+        )
 
     def test_run_validation_generic_error(self, manager, mocker):
         mocker.patch(
             "tools.infra.load_and_resolve_schema", side_effect=Exception("Generic boom")
         )
         with pytest.raises(
-            ReleaseError, match="An unexpected error occurred during validation"
+            ReleaseError,
+            match="An unexpected error occurred loading the legacy bundle template",
         ):
             manager.run_validation()
         manager.logger.critical.assert_any_call(
-            "UNEXPECTED ERROR during validation: Generic boom"
+            "UNEXPECTED ERROR loading template: Generic boom"
         )
+
+    def test_run_validation_success_warns_not_a_corpus_check(self, manager, mocker):
+        """cic-schema-registry#74: run_validation() must never claim the
+        real corpus is valid -- it only load-tests a legacy template. On
+        the success path it should warn about that limitation, and must
+        not log any message claiming overall schema/corpus validity."""
+        mocker.patch(
+            "tools.infra.load_and_resolve_schema",
+            return_value={"metadata": {"name": "template-schema"}},
+        )
+
+        manager.run_validation()  # must not raise
+
+        warned = [call.args[0] for call in manager.logger.warning.call_args_list]
+        assert any("NOT corpus validation" in msg for msg in warned)
+        assert any("registry.validate" in msg for msg in warned)
+
+        for call in (
+            manager.logger.info.call_args_list + manager.logger.warning.call_args_list
+        ):
+            msg = call.args[0]
+            assert "all schemas are valid" not in msg.lower()
+            assert "validation successful" not in msg.lower()
