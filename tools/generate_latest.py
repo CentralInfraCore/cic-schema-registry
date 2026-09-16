@@ -122,11 +122,21 @@ _SIGNATURE_KEYS = ("release", "cic_countersign")
 def _only_gained_release_signature(
     registry_root: Path, first_commit: str, path: Path
 ) -> bool:
-    """True if `path`'s current content differs from its first-committed
-    content ONLY by the presence of _SIGNATURE_KEYS -- i.e. every other
-    key, at the top level and below, is untouched. False (the safe
-    default) on any parse error, so a malformed file is never silently
-    waved through."""
+    """True if `path`'s current content is its first-committed content,
+    BYTE FOR BYTE, with only a release signature appended after it --
+    mirroring exactly how tools.registrylib.signing.append_signature_blocks
+    writes (original bytes, +1 trailing newline if missing, + signature
+    YAML, nothing else touched).
+
+    This is a byte-level prefix check, not a parsed-YAML comparison: an
+    earlier version of this function compared parsed dicts (stripping
+    _SIGNATURE_KEYS from `current` and comparing to `original`), which
+    passes YAML through yaml.safe_load() on both sides -- so a comment or
+    pure-formatting change to the surviving content, made alongside a
+    legitimate signature addition, would parse identically and slip
+    through unnoticed. thead02 flagged this as a real (if unexploited)
+    gap. False (the safe default) on any parse error or content mismatch,
+    so a malformed file is never silently waved through."""
     result = subprocess.run(
         ["git", "show", f"{first_commit}:{path.relative_to(registry_root)}"],
         cwd=registry_root,
@@ -136,20 +146,30 @@ def _only_gained_release_signature(
     )  # nosec B603 B607
     if result.returncode != 0:
         return False
+    original = result.stdout
+    if not original.endswith("\n"):
+        original += "\n"
+    current = path.read_text()
+    if not current.startswith(original):
+        return False
+    appended = current[len(original) :]
+    if not appended.strip():
+        return False  # nothing actually appended -- not a signing
     try:
-        original = yaml.safe_load(result.stdout) or {}
-        current = yaml.safe_load(path.read_text()) or {}
+        original_data = yaml.safe_load(original) or {}
+        appended_data = yaml.safe_load(appended)
     except yaml.YAMLError:
         return False
-    if not isinstance(original, dict) or not isinstance(current, dict):
+    if not isinstance(original_data, dict) or not isinstance(appended_data, dict):
         return False
-    stripped_current = {k: v for k, v in current.items() if k not in _SIGNATURE_KEYS}
+    if not set(appended_data) <= set(_SIGNATURE_KEYS):
+        return False
     # The signature keys may only be ADDED, never already present in the
     # original -- a file that already had one and still differs is a real
     # edit, not a first-time signing.
-    if any(k in original for k in _SIGNATURE_KEYS):
+    if any(k in original_data for k in _SIGNATURE_KEYS):
         return False
-    return stripped_current == original
+    return True
 
 
 def check_no_frozen_edits(
