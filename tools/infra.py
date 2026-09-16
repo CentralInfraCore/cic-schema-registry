@@ -209,12 +209,20 @@ class ReleaseManager:
             else f"releases/v{release_version}"
         )
 
+        branch_created_by_this_run = False
         try:
             self.logger.info(
                 f"Creating release branch: '{release_branch_name}' from '{original_base_branch}'"
             )
             if not self.dry_run:
                 self.git_service.checkout(release_branch_name, create_new=True)
+                # Only set once checkout(create_new=True) has actually
+                # succeeded -- if release_branch_name already existed (a
+                # prior interrupted release, or two runs racing on the
+                # same component+version), this line never runs, and the
+                # cleanup below must not delete a branch this run never
+                # created (#89).
+                branch_created_by_this_run = True
             self.logger.info(f"✓ Switched to release branch: '{release_branch_name}'")
 
             self.logger.info("Processing and validating source schema...")
@@ -319,7 +327,7 @@ class ReleaseManager:
                 f"Release process failed during developer preparation: {e}",
                 exc_info=True,
             )
-            if not self.dry_run:
+            if not self.dry_run and branch_created_by_this_run:
                 try:
                     self.logger.warning(
                         f"Attempting to clean up release branch '{release_branch_name}'."
@@ -331,6 +339,13 @@ class ReleaseManager:
                     self.logger.critical(
                         f"Failed to clean up release branch: {cleanup_e}", exc_info=True
                     )
+            elif not self.dry_run:
+                self.logger.warning(
+                    f"Not cleaning up release branch '{release_branch_name}': "
+                    "this run never successfully created it (#89) -- it "
+                    "already existed before this run started, so deleting "
+                    "it here would destroy whatever it actually contains."
+                )
             raise ReleaseError(f"Release process failed: {e}") from e
 
     def _execute_finalization_phase(

@@ -13,7 +13,7 @@ from tools.infra import (
     load_yaml,
     write_yaml,
 )
-from tools.releaselib.exceptions import VaultServiceError
+from tools.releaselib.exceptions import GitStateError, VaultServiceError
 from tools.releaselib.git_service import GitService
 from tools.releaselib.vault_service import VaultService
 
@@ -198,6 +198,29 @@ class TestInfraCoverage:
 
         manager.logger.critical.assert_any_call(
             "Failed to clean up release branch: Cleanup failed", exc_info=True
+        )
+
+    def test_developer_prep_does_not_delete_pre_existing_branch(self, manager, mocker):
+        """cic-schema-registry#89: if checkout(create_new=True) itself is
+        what fails -- release_branch_name already existed BEFORE this run,
+        e.g. a prior interrupted release or two runs racing on the same
+        component+version -- this run never created a branch, so cleanup
+        must not force-delete whatever that pre-existing branch contains."""
+        manager.git_service.checkout.side_effect = GitStateError(
+            "branch 'base/releases/v1.0.0' already exists"
+        )
+
+        with pytest.raises(
+            ReleaseError, match="branch 'base/releases/v1.0.0' already exists"
+        ):
+            manager._execute_developer_preparation_phase("1.0.0", "base", "main")
+
+        manager.git_service.delete_branch.assert_not_called()
+        manager.logger.warning.assert_any_call(
+            "Not cleaning up release branch 'base/releases/v1.0.0': this run "
+            "never successfully created it (#89) -- it already existed "
+            "before this run started, so deleting it here would destroy "
+            "whatever it actually contains."
         )
 
     def test_finalization_with_dirty_repo(self, manager, mocker):
