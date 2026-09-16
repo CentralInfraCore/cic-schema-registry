@@ -25,10 +25,24 @@ Byte-azonos másolat `yang/@v0.1.3`-ból (`schemas/ietf/ietf-interfaces-
 vlan.yaml`), `metadata.version` → `v0.1.3`. Ugyanaz a ténylegesen
 ellenőrzött, kettős aláírás, mint `../ietf-interfaces-base/`-nál.
 
-Fájlonkénti release-aláírás: `v0.1.5` a `tools/registry_sign.py`
+Fájlonkénti release-aláírás: `v0.1.5`, `v0.1.6` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén).
+
+## v0.1.6 — config.name átnevezve vlan_name-re, csak coverage-javítás miatt ([#82](https://github.com/CentralInfraCore/cic-schema-registry/issues/82))
+
+**Ez a blokk #47 óta DEPRECATED** — az adapterek (`switch-netconf-
+adapter`, `ovs-adapter`, `network-interface`) `../ietf-interfaces-l2vlan/`
++ `../cic-switchport-vlan/`-t referenciázzák, nem ezt. A `v0.1.6`
+KIZÁRÓLAG azért készült, mert a `#82` javítása (`_YANG_SHAPE_KEYS`
+bővítve `role`/`required_on_create`-tal) ugyanazt a hibát — a `name`
+mező csendes felülírása — itt is elkapta (ez a blokk innen lett
+byte-szinten kiválasztva `ietf-interfaces-l2vlan`-ba, a hiba öröklődött).
+A `registry_validate` a teljes corpust ellenőrzi, tehát a szigorítás
+enélkül a teljes buildet elpirosította volna egy már ismert, de a régi
+ellenőrzés által nem látott hibától. Nem ennek a blokknak az aktív
+továbbfejlesztése.
 
 ## v0.1.4 — hybrid mód valóban kifejezhető ([#19](https://github.com/CentralInfraCore/cic-schema-registry/issues/19))
 

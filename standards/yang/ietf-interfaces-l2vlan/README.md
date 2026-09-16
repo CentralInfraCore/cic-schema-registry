@@ -37,7 +37,19 @@ Adapter-migráció elvégezve — `switch-netconf-adapter`/`ovs-adapter`
 ezt a blokkot és a `cic-switchport-vlan`-t referenciázza, nem a régi
 `ietf-interfaces-vlan`-t.
 
-Fájlonkénti release-aláírás: `v0.1.0` a `tools/registry_sign.py`
+Fájlonkénti release-aláírás: `v0.1.0`, `v0.1.1` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén).
+
+## v0.1.1 — config.name átnevezve vlan_name-re ([#82](https://github.com/CentralInfraCore/cic-schema-registry/issues/82))
+
+Az örökölt `ietf-interfaces-base.name` mező interfész-identitás
+(`role: key`, `required_on_create: true`). Ez a blokk egy `name` mezőt
+is definiált, csendben felülírva azt egy nem-kulcs, opcionális
+display-label mezővel — a `check_yang_extends` (`yang_shape_signature`)
+korábban csak `type`/`item_type`-ot hasonlított, a `role`/
+`required_on_create` változást nem vette észre. A mező most
+`vlan_name`-re át van nevezve; a `yang_shape_signature` is bővült
+`role`/`required_on_create` összehasonlítással, hogy ez a hibaosztály
+jövőben ne mehessen át észrevétlenül.
