@@ -30,7 +30,17 @@ Nem migrált tartalom — újonnan írva ebben a repóban, `issue #48` alapján,
 a `theads/thead01.txt` NAT-javaslatát követve. RFC 8512 modulnév
 (`ietf-nat`) ellenőrizve: [datatracker.ietf.org/doc/rfc8512](https://datatracker.ietf.org/doc/rfc8512/).
 
-Fájlonkénti release-aláírás: `v0.1.0` a `tools/registry_sign.py`
+## v0.1.1 — destination_port relaxed, port range constraints, origin kitöltve ([#85](https://github.com/CentralInfraCore/cic-schema-registry/issues/85))
+
+`destination_port`'s `required_when: equals: dnat` kizárta az
+address-only (1:1 cím-fordítás, port-fordítás nélküli) DNAT-ot —
+törölve, csak `applicable_when` maradt. `range: "0..65535"` hozzáadva
+minden port-mezőhöz. `origin: cic-extension` kitöltve a `rules.
+item_fields`/`state` összes eddig jelöletlen mezőjén — a mezők
+ténylegesen RFC 8512-ből erednek, de az `origin` enum jelenleg nem
+tudja kifejezni az `rfc8512` értéket (lásd [#87](https://github.com/CentralInfraCore/cic-schema-registry/issues/87)).
+
+Fájlonkénti release-aláírás: `v0.1.0`, `v0.1.1` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén).

@@ -29,7 +29,14 @@ ténylegesen ellenőrzött, kettős aláírás. A `v0.1.2` fájl ezután
 érintetlen — a fenti javítás egy új `v0.1.4` fájlban él (`v0.1.3`
 szándékosan kihagyva, ugyanazon okból, mint a `kubernetes-cluster`-nél).
 
-Fájlonkénti release-aláírás: v0.1.2, v0.1.4 a `tools/registry_sign.py`
+## v0.1.5 — condition enum idézőjelbe téve ([#99](https://github.com/CentralInfraCore/cic-schema-registry/issues/99))
+
+`condition` enum `[True, False, Unknown]` — PyYAML az idézőjel nélküli
+`True`/`False`-t boolean-ként töltötte be, `Unknown`-t stringként,
+holott a mező `scalar_type: string` és a valós Kubernetes
+`NodeCondition.status` is string. Most `["True", "False", "Unknown"]`.
+
+Fájlonkénti release-aláírás: v0.1.2, v0.1.4, v0.1.5 a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén, minden létező verzión).

@@ -10,8 +10,10 @@
 # did it.
 schema: ietf-interfaces-l2vlan
 current:
-  version: v0.1.0
-  file: ietf-interfaces-l2vlan.v0.1.0-src2026.yaml
+  version: v0.1.1
+  file: ietf-interfaces-l2vlan.v0.1.1-src2026.yaml
 all_versions:
   - version: v0.1.0
     file: ietf-interfaces-l2vlan.v0.1.0-src2026.yaml
+  - version: v0.1.1
+    file: ietf-interfaces-l2vlan.v0.1.1-src2026.yaml

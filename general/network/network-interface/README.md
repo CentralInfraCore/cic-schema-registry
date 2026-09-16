@@ -60,10 +60,19 @@ korlátozottabb változat.
 CICSourceCA ellenjegyzés a `build_hash` felett, mindkettő érvényes, ugyanaz
 a 2026-os CA-lánc, mint minden korábbi migrációnál.
 
-Fájlonkénti release-aláírás: `v0.4.2` a `tools/registry_sign.py`
+Fájlonkénti release-aláírás: `v0.4.2`, `v0.4.3` a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén).
+
+## v0.4.3 — placeholder adapter mezők törölve ([#98](https://github.com/CentralInfraCore/cic-schema-registry/issues/98))
+
+`state_surface.source`/`binding_surface.adapter` mindkettő
+`network-adapter` volt — nem létező adapter-név, ugyanaz a minta, mint
+`#27` a `compute-resource`-nál. A valós útválasztás
+`binding_surface.adapter_capabilities.known_adapters`-en megy
+(`switch-netconf-adapter`, `ovs-adapter`), mindkét placeholder mező
+törölve.
 
 ## v0.4.2 — ietf-interfaces-vlan lecserélve ([#47](https://github.com/CentralInfraCore/cic-schema-registry/issues/47))
 

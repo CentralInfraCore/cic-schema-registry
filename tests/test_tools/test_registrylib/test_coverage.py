@@ -196,6 +196,28 @@ def test_yang_shape_signature_differs_on_type_change():
     assert yang_shape_signature(a) != yang_shape_signature(b)
 
 
+def test_yang_shape_signature_differs_on_role_or_required_on_create_change():
+    """#82: an inherited key/identity field (role: key, required_on_create:
+    true) silently redefined as a non-key optional field, both `type:
+    string` with no `values` -- indistinguishable to a type-only
+    comparison, but a real semantic change."""
+    key_field = {"type": "string", "role": "key", "required_on_create": True}
+    display_field = {"type": "string", "required_on_create": False}
+    assert yang_shape_signature(key_field) != yang_shape_signature(display_field)
+
+
+def test_yang_shape_signature_same_for_omitted_and_explicit_false_required_on_create():
+    """False-positive found while fixing #82: cic-yang-block-schema
+    documents required_on_create's default as false, so a field that
+    omits the key and a sibling that explicitly writes `false` are the
+    SAME effective shape -- not a mutation. Reproduces the exact
+    ietf-interfaces-tunnel.v0.1.4 `statistics` case check_yang_extends
+    wrongly flagged before this fix."""
+    explicit_false = {"type": "object", "required_on_create": False}
+    omitted = {"type": "object"}
+    assert yang_shape_signature(explicit_false) == yang_shape_signature(omitted)
+
+
 def test_check_coverage_yang_dialect_tunnel_narrowing_reproduces_45_then_is_fixed():
     """Reproduces #45 end-to-end: the base's full oper_status enum vs.
     tunnel's silently-truncated one is a violation; the corrected form

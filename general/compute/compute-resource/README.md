@@ -65,10 +65,19 @@ feltételezve):
   2026-os évjárat, mint a `cic-primitives` kernelnél és a `cic-storage`
   tartalomnál) — ez indokolja a `-src2026` jelölést.
 
-Fájlonkénti release-aláírás: v0.2.3, v0.2.4, v0.2.5 a `tools/registry_sign.py`
+Fájlonkénti release-aláírás: v0.2.3, v0.2.4, v0.2.5, v0.2.6 a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén, minden létező verzión).
+
+## v0.2.6 — state_surface.source placeholder törölve ([#97](https://github.com/CentralInfraCore/cic-schema-registry/issues/97))
+
+`state_surface.source: compute-adapter` nem létező adapter-név volt —
+`#27` ugyanezt a mintát már törölte a `binding_surface.adapter`
+mezőből, ez a `state_surface` saját, korábban meghagyott másolata volt.
+A valós útválasztás `binding_surface.adapter_capabilities.
+known_adapters`-en megy. Lásd még `../hypervisor-adapter/README.md`,
+`../ipmi-adapter/README.md` — ugyanennek az issue-nak a másik fele.
 
 ## v0.2.4 — registry-native tartalmi javítás (NEM a `cic-compute`-ból jön)
 

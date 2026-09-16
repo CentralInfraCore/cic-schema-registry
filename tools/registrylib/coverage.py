@@ -191,12 +191,20 @@ _YANG_LIST_KEYS = ("config", "state")
 # The sub-fields that define a YANGBlock field's "shape" for mutation
 # purposes, per cic-yang-block-schema's field_schema (standards/yang/
 # cic-yang-block-schema): `type` for the base type, `item_type` for list
-# element type. Enum `values` is handled separately, below
-# (_yang_enum_value_names) -- its vocabulary (the SET of legal values) is
-# what counts as the shape, not which of them a given block currently
-# implements; see that function's docstring for why a not_implemented
-# value must not read as a narrower vocabulary.
-_YANG_SHAPE_KEYS = ("type", "item_type")
+# element type, `role`/`required_on_create` for key/identity semantics.
+# Enum `values` is handled separately, below (_yang_enum_value_names) --
+# its vocabulary (the SET of legal values) is what counts as the shape,
+# not which of them a given block currently implements; see that
+# function's docstring for why a not_implemented value must not read as
+# a narrower vocabulary.
+#
+# role/required_on_create were added after #82: two fields with the same
+# `type: string` and no `values` looked identical to a plain type-only
+# comparison, even though one was `role: key, required_on_create: true`
+# (an interface identity field) and the other `required_on_create: false`
+# with no role at all (a display label) -- a real semantic change that
+# check_yang_extends should have caught and didn't.
+_YANG_SHAPE_KEYS = ("type", "item_type", "role", "required_on_create")
 
 
 def extract_yang_fields(doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -245,8 +253,22 @@ def _yang_enum_value_names(values: Any) -> tuple[str, ...] | None:
     return tuple(sorted(names))
 
 
+# Defaults documented in cic-yang-block-schema's field_schema for the
+# _YANG_SHAPE_KEYS above -- a field that omits the key means this value,
+# per the meta-schema, not "unset"/None. Without this, comparing a field
+# that explicitly writes `required_on_create: false` against a sibling
+# that just omits the key (same effective meaning, per the meta-schema's
+# own documented default) reads as a shape change when it isn't one --
+# caught as a false positive on ietf-interfaces-tunnel's `statistics`
+# field while fixing #82's real defect (ietf-interfaces-l2vlan's `name`).
+# `role` has no documented default (its absence is a real, meaningful
+# "no role assigned", not equivalent to any specific role value) so it
+# is deliberately not in this map.
+_YANG_SHAPE_KEY_DEFAULTS: dict[str, Any] = {"required_on_create": False}
+
+
 def yang_shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
-    sig = tuple(node.get(k) for k in _YANG_SHAPE_KEYS)
+    sig = tuple(node.get(k, _YANG_SHAPE_KEY_DEFAULTS.get(k)) for k in _YANG_SHAPE_KEYS)
     values = node.get("values")
     normalized = _yang_enum_value_names(values)
     # normalized is None either for a non-enum field (no `values` at all)
