@@ -1,7 +1,7 @@
 # ietf-interfaces-logical
 
 **Réteg:** `standards/yang/` — külső szabvány szerinti séma (RFC 8343)
-**Kind:** `YANGBlock`, `extends: {name: ietf-interfaces-base, version: v0.0.dev}`
+**Kind:** `YANGBlock`, `extends: {name: ietf-interfaces-base, version: v0.1.4}`
 
 Logikai interfész (pl. VLAN sub-interface, loopback) — az RFC 8343
 `ietf-interfaces-base` közös mezőit kiterjeszti, exact-version-pinnelt
@@ -14,10 +14,10 @@ Byte-azonos másolat `yang/@v0.1.3`-ból (`schemas/ietf/ietf-interfaces-
 logical.yaml`), `metadata.version` → `v0.1.3`. Ugyanaz a ténylegesen
 ellenőrzött, kettős aláírás, mint `../ietf-interfaces-base/`-nál.
 
-Fájlonkénti release-aláírás: `v0.1.4` a `tools/registry_sign.py`
-(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
-CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
-a fájl végén).
+Fájlonkénti release-aláírás: `v0.1.4`, `v0.1.5` a
+`tools/registry_sign.py` (proposals/schema-registry §5) szerint valódi
+Vault author-aláírással és CICSourceCA ellenjegyzéssel van ellátva
+(`release:`/`cic_countersign:` blokk a fájl végén).
 
 ## v0.1.4 — lower_layer_if/higher_layer_if origin javítva ([#46](https://github.com/CentralInfraCore/cic-schema-registry/issues/46))
 
@@ -32,3 +32,10 @@ their own data nodes for interface layering." Az RFC saját generikus
 itt (egy közös `logical` building block minden altípusnak, típusonkénti
 saját config helyett) CIC egyszerűsítés — most `origin: cic-extension`
 jelöléssel.
+
+## v0.1.5 — extends.version valós pin ([#81](https://github.com/CentralInfraCore/cic-schema-registry/issues/81))
+
+Az `extends.version` eddig `v0.0.dev` placeholder volt annak ellenére,
+hogy fent "exact-version-pinnelt"-nek volt leírva. Most tényleg az:
+`ietf-interfaces-base@v0.1.4`, amit a `check_yang_extends()` már
+ténylegesen `resolve_pin()`-nel ellenőriz.

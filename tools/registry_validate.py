@@ -45,6 +45,7 @@ oriented meta-schema check) — it is additive, and is not yet wired into
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -195,6 +196,15 @@ def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
     return problems, skipped
 
 
+# extends.version (#81) is a bare "vMAJOR.MINOR.PATCH" content-version pin
+# -- no "{namespace}:{Kind}@" prefix, since `extends.name` already carries
+# the parent's identity as a separate field. Deliberately not parse_pin()
+# (registrylib.identity), which expects that combined format.
+_EXTENDS_VERSION_RE = re.compile(
+    r"^v(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$"
+)
+
+
 def check_yang_extends(registry_root: Path) -> tuple[list[str], list[str]]:
     """Every YANGBlock whose `spec.extends` names a parent block must not
     silently mutate a field it shares with that parent (#45) -- e.g.
@@ -210,12 +220,18 @@ def check_yang_extends(registry_root: Path) -> tuple[list[str], list[str]]:
     check_missing=False)); the "every field must be restated" rule is
     deliberately not used.
 
-    `extends.version` is a placeholder (`v0.0.dev`) on every block in the
-    corpus today, not a real content-version pin like `identity.base` uses
-    -- there is nothing yet to parse as an exact version, so this resolves
-    to the base's LATEST content version instead. Once extends.version
-    pins are real, this should switch to resolve_pin() like
-    check_base_references() does, and stop being the odd one out."""
+    `extends.version` (#81) is now a real content-version pin, resolved
+    with resolve_pin() exactly like `identity.base` (check_base_references
+    above) -- a placeholder or non-existent version is a hard problem, not
+    a silent fall-through to the base's latest. This closes the gap the
+    previous version of this docstring described: "extends.version is a
+    placeholder on every block in the corpus today ... this resolves to
+    the base's LATEST content version instead" is no longer true for any
+    file this function actually examines (it only ever looks at each
+    directory's newest version, and #81 fixed every directory's newest
+    version to a real pin) -- but is left here as a note in case a future
+    LATEST version regresses to an unparseable placeholder, which this
+    function will now catch as a problem rather than silently paper over."""
     problems: list[str] = []
     skipped: list[str] = []
     yang_root = registry_root / "standards" / "yang"
@@ -240,7 +256,27 @@ def check_yang_extends(registry_root: Path) -> tuple[list[str], list[str]]:
                 f"directory under {yang_root.relative_to(registry_root)}"
             )
             continue
-        base_version = max(base_versions)
+        extends_version = extends.get("version")
+        version_match = _EXTENDS_VERSION_RE.match(str(extends_version))
+        if not version_match:
+            problems.append(
+                f"{newest.path}: extends.version {extends_version!r} is not "
+                "a real 'vMAJOR.MINOR.PATCH' pin (#81) -- placeholders like "
+                "'v0.0.dev' are no longer accepted"
+            )
+            continue
+        base_version = resolve_pin(
+            base_dir,
+            int(version_match["major"]),
+            int(version_match["minor"]),
+            int(version_match["patch"]),
+        )
+        if base_version is None:
+            problems.append(
+                f"{newest.path}: extends {base_name!r}@{extends_version} "
+                "-- no matching content version found"
+            )
+            continue
         base_doc = _load(base_version.path)
         if not _is_yang_block(base_doc):
             skipped.append(

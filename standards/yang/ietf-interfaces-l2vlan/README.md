@@ -1,7 +1,7 @@
 # ietf-interfaces-l2vlan
 
 **Réteg:** `standards/yang/` — külső szabvány szerinti séma (RFC 8343 + IANA-IF-TYPE)
-**Kind:** `YANGBlock`, `extends: {name: ietf-interfaces-base, version: v0.0.dev}`
+**Kind:** `YANGBlock`, `extends: {name: ietf-interfaces-base, version: v0.1.4}`
 
 VLAN **interfész-entitás** — csak azt írja le, ami magáról a VLAN-ról mint
 önálló interfész-objektumról szól: `vlan_id`, `name`, `dhcp_service`
@@ -37,10 +37,10 @@ Adapter-migráció elvégezve — `switch-netconf-adapter`/`ovs-adapter`
 ezt a blokkot és a `cic-switchport-vlan`-t referenciázza, nem a régi
 `ietf-interfaces-vlan`-t.
 
-Fájlonkénti release-aláírás: `v0.1.0`, `v0.1.1` a `tools/registry_sign.py`
-(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
-CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
-a fájl végén).
+Fájlonkénti release-aláírás: `v0.1.0`, `v0.1.1`, `v0.1.2` a
+`tools/registry_sign.py` (proposals/schema-registry §5) szerint valódi
+Vault author-aláírással és CICSourceCA ellenjegyzéssel van ellátva
+(`release:`/`cic_countersign:` blokk a fájl végén).
 
 ## v0.1.1 — config.name átnevezve vlan_name-re ([#82](https://github.com/CentralInfraCore/cic-schema-registry/issues/82))
 
@@ -53,3 +53,13 @@ korábban csak `type`/`item_type`-ot hasonlított, a `role`/
 `vlan_name`-re át van nevezve; a `yang_shape_signature` is bővült
 `role`/`required_on_create` összehasonlítással, hogy ez a hibaosztály
 jövőben ne mehessen át észrevétlenül.
+
+## v0.1.2 — extends.version valós pin ([#81](https://github.com/CentralInfraCore/cic-schema-registry/issues/81))
+
+Az `extends.version` eddig `v0.0.dev` placeholder volt — a
+`check_yang_extends()` ezt csendben figyelmen kívül hagyta, és mindig a
+szülő (`ietf-interfaces-base`) legfrissebb verzióját vette. Most valós
+pin: `ietf-interfaces-base@v0.1.4`, amit a `check_yang_extends()` már
+ténylegesen `resolve_pin()`-nel ellenőriz — egy nem létező vagy
+inkompatibilis verzió mostantól hibaként bukik, nem csendben a
+legfrissebbre esik vissza.

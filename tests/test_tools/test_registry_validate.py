@@ -328,10 +328,12 @@ spec:
 # ── check_yang_extends (#45) ─────────────────────────────────────────────────
 
 
-def _write_yang_block(path, *, extends=None, state_yaml=""):
+def _write_yang_block(path, *, extends=None, extends_version="v0.0.dev", state_yaml=""):
     extends_yaml = ""
     if extends is not None:
-        extends_yaml = f"  extends:\n    name: {extends}\n    version: v0.0.dev\n"
+        extends_yaml = (
+            f"  extends:\n    name: {extends}\n    version: {extends_version}\n"
+        )
     _write(
         path,
         f"""---
@@ -366,6 +368,7 @@ def test_check_yang_extends_flags_a_silently_narrowed_inherited_enum(tmp_path):
         / "ietf-interfaces-tunnel"
         / "ietf-interfaces-tunnel.v0.1.3-src2026.yaml",
         extends="ietf-interfaces-base",
+        extends_version="v0.1.3",
         state_yaml=(
             "  state:\n"
             "    - name: oper_status\n"
@@ -405,6 +408,7 @@ def test_check_yang_extends_passes_once_values_are_acknowledged_not_implemented(
         / "ietf-interfaces-tunnel"
         / "ietf-interfaces-tunnel.v0.1.4-src2026.yaml",
         extends="ietf-interfaces-base",
+        extends_version="v0.1.3",
         state_yaml=(
             "  state:\n"
             "    - name: oper_status\n"
@@ -458,3 +462,83 @@ def test_check_yang_extends_flags_a_dangling_extends_reference(tmp_path):
 
     assert len(problems) == 1
     assert "no-such-block" in problems[0]
+
+
+def test_check_yang_extends_flags_a_placeholder_version_as_a_problem(tmp_path):
+    """#81: extends.version is now a real pin -- a placeholder like
+    v0.0.dev must be a hard problem, not a silent fall-through to the
+    base's latest version."""
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-base"
+        / "ietf-interfaces-base.v0.1.3-src2026.yaml",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down]\n"
+        ),
+    )
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-tunnel"
+        / "ietf-interfaces-tunnel.v0.1.3-src2026.yaml",
+        extends="ietf-interfaces-base",
+        extends_version="v0.0.dev",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down]\n"
+        ),
+    )
+
+    problems, skipped = check_yang_extends(tmp_path)
+
+    assert len(problems) == 1
+    assert "v0.0.dev" in problems[0]
+    assert "vMAJOR.MINOR.PATCH" in problems[0]
+
+
+def test_check_yang_extends_flags_a_pin_to_a_nonexistent_base_version(tmp_path):
+    """#81: a well-formed but non-existent content-version pin (e.g. a
+    typo, or a base version that was never actually released) must fail
+    resolve_pin(), not silently fall back to the base's latest."""
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-base"
+        / "ietf-interfaces-base.v0.1.3-src2026.yaml",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down]\n"
+        ),
+    )
+    _write_yang_block(
+        tmp_path
+        / "standards"
+        / "yang"
+        / "ietf-interfaces-tunnel"
+        / "ietf-interfaces-tunnel.v0.1.3-src2026.yaml",
+        extends="ietf-interfaces-base",
+        extends_version="v9.9.9",
+        state_yaml=(
+            "  state:\n"
+            "    - name: oper_status\n"
+            "      type: enum\n"
+            "      values: [up, down]\n"
+        ),
+    )
+
+    problems, skipped = check_yang_extends(tmp_path)
+
+    assert len(problems) == 1
+    assert "v9.9.9" in problems[0]
+    assert "no matching content version" in problems[0]
