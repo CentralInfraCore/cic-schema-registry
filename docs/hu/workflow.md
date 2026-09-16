@@ -56,13 +56,20 @@ A környezeted most már teljesen be van állítva és készen áll a fejleszté
 Ez a tipikus ciklus, amelyet a sémák módosításakor vagy létrehozásakor követni fogsz.
 
 1.  **Séma Módosítása:**
-    Végezd el a kívánt módosításokat egy sémafájlon a `/schemas` könyvtárban.
+    Végezd el a kívánt módosításokat egy sémafájlon a `general/`,
+    `standards/` vagy `providers/` alatt (NEM `/schemas` — az egy
+    örökölt, ebben a repóban nem használt könyvtárnév). Egy már
+    közzétett (release-aláírt) `-src<év>.yaml` fájlt SOHA ne szerkessz
+    helyben — új verziófájlt hozz létre helyette.
 
 2.  **Validálás Futtatása:**
-    Mielőtt kiadást hoznál létre, elengedhetetlen a módosításaid validálása. A `validate` parancs a fordítót csak validálási módban futtatja.
+    A `make validate` parancs (örökölt `tools/compiler.py validate`)
+    NEM validálja a registry tartalmát — csak egy bundle-template-et
+    tölt be. A valódi ellenőrzés:
 
     ```sh
-    make validate
+    make registry.validate   # base-chain coverage + verzió-evolúció
+    make registry.latest     # LATEST.yaml drift + frozen-file guard
     ```
 
 3.  **Tesztek Futtatása:**
@@ -82,30 +89,36 @@ Ez a tipikus ciklus, amelyet a sémák módosításakor vagy létrehozásakor k�
 
 ## Kiadás Létrehozása
 
-Amikor egy séma készen áll a verziózásra és terjesztésre, létrehozol egy "kiadási artefaktumot". Ez a séma egy aláírt, megváltoztathatatlan verziója.
+**Nincs bundle-release, nincs kiadási ág, nincs Git tag** — ez az
+örökölt base-repo modell, amit a `proposals/schema-registry` §5
+explicit visszavont. Minden séma-fájl a saját, önálló, fájlonként
+aláírt egysége (`proposals/schema-registry/README.md` §5 a teljes
+indoklásért).
 
-1.  **Győződj meg róla, hogy a munkakönyvtárad tiszta:**
-    A kiadási szkript leáll, ha vannak nem commit-olt módosításaid.
+Amikor egy séma-fájl tartalma véglegesített, aláírod közvetlenül,
+branch/tag nélkül:
 
-2.  **Futtasd a Kiadási Parancsot:**
-    Használd a `make release-dependency` parancsot egy aláírt séma generálásához, amely a `/dependencies` könyvtárba kerül. A `VERSION` változónak érvényes szemantikus verziónak kell lennie (pl. `v1.2.3`).
+1.  **Győződj meg róla, hogy a fájl tartalma végleges** — az aláírás
+    egyszeri, fájlonkénti (`AlreadySignedError`, ha újra megpróbálod).
 
-    ```sh
-    make release-dependency VERSION=v1.0.0
-    ```
-
-3.  **Tekintsd át a Folyamatot:**
-    A szkript automatikusan a következő műveleteket hajtja végre:
-    - Létrehoz egy új kiadási ágat (pl. `template-schema/releases/v1.0.0`).
-    - Meghívja a `compiler.py` szkriptet az aláírt artefaktum generálásához.
-    - Commit-olja az új artefaktumot a kiadási ágra.
-    - Létrehoz egy GPG-aláírt Git taget a kiadási verzióhoz.
-    - Visszavált az eredeti ágadra.
-
-4.  **A Tag Feltöltése:**
-    A kiadási folyamat egy helyi Git tag létrehozásával zárul. Ahhoz, hogy a kiadást megoszd másokkal, fel kell töltened ezt a taget a távoli repository-ba.
+2.  **Futtasd az aláíró parancsot:**
 
     ```sh
-    # Példa tag névre: template-schema@v1.0.0
-    git push origin <tag_neve>
+    python -m tools.registry_sign general/network/dhcp-service/dhcp-service.v0.1.0-src2026.yaml
     ```
+
+    Ehhez futó Vault (az 1. lépésben indított `vault-sign-agent.sh`) és
+    `cic-countersign` szolgáltatás szükséges — lásd a script
+    környezeti változóit (`VAULT_ADDR`, `VAULT_TOKEN`,
+    `COUNTERSIGN_ADDR`, `COUNTERSIGN_CA_FILE`, `DEV_VAULT_CA_FILE`).
+
+3.  **Mi történik:**
+    - `build_hash` = `sha256` a fájl nyers bájtjai felett.
+    - Szerzői Vault Transit aláírás a `build_hash` felett.
+    - CICSourceCA ellenjegyzés (mTLS-en keresztül, `vault-mtls-client`).
+    - `release:`/`cic_countersign:` blokk hozzáfűzve a fájl végéhez
+      (byte-szinten, a meglévő tartalom változatlanul marad).
+
+4.  **Commit + PR:** a most aláírt fájlt commitold és PR-ozd `main`
+    ellen, mint bármilyen más módosítást — nincs külön "release"
+    Git-művelet.
