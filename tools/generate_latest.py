@@ -46,6 +46,7 @@ ENROLLED = [
     "standards/yang/ietf-nat",
     "standards/yang/ietf-interfaces-l2vlan",
     "standards/yang/cic-switchport-vlan",
+    "general/network/dhcp-service",
 ]
 
 

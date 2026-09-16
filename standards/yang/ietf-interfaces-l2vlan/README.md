@@ -8,6 +8,9 @@ VLAN **interfész-entitás** — csak azt írja le, ami magáról a VLAN-ról mi
 (config), `oper_status`/`mac_table_entries` (state). Mindig fizikai VAGY
 logikai interfészhez kötött, soha nem standalone.
 
+`dhcp_service` (`target_kind: DHCPService`) mostantól valódi definícióra
+mutat: `../../../general/network/dhcp-service/`.
+
 ## #47 — kiválasztva ietf-interfaces-vlan-ból
 
 A korábbi `../ietf-interfaces-vlan/` (v0.1.5, változatlan, aláírt) egy
