@@ -77,7 +77,7 @@ infra.deps:
 
 infra.coverage:
 	@echo "--- Generating HTML coverage report ---"
-	@docker compose exec builder python -m pytest --ignore p_venv --cov=tools.compiler --cov-report=html
+	@docker compose exec builder python -m pytest --ignore p_venv --cov=tools --cov-report=html
 	@echo "HTML coverage report generated in ./htmlcov/index.html"
 
 infra.test:
@@ -115,5 +115,5 @@ infra.help:
 	@echo ""
 	@echo "Infrastructure & Maintenance:"
 	@echo "  infra.deps          (Re)generate requirements.txt and install dependencies into the cache."
-	@echo "  infra.coverage      Generate HTML coverage report."
+	@echo "  infra.coverage      Generate HTML coverage report (full tools/ package)."
 	@echo "  infra.clean         Remove all generated files, caches, and stopped containers."
