@@ -433,24 +433,43 @@ class ReleaseManager:
             )
 
     def run_validation(self):
-        """Runs offline validation on the canonical source schema."""
-        self.logger.info("--- Running Schema Validation ---")
+        """Load-tests the legacy bundle template (canonical_source_file,
+        e.g. project.yaml's `schemas/index.yaml`) -- confirms it parses and
+        its $refs resolve. This predates the per-file registry model
+        (proposals/schema-registry) and does NOT validate the real
+        general/standards/providers corpus in any way: it never even reads
+        those directories. There is currently no code anywhere in this repo
+        that checks a real schema file against its own meta-schema (e.g. a
+        YANGBlock file against cic-yang-block-schema's spec.block_schema) --
+        see cic-schema-registry#74, which this docstring exists to stop from
+        recurring silently. For real corpus checks (base-chain field
+        coverage + major-version-evolution rules), use
+        tools.registry_validate / `make registry.validate` instead -- that
+        one actually reads general/standards/providers."""
+        self.logger.info(
+            "--- Load-testing legacy bundle template (NOT the real corpus) ---"
+        )
         source_file = self._path(
             self.config.get("canonical_source_file", "sources/index.yaml")
         )
-        self.logger.info(f"Validating and resolving {source_file}...")
+        self.logger.info(f"Loading and resolving {source_file}...")
         try:
             source_data = load_and_resolve_schema(source_file)
-            # Placeholder for full validation logic. Using the loaded data prevents the lint error.
             self.logger.info(
-                f"Schema '{source_data.get('metadata', {}).get('name', 'N/A')}' loaded."
+                f"Template '{source_data.get('metadata', {}).get('name', 'N/A')}' "
+                f"({source_file}) loaded and $refs resolved without error."
             )
-            self.logger.info("✓ Schema validation logic to be fully implemented here.")
         except (ConfigurationError, JsonSchemaValidationError, ValueError) as e:
-            self.logger.critical(f"VALIDATION FAILED: {e}")
-            raise ReleaseError("Schema validation failed.") from e
+            self.logger.critical(f"TEMPLATE LOAD FAILED: {e}")
+            raise ReleaseError("Legacy bundle template failed to load.") from e
         except Exception as e:
-            self.logger.critical(f"UNEXPECTED ERROR during validation: {e}")
-            raise ReleaseError("An unexpected error occurred during validation.") from e
+            self.logger.critical(f"UNEXPECTED ERROR loading template: {e}")
+            raise ReleaseError(
+                "An unexpected error occurred loading the legacy bundle template."
+            ) from e
 
-        self.logger.info("✓ Validation successful.")
+        self.logger.warning(
+            "This only confirms the legacy bundle template loads -- it is NOT "
+            "corpus validation (see cic-schema-registry#74). Run "
+            "`make registry.validate` for the real check."
+        )

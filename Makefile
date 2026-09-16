@@ -81,8 +81,17 @@ build: infra.build
 # never are in CI (caught the hard way: this passed locally, where the
 # dev environment happens to have a live Vault mounted for the signing
 # work, and only failed once it actually ran in CI, see PR #30/#31).
+#
+# NOT a corpus check, despite the name: this only load-tests the
+# legacy bundle template (schemas/index.yaml, pre-dating the per-file
+# registry model) — it never reads general/standards/providers. Not
+# wired into CI (see .github/workflows/ci.yml) for exactly this
+# reason; kept here as a manual dev command only. See
+# tools/infra.py's run_validation() docstring and
+# cic-schema-registry#74. Use `make registry.validate` for the real
+# corpus check.
 validate:
-	@echo "--- Validating all schemas against the meta-schema ---"
+	@echo "--- Load-testing legacy bundle template (NOT a corpus check — see make registry.validate) ---"
 	@docker compose exec builder python -m tools.compiler validate --dry-run $(COMPILER_CLI_ARGS)
 
 # registry.validate: the NEW, registry-specific checks (proposals/schema-registry)

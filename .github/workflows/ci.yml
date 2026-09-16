@@ -43,8 +43,14 @@ jobs:
       - name: Generate coverage report
         run: make infra.coverage
 
-      - name: Validate schema corpus (inherited meta-schema check)
-        run: make validate
+      # No "make validate" step here on purpose: it runs
+      # tools.compiler validate, which only load-tests a legacy bundle
+      # template (schemas/index.yaml) left over from before the
+      # per-file registry model -- it never reads the real
+      # general/standards/providers corpus at all. Running it as a CI
+      # gate under a name like "Validate schema corpus" claimed
+      # coverage that didn't exist (cic-schema-registry#74). The step
+      # below is the one that actually reads the real corpus.
 
       - name: Validate registry (base-chain coverage + version evolution)
         run: make registry.validate

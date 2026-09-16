@@ -166,9 +166,7 @@ def main():
         )
 
         if args.command == "validate":
-            logger.info("--- Running Schema Validation ---")
             manager.run_validation()
-            logger.info("✓ All schemas are valid.")
 
         elif args.command == "release":
             manager.run_release_close(release_version=args.version)

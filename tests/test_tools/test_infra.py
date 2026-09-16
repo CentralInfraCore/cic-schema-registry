@@ -206,11 +206,12 @@ class TestReleaseManager:
             side_effect=Exception("Unexpected boom"),
         )
         with pytest.raises(
-            ReleaseError, match="An unexpected error occurred during validation"
+            ReleaseError,
+            match="An unexpected error occurred loading the legacy bundle template",
         ):
             manager.run_validation()
         manager.logger.critical.assert_any_call(
-            "UNEXPECTED ERROR during validation: Unexpected boom"
+            "UNEXPECTED ERROR loading template: Unexpected boom"
         )
 
     # This is a re-add of a previously deleted test to ensure coverage of the dry-run path in run_release_close
