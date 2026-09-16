@@ -1,0 +1,465 @@
+---
+metadata:
+  name: DHCPService
+  version: v0.1.0
+  description: >
+    DHCP szolgáltatás — cím-pool, lease-kezelés, static reservation. Ez a
+    hiányzó definíció ahhoz a `target_kind: DHCPService` referenciához,
+    amit a standards/yang alatti VLAN/L2VLAN blokkok (`dhcp_service` mező)
+    korábban lógó pointerként hordoztak — nyolc fájlban hivatkozott rá
+    tartalom nélkül.
+
+    Scope: adat-oldali leírás. Ez a séma azt írja le, MILYEN egy DHCP
+    szolgáltatás (config/state/operations/notifications) — a tényleges
+    végrehajtási réteg (isc-dhcp/kea/dnsmasq adapter kontraktus, mint a
+    `../switch-netconf-adapter/`/`../ovs-adapter/` mintája) szándékosan
+    később készül el, nem ennek a fájlnak a része.
+
+    `NetworkInterface` saját maga explicit kizárja a DHCP szervert a
+    scope-jából ("Service réteg... NEM ide tartozik") — ez a fájl az a
+    service-réteg objektum, amire a kizárás mutat.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+    - dhcp
+  validatedBy:
+    name: cic-primitives
+    version: v0.1.3
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: schemas/aggregate/managed-entity.yaml
+
+  # ── PolicySurface ─────────────────────────────────────────────────────────────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: schemas/atomic/identity.yaml
+    kind: DHCPService
+    namespace: "cic:network"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: DHCP szolgáltatás — cím-pool és lease-kezelés
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: schemas/aggregate/config-surface.yaml
+    nodes:
+
+      - name: enabled
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: true
+        description: Szolgáltatás adminisztrációs állapota
+
+      - name: description
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: Emberi olvasható leírás
+
+      - name: address_family
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        contract:
+          - type: enum
+            expression: [ipv4, ipv6]
+
+      - name: subnet
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: A kiszolgált hálózati szegmens CIDR formátumban (pl. 10.0.10.0/24)
+
+      - name: pool_start
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: Cím-pool kezdete (IP cím)
+
+      - name: pool_end
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: Cím-pool vége (IP cím)
+
+      - name: lease_time
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: config
+        optional: true
+        default: 86400
+        description: Lease érvényességi idő másodpercben
+        contract:
+          - type: range
+            expression: "60..2592000"
+
+      - name: gateway
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: Kiosztott default gateway (DHCP option 3 / IPv6 RA-analóg)
+
+      - name: dns_servers
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: Kiosztott DNS szerver cím(ek)
+
+      - name: domain_name
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: Kiosztott keresési domain (DHCP option 15)
+
+      - name: static_reservations
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: >
+          Statikus (MAC-hoz kötött) cím-fenntartások — mindig ugyanazt a
+          címet kapja a kliens, a pool-tól függetlenül.
+        item_fields:
+          - name: mac_address
+            shape_type: scalar
+            scalar_type: string
+          - name: ip_address
+            shape_type: scalar
+            scalar_type: string
+          - name: hostname
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+
+  # ── StateSurface ─────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: schemas/aggregate/state-surface.yaml
+    source: dhcp-adapter
+    freshness:
+      ttl: 30s
+      strategy: event-driven
+    nodes:
+
+      - name: status
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        contract:
+          - type: enum
+            expression: [running, stopped, error]
+
+      - name: active_lease_count
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        description: Aktív (nem lejárt) lease-ek száma
+
+      - name: pool_utilization_percent
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        optional: true
+        contract:
+          - type: range
+            expression: "0..100"
+
+      - name: leases
+        atomic_ref: schemas/atomic/shape.yaml
+        shape_type: collection
+        collection_variant: list
+        role: state
+        optional: true
+        description: Ténylegesen aktív lease-ek listája
+        item_fields:
+          - name: mac_address
+            shape_type: scalar
+            scalar_type: string
+          - name: ip_address
+            shape_type: scalar
+            scalar_type: string
+          - name: hostname
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+          - name: expires_at
+            shape_type: scalar
+            scalar_type: string
+            description: ISO8601 időbélyeg
+
+  # ── OperationSurface ───────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: schemas/aggregate/operation-surface.yaml
+    operations:
+
+      - name: release_lease
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: true
+        description: Egy adott lease explicit felszabadítása (IP vagy MAC alapján)
+        input:
+          - name: ip_address
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+          - name: mac_address
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+        output:
+          - name: released
+            shape_type: scalar
+            scalar_type: boolean
+
+      - name: reset_pool
+        atomic_ref: schemas/atomic/behavior.yaml
+        type: action
+        idempotent: false
+        description: >
+          Minden nem-statikus lease felszabadítása — destruktív, csak
+          explicit adminisztrátori hívásra (nincs automatikus trigger).
+        input: null
+        output:
+          - name: released_count
+            shape_type: scalar
+            scalar_type: integer
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: lease-assigned
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: info
+        description: Új lease kiosztva egy kliensnek
+        payload:
+          - name: mac_address
+            shape_type: scalar
+            scalar_type: string
+          - name: ip_address
+            shape_type: scalar
+            scalar_type: string
+          - name: hostname
+            shape_type: scalar
+            scalar_type: string
+
+      - name: lease-released
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: state_change
+        severity: info
+        description: Lease felszabadult (lejárt vagy explicit release)
+        payload:
+          - name: mac_address
+            shape_type: scalar
+            scalar_type: string
+          - name: ip_address
+            shape_type: scalar
+            scalar_type: string
+
+      - name: pool-exhausted
+        atomic_ref: schemas/atomic/event.yaml
+        trigger: threshold
+        severity: warning
+        description: Cím-pool betelt vagy közel a beteléshez
+        payload:
+          - name: pool_utilization_percent
+            shape_type: scalar
+            scalar_type: integer
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: schemas/atomic/address.yaml
+        schema_path: "/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:dhcp:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network:dhcp"
+        key_fields:
+          - name: backend
+            type: enum
+            values: [isc-dhcp, kea, dnsmasq]
+            description: DHCP szerver implementáció
+          - name: provider
+            type: string
+            description: A DHCP szervert futtató host/rendszer azonosítója
+          - name: location
+            type: string
+            description: Rack / panel / "-" ha a provider kezeli
+          - name: id
+            type: string
+            description: >
+              Pool/szolgáltatás neve (pl. pool-mgmt) — ezt a `{id}`-t
+              hivatkozzák a standards/yang VLAN/L2VLAN blokkok
+              `dhcp_service` mezői CIC address stringként
+              (pl. "dhcp/server-01/pool-mgmt").
+    adapter_capabilities:
+      known_adapters: []
+      note: >
+        Üres szándékosan — nincs még execution-layer adapter (isc-dhcp/
+        kea/dnsmasq kontraktus), az adat-oldali munka jelenlegi fókusza
+        miatt. A `../switch-netconf-adapter/`/`../ovs-adapter/` mintáját
+        kell követnie, amikor a végrehajtási réteg fókuszba kerül.
+
+  yang:
+    status: specification-only
+    module: cic-network-dhcp
+    namespace: "urn:cic:network:dhcp"
+    note: >
+      Nincs közvetlen IETF/IEEE YANG forrás — ez CIC-natív service-réteg
+      objektum, nem egy létező szabvány adaptációja.
+
+  restconf:
+    collection: "GET /restconf/data/cic-network:dhcp-services"
+    instance: "GET /restconf/data/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}"
+    config:
+      read: "GET   /restconf/data/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}/config"
+      update: "PUT   /restconf/data/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}/config"
+      patch: "PATCH /restconf/data/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}/config"
+    state:
+      read: "GET   /restconf/data/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}/state"
+    operations:
+      release_lease: "POST /restconf/operations/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}/release-lease"
+      reset_pool: "POST /restconf/operations/cic-network:dhcp-services/dhcp-service={backend}, {provider}, {location}, {id}/reset-pool"
+    events:
+      stream: "GET /restconf/streams/cic-network-dhcp-events"
+
+  runtime:
+    reconcile_loop: |
+      1. observe:  adapter.get(backend, provider, location, id) → state_surface
+      2. compare:  diff(config_surface, state_surface) → drift?
+      3. if drift:
+           pool_start/pool_end changed → adapter újraírja a pool konfigot
+           static_reservations changed → adapter frissíti a fenntartásokat
+      4. emit: lease-assigned, lease-released, pool-exhausted events
+release:
+  createdBy:
+    name: Gabor Zoltan Sinko
+    email: sinkog@centralinfracore.hu
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICBjCCAaygAwIBAgIUSnRMR6RPnEbg296XWPOqq/u5PCwwCgYIKoZIzj0EAwIw
+
+      QzELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxGTAXBgNV
+
+      BAMMEENJQyBEZXZlbG9wZXIgQ0EwHhcNMjYwMzIwMTMyMjU5WhcNMjYxMjMxMTMy
+
+      MjU5WjBFMQswCQYDVQQGEwJIVTEZMBcGA1UECgwQQ2VudHJhbEluZnJhQ29yZTEb
+
+      MBkGA1UEAwwSR2Fib3IgWm9sdGFuIFNpbmtvMFkwEwYHKoZIzj0CAQYIKoZIzj0D
+
+      AQcDQgAEIG2CVmTfmLB9pLLclj7YmP2eedAjklpy4LGrU2ijoiy6Xqpuybv7OgJe
+
+      i+ez31s65NEV8+X/ByeX1cstR988z6N8MHowCQYDVR0TBAIwADAdBgNVHQ4EFgQU
+
+      yZN6AIX/TNnIJ9GwAa/NRN3ujHAwHwYDVR0jBBgwFoAUXn6CHYzPUqU4JVP8g+OS
+
+      WeDYjhcwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEF
+
+      BQcDBDAKBggqhkjOPQQDAgNIADBFAiEA+bFzXRoJ4PCQbhAAtpkcMjt0vNj5rEW0
+
+      lOMBGDNyaWkCIB1vmM7PcZzv/c9bIrxF5kqv6QXomouhByUfeNUTbpKW
+
+      -----END CERTIFICATE-----
+
+      '
+  build_hash: t19CzaW0zpu/U1eEvRRGk4bhsp6XtEi2iK1hRI3UFU4=
+  sign: vault:v1:MEUCIQDaJjsparXJe274COFRzJXRIHQwNyO8kC3PmE76tgWM3QIgGjrj47xzM3wY1ppdri8BNZFqAZ8WRe/EUYJsjKFhZrU=
+cic_countersign:
+  authority:
+    name: CIC Source CA
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICMDCCAdagAwIBAgIUStyiR+g40cCBauhK8nOUNLIj0iIwCgYIKoZIzj0EAwIw
+
+      PjELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNV
+
+      BAMMC0NJQyBSb290IENBMB4XDTI2MDMyMDEzMjIzOVoXDTI2MTIzMTEzMjIzOVow
+
+      QDELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFjAUBgNV
+
+      BAMMDUNJQyBTb3VyY2UgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARuSq7+
+
+      gRkRwiZYbZBp8aWzFyK36YMBQ58PwUTtoL6Gzu5QZS2tDGLWvFqDY/BRavqcOfel
+
+      I6y+P9WlhntH4oI6o4GvMIGsMB0GA1UdDgQWBBTXWkl+CqRrqaEpr/fUmVHc6B7I
+
+      OTBnBgNVHSMEYDBegBSiQtbuMt81/vweajD7O4ogMMaKGqFCpEAwPjELMAkGA1UE
+
+      BhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBS
+
+      b290IENBggIQBDASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBhjAK
+
+      BggqhkjOPQQDAgNIADBFAiEA25x0lXd37TAiRROTXQtqXNoMiwl0wCZln3m/DMBR
+
+      YcQCID3gc64TnA9Y7QL96lY1nYhAl2NWeMjK8pFXXN2Dymuf
+
+      -----END CERTIFICATE-----
+
+      '
+    root_certificate: "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number: 4100\
+      \ (0x1004)\n        Signature Algorithm: ecdsa-with-SHA256\n        Issuer: C=HU, O=CentralInfraCore,\
+      \ CN=CIC Root CA\n        Validity\n            Not Before: Mar 19 12:59:30 2026 GMT\n         \
+      \   Not After : Dec 31 23:59:59 2026 GMT\n        Subject: C=HU, O=CentralInfraCore, CN=CIC Root\
+      \ CA\n        Subject Public Key Info:\n            Public Key Algorithm: id-ecPublicKey\n     \
+      \           Public-Key: (256 bit)\n                pub:\n                    04:cd:07:56:3a:e7:28:41:c4:99:76:3a:e8:5e:90:\n\
+      \                    39:54:be:e7:7d:42:ab:65:49:05:f0:f8:84:63:5f:\n                    5f:05:22:56:d1:29:e0:ac:7d:67:e3:cf:ac:8f:9c:\n\
+      \                    e2:be:71:6f:a8:91:00:e4:6c:af:1f:f2:86:3f:6d:\n                    03:1d:36:c7:f4\n\
+      \                ASN1 OID: prime256v1\n                NIST CURVE: P-256\n        X509v3 extensions:\n\
+      \            X509v3 Subject Key Identifier: \n                A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \            X509v3 Authority Key Identifier: \n                keyid:A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \                DirName:/C=HU/O=CentralInfraCore/CN=CIC Root CA\n                serial:10:04\n\
+      \            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:3\n          \
+      \  X509v3 Key Usage: critical\n                Digital Signature, Certificate Sign, CRL Sign\n \
+      \   Signature Algorithm: ecdsa-with-SHA256\n    Signature Value:\n        30:45:02:20:51:b0:f6:e5:50:ac:3b:f8:2e:d1:af:7a:7a:b3:\n\
+      \        42:7b:5d:8e:1d:d0:7d:e0:5c:60:48:42:aa:6b:f0:24:8b:a0:\n        02:21:00:d8:c6:94:12:db:f1:a8:b8:3b:45:46:b9:30:88:36:\n\
+      \        6c:f3:e2:56:76:02:35:f6:17:0b:b5:3a:7b:80:5d:16:24\n-----BEGIN CERTIFICATE-----\nMIICHDCCAcKgAwIBAgICEAQwCgYIKoZIzj0EAwIwPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMB4X\nDTI2MDMxOTEyNTkzMFoXDTI2MTIzMTIzNTk1OVowPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMFkw\nEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzQdWOucoQcSZdjroXpA5VL7nfUKrZUkF\n\
+      8PiEY19fBSJW0SngrH1n48+sj5zivnFvqJEA5GyvH/KGP20DHTbH9KOBrzCBrDAd\nBgNVHQ4EFgQUokLW7jLfNf78Hmow+zuKIDDGihowZwYDVR0jBGAwXoAUokLW7jLf\n\
+      Nf78Hmow+zuKIDDGihqhQqRAMD4xCzAJBgNVBAYTAkhVMRkwFwYDVQQKDBBDZW50\ncmFsSW5mcmFDb3JlMRQwEgYDVQQDDAtDSUMgUm9vdCBDQYICEAQwEgYDVR0TAQH/\n\
+      BAgwBgEB/wIBAzAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwIDSAAwRQIgUbD2\n5VCsO/gu0a96erNCe12OHdB94FxgSEKqa/Aki6ACIQDYxpQS2/GouDtFRrkwiDZs\n\
+      8+JWdgI19hcLtTp7gF0WJA==\n-----END CERTIFICATE-----\n"
+  signed_payload: build_hash
+  sign: vault:v1:MEYCIQD9bXj+msO9TXOPA0MIT6nBV4lyBrQJc+DUqLk0TKcOAQIhAMXiP1FW6jj+eyd+YyGqjpW4XpMIKrhjkgMR+NyAupry
+  workflow: cic-schema-registry-sign@v1
+  ts: '2026-09-16T06:35:52Z'
