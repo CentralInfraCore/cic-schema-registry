@@ -31,10 +31,10 @@ Byte-azonos másolat `yang/@v0.1.3`-ból
 Ugyanaz a ténylegesen ellenőrzött, kettős aláírás, mint a többi `cic-yang`
 fájlnál.
 
-Fájlonkénti release-aláírás: `v0.1.4`, `v0.1.5`, `v0.1.6` és `v0.1.7` a
-`tools/registry_sign.py` (proposals/schema-registry §5) szerint valódi
-Vault author-aláírással és CICSourceCA ellenjegyzéssel van ellátva
-(`release:`/`cic_countersign:` blokk a fájl végén).
+Fájlonkénti release-aláírás: `v0.1.4`, `v0.1.5`, `v0.1.6`, `v0.1.7` és
+`v0.1.8` a `tools/registry_sign.py` (proposals/schema-registry §5)
+szerint valódi Vault author-aláírással és CICSourceCA ellenjegyzéssel
+van ellátva (`release:`/`cic_countersign:` blokk a fájl végén).
 
 ## v0.1.7 — két önellentmondás javítva ([#101](https://github.com/CentralInfraCore/cic-schema-registry/issues/101), [#84](https://github.com/CentralInfraCore/cic-schema-registry/issues/84))
 
@@ -53,3 +53,20 @@ bukjon. Ellenőrizve: a teljes `standards/yang` corpus egyik
 `applicable_when`/`required_when` blokkja sem használ a `field`/`equals`/
 `in` hármason kívüli kulcsot, tehát a szigorítás semmit nem tör el a
 meglévő tartalomból.
+
+## v0.1.8 — origin enum bővítve ([#87](https://github.com/CentralInfraCore/cic-schema-registry/issues/87), rövid táv)
+
+`field_schema.origin` (és a testvér `notifications[].origin`) enumja
+kibővítve `rfc8512`-vel (`ietf-nat` saját `metadata.source`-a ez, de az
+enum eddig nem tudta kifejezni) és `iana-if-type`-tal
+(`ietf-interfaces-l2vlan` saját `metadata.source`-a "RFC 8343 +
+IANA-IF-TYPE l2vlan", ugyanez a hiányzó kategória).
+
+**Szándékosan NEM ennek a verziónak a része:** a corpus meglévő
+mezőinek utólagos átcímkézése az új értékekkel (pl. `ietf-nat` mezői
+jelenleg mind `cic-extension`, `ietf-interfaces-l2vlan.vlan_id`
+jelenleg `rfc8343`) — ez RFC-szöveg-szintű ellenőrzést igényelne a
+`#46` mintájára, nem csak enum-bővítést. A `#87` hosszabb-távú fele (egy
+strukturált `provenance` blokk `authority`/`document`/`module`/
+`relation: direct|normalized|inspired-by|extension`-nel, a flat `origin`
+enum helyett/mellett) szintén nem itt dől el.
