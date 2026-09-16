@@ -257,3 +257,30 @@ def test_frozen_edits_flags_re_signing_an_already_signed_file(tmp_path):
     assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
         "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
     ]
+
+
+def test_frozen_edits_flags_a_comment_change_smuggled_next_to_a_signature(tmp_path):
+    """thead02: an earlier version of _only_gained_release_signature()
+    compared parsed YAML dicts, which discards comments -- so a comment
+    added to the surviving content alongside a legitimate signature would
+    have parsed identically to the original and slipped through
+    unnoticed. The fix compares bytes (original content must be an exact
+    prefix of current), which catches this."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    original = "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+    _write(schema_dir / "ietf-nat.v0.1.0-src2026.yaml", original)
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    # a comment slipped into the surviving content -- invisible to
+    # yaml.safe_load(), but a real byte-level change nonetheless.
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat  # sneaky comment\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n",
+    )
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
+        "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
+    ]
