@@ -184,8 +184,26 @@ def format_signature_blocks(
 
 
 def append_signature_blocks(path: Path, blocks_yaml: str) -> None:
+    """Appends the signature blocks after the file's EXISTING bytes,
+    byte-for-byte unchanged -- byte-level I/O throughout, not text I/O.
+    compute_build_hash above hashes raw bytes; Path.read_text()/
+    write_text() apply universal-newline translation (CRLF/CR -> LF on
+    read, no translation back on write on Linux) and would silently
+    rewrite a CRLF source file to something that no longer matches the
+    hash that was actually signed. A missing trailing newline is the same
+    class of problem one byte over: silently padding one in would insert
+    a byte into the file that was never part of what got hashed, so this
+    raises instead of guessing (cic-schema-registry#91) -- yamllint's
+    new-line-at-end-of-file rule (make check) should already prevent this
+    upstream of signing."""
     _check_not_already_signed(path)
-    current = path.read_text()
-    if not current.endswith("\n"):
-        current += "\n"
-    path.write_text(current + blocks_yaml)
+    current = path.read_bytes()
+    if not current.endswith(b"\n"):
+        raise ValueError(
+            f"{path} does not end with a newline -- refusing to pad it, "
+            "since that would insert a byte that was never part of the "
+            "hashed content. Fix the file (yamllint's "
+            "new-line-at-end-of-file rule should already catch this) and "
+            "re-sign."
+        )
+    path.write_bytes(current + blocks_yaml.encode("utf-8"))

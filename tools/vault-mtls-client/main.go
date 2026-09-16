@@ -19,17 +19,27 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 )
+
+// Vault Transit signs with the key's CURRENT version by default, so the
+// prefix is "vault:v<N>:" where N grows on every rotation -- matching
+// only "vault:v1:" (cic-schema-registry#104) either fails outright after
+// a rotation, or worse, TrimPrefix silently no-ops on a mismatched
+// prefix and the remaining "vault:v2:..." string gets fed to the base64
+// decoder as-is.
+var vaultSigPrefix = regexp.MustCompile(`^vault:(v\d+):`)
 
 // vaultSigner implements crypto.Signer by delegating every signature to a
 // Vault Transit key. It never holds key material.
 type vaultSigner struct {
-	addr      string
-	token     string
-	keyName   string
-	pub       crypto.PublicKey
-	client    *http.Client
+	addr       string
+	token      string
+	keyName    string
+	pub        crypto.PublicKey
+	client     *http.Client
+	keyVersion string // set by Sign(), from Vault's own "vault:vN:" prefix
 }
 
 func (s *vaultSigner) Public() crypto.PublicKey { return s.pub }
@@ -70,7 +80,12 @@ func (s *vaultSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([]b
 	if len(out.Errors) > 0 {
 		return nil, fmt.Errorf("vault: %s", strings.Join(out.Errors, "; "))
 	}
-	der, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(out.Data.Signature, "vault:v1:"))
+	match := vaultSigPrefix.FindStringSubmatch(out.Data.Signature)
+	if match == nil {
+		return nil, fmt.Errorf("vault: signature has unexpected prefix (want vault:vN:): %q", out.Data.Signature)
+	}
+	s.keyVersion = match[1]
+	der, err := base64.StdEncoding.DecodeString(out.Data.Signature[len(match[0]):])
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +157,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("vault-signing build_hash failed: %v", err)
 	}
-	appSign := "vault:v1:" + base64.StdEncoding.EncodeToString(sigDER)
+	// signer.keyVersion is whatever Vault actually reported (cic-schema-
+	// registry#104) -- not hardcoded, so a key rotation changes the label
+	// correctly instead of mislabeling a v2 signature as "v1".
+	appSign := "vault:" + signer.keyVersion + ":" + base64.StdEncoding.EncodeToString(sigDER)
 	fmt.Println("[*] application-level sign (build_hash), produced via Vault:", appSign)
 
 	var document map[string]any

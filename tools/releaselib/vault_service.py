@@ -1,10 +1,17 @@
 import base64
 import logging
 import os
+import re
 
 import requests
 
 from .exceptions import VaultServiceError
+
+# Vault Transit signs with the key's CURRENT version by default, so the
+# prefix is "vault:v<N>:" where N grows on every rotation -- matching only
+# "vault:v1:" (cic-schema-registry#104) would hard-fail every signature
+# produced after the first rotation.
+_VAULT_SIGNATURE_PREFIX = re.compile(r"^vault:v\d+:")
 
 
 class VaultService:
@@ -88,7 +95,7 @@ class VaultService:
             if (
                 not signature
                 or not isinstance(signature, str)
-                or not signature.startswith("vault:v1:")
+                or not _VAULT_SIGNATURE_PREFIX.match(signature)
             ):
                 raise VaultServiceError(
                     f"Invalid or missing signature in Vault response. Raw response: {response.text}"
