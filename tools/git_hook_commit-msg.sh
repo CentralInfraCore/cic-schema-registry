@@ -20,13 +20,15 @@ fi
 export VAULT_TOKEN=$(cat "$VAULT_TOKEN_FILE")
 
 # --- Helper for curl ---
-CURL_OPTS=""
-if [ -f "$VAULT_CA_CERT_FILE" ]; then
-  CURL_OPTS="--cacert $VAULT_CA_CERT_FILE"
-else
-  echo "[WARNING] Vault CA certificate not found. Proceeding without TLS verification."
-  CURL_OPTS="-k"
+# Never fall back to -k (disabled TLS verification): the Vault token goes
+# out on every request below regardless, so a missing/misconfigured CA
+# file must stop the commit, not silently expose the token to a MITM
+# (cic-schema-registry#90).
+if [ ! -f "$VAULT_CA_CERT_FILE" ]; then
+  echo "[!] Vault CA certificate not found at $VAULT_CA_CERT_FILE — refusing to sign with TLS verification disabled."
+  exit 1
 fi
+CURL_OPTS="--cacert $VAULT_CA_CERT_FILE"
 
 # ===== Staged tartalom snapshot =====
 if ! TREE_ID=$(git write-tree 2>/dev/null); then

@@ -1,7 +1,7 @@
 # Makefile for Core Infrastructure Tasks
 
 # ---- Phony ----
-.PHONY: infra.up infra.down infra.shell infra.build infra.fmt infra.lint infra.typecheck infra.check infra.repo.init infra.deps infra.coverage infra.clean infra.help
+.PHONY: infra.up infra.down infra.shell infra.build infra.fmt infra.fmt-check infra.lint infra.typecheck infra.check infra.repo.init infra.deps infra.coverage infra.clean infra.help
 
 # =============================================================================
 # Container Lifecycle Management
@@ -32,6 +32,17 @@ infra.fmt:
 	@docker compose exec builder python -m black --exclude p_venv .
 	@docker compose exec builder python -m isort --skip-glob "p_venv/*" .
 
+# --check/--diff, never writes: infra.check (the CI gate) must use this,
+# not infra.fmt, which silently rewrites files in place. Before this fix
+# a badly-formatted PR was auto-fixed inside the CI container, then
+# infra.lint ran on the ALREADY-fixed code and passed -- the formatting
+# violation never surfaced as a build failure, and the fix never made it
+# back into the PR (cic-schema-registry#106).
+infra.fmt-check:
+	@echo "--- Checking Python formatting with Black and Isort (no changes written) ---"
+	@docker compose exec builder python -m black --exclude p_venv --check --diff .
+	@docker compose exec builder python -m isort --skip-glob "p_venv/*" --check-only --diff .
+
 infra.lint:
 	@echo "--- Linting Python code with Ruff ---"
 	@docker compose exec builder python -m ruff check .
@@ -46,7 +57,7 @@ infra.security:
 	@echo "--- Running security checks with Bandit ---"
 	@docker compose exec builder python3 -m bandit -r tools
 
-infra.check: infra.fmt infra.lint infra.typecheck infra.security
+infra.check: infra.fmt-check infra.lint infra.typecheck infra.security
 	@echo "--- Running all code quality checks (format, lint, typecheck) ---"
 
 typecheck:
@@ -105,10 +116,11 @@ infra.help:
 	@echo "  infra.build         Build Docker images."
 	@echo ""
 	@echo "Code Quality & Formatting:"
-	@echo "  infra.fmt           Format Python code with Black and Isort."
+	@echo "  infra.fmt           Format Python code with Black and Isort (writes changes)."
+	@echo "  infra.fmt-check     Check Python formatting without writing changes (used by infra.check/CI)."
 	@echo "  infra.lint          Lint Python code with Ruff and YAML files with yamllint."
 	@echo "  infra.typecheck     Run static type checking with MyPy."
-	@echo "  infra.check         Run all code quality checks (fmt, lint, typecheck)."
+	@echo "  infra.check         Run all code quality checks (fmt-check, lint, typecheck, security)."
 	@echo ""
 	@echo "Repository Setup:"
 	@echo "  infra.repo.init     Set up the Git hooks for this repository (pre-commit, commit-msg)."

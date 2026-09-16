@@ -65,13 +65,38 @@ def test_append_signature_blocks_appends_and_stays_valid_yaml(tmp_path):
     assert doc["cic_countersign"]["authority"]["name"] == "CIC Source CA"
 
 
-def test_append_signature_blocks_adds_missing_trailing_newline(tmp_path):
+def test_append_signature_blocks_refuses_missing_trailing_newline(tmp_path):
+    """cic-schema-registry#91: silently padding a missing trailing newline
+    inserted a byte that was never part of what compute_build_hash hashed
+    -- must refuse instead of guessing."""
     f = tmp_path / "schema.yaml"
     f.write_text("metadata:\n  name: X")  # no trailing newline
+    with pytest.raises(ValueError, match="does not end with a newline"):
+        append_signature_blocks(f, "release:\n  sign: x\n")
+
+
+def test_append_signature_blocks_preserves_crlf_bytes_exactly(tmp_path):
+    """cic-schema-registry#91: text-mode I/O (read_text/write_text) applies
+    universal-newline translation and would silently rewrite CRLF source
+    bytes to LF, breaking the correspondence with the already-computed
+    build_hash. Byte-level I/O must leave the original bytes untouched."""
+    f = tmp_path / "schema.yaml"
+    original = b"metadata:\r\n  name: X\r\n"
+    f.write_bytes(original)
+    before_hash = compute_build_hash(f)
+
     append_signature_blocks(f, "release:\n  sign: x\n")
-    doc = yaml.safe_load(f.read_text())
-    assert doc["metadata"]["name"] == "X"
-    assert doc["release"]["sign"] == "x"
+
+    written = f.read_bytes()
+    assert written.startswith(original)
+    assert written[len(original) :] == b"release:\n  sign: x\n"
+    # the original bytes -- and therefore the hash that was signed over
+    # them -- are provably untouched by the append.
+    assert compute_build_hash(f) != before_hash  # file changed (signature appended)
+    assert (
+        hashlib.sha256(written[: len(original)]).digest()
+        == hashlib.sha256(original).digest()
+    )
 
 
 def test_format_signature_blocks_shape_matches_real_release_files():

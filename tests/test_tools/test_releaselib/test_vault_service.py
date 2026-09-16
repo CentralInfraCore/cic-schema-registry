@@ -98,6 +98,19 @@ def test_sign_success(mock_post, vault_service):
 
 
 @patch("requests.post")
+def test_sign_success_after_key_rotation(mock_post, vault_service):
+    """cic-schema-registry#104: Vault Transit signs with the key's CURRENT
+    version by default -- after a rotation the prefix is vault:v2:,
+    vault:v3:, etc., not just vault:v1:."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"data": {"signature": "vault:v2:signed-hash"}}
+    mock_post.return_value = mock_response
+
+    signature = vault_service.sign(VALID_DIGEST_B64, "my-key")
+    assert signature == "vault:v2:signed-hash"
+
+
+@patch("requests.post")
 def test_sign_request_exception(mock_post, vault_service):
     """Test that a requests exception is wrapped in VaultServiceError."""
     mock_post.side_effect = requests.exceptions.RequestException("Connection error")
