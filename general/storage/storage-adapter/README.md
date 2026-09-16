@@ -53,5 +53,7 @@ aláírás (szerzői + CICSourceCA), ténylegesen `openssl`-lel ellenőrizve
 (lásd `storage-resource/README.md` "Eredet / provenance" szakasza a
 részletekért, mindkettőre ugyanaz vonatkozik).
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben —
-ez a fájl NEM hordoz saját `release`/`cic_countersign` blokkot.
+Fájlonkénti release-aláírás: v0.1.2 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén).

@@ -106,10 +106,10 @@ release bundle mindkét aláírása:
   (ugyanaz a 2026-os évjárat, mint a `cic-primitives` kernelnél) — ez
   indokolja a `-src2026` fájlnév-jelölést.
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben —
-ez a fájl NEM hordoz saját `release`/`cic_countersign` blokkot. A tartalmi
-hitelesség a `cic-storage` repó saját, GHCR-en is publikált release-én
-keresztül ellenőrizhető (`ghcr.io/centralinfracore/schema/cic-storage:v0.1.2-src2026`).
+Fájlonkénti release-aláírás: v0.1.2, v0.1.3, v0.1.4 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén, minden létező verzión).
 
 ## v0.1.3 — registry-native tartalmi javítás (NEM a `cic-storage`-ból jön)
 

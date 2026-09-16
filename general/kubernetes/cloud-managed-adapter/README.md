@@ -17,4 +17,7 @@ frissebb `v0.1.3` helyett, mert az utóbbiból hiányzik a CICSourceCA
 countersign (lásd `../kubernetes-cluster/README.md`). Ugyanaz a
 ténylegesen ellenőrzött, kettős aláírás.
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: v0.1.2 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén, minden létező verzión).

@@ -94,4 +94,7 @@ változás nélkül). A `v0.1.2` fájl ezután érintetlen — a fenti javítás
 ne ütközzön a forrás repó azonos számú, de tartalmilag más jelentésű
 tag-jével — lásd a fájl saját `metadata.description`-jét).
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: v0.1.2, v0.1.4 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén, minden létező verzión).

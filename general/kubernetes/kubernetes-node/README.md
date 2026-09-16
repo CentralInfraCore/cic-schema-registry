@@ -29,4 +29,7 @@ ténylegesen ellenőrzött, kettős aláírás. A `v0.1.2` fájl ezután
 érintetlen — a fenti javítás egy új `v0.1.4` fájlban él (`v0.1.3`
 szándékosan kihagyva, ugyanazon okból, mint a `kubernetes-cluster`-nél).
 
-**⚠ Fájlonkénti aláírás még nincs implementálva** ebben a registry-ben.
+Fájlonkénti release-aláírás: v0.1.2, v0.1.4 a `tools/registry_sign.py`
+(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
+CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
+a fájl végén, minden létező verzión).
