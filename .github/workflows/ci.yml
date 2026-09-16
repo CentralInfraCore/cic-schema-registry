@@ -37,8 +37,11 @@ jobs:
       - name: Run code quality checks
         run: make check
 
-      - name: Run tests and generate coverage report
+      - name: Run tests
         run: make test
+
+      - name: Generate coverage report
+        run: make infra.coverage
 
       - name: Validate schema corpus (inherited meta-schema check)
         run: make validate
@@ -54,6 +57,13 @@ jobs:
         with:
           name: html-coverage-report
           path: htmlcov/
+          # Explicit, not the action's silent "warn" default: if
+          # htmlcov/ is ever missing again (#69 — this whole step used
+          # to run against a directory that was never generated,
+          # warning instead of failing, so it stayed green for the
+          # entire history of this repo), the build must fail loudly
+          # instead of silently uploading nothing.
+          if-no-files-found: error
 
       - name: Stop development environment
         if: always()
