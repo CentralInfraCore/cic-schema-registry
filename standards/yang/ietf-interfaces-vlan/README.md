@@ -1,7 +1,7 @@
 # ietf-interfaces-vlan
 
 **Réteg:** `standards/yang/` — külső szabvány szerinti séma (RFC 8343)
-**Kind:** `YANGBlock`, `extends: {name: ietf-interfaces-base, version: v0.0.dev}`
+**Kind:** `YANGBlock`, `extends: {name: ietf-interfaces-base, version: v0.1.4}`
 
 VLAN interfész — az RFC 8343 `ietf-interfaces-base` közös mezőit
 kiterjeszti. Lásd `../ietf-interfaces-base/README.md` a kiterjesztési
@@ -25,10 +25,18 @@ Byte-azonos másolat `yang/@v0.1.3`-ból (`schemas/ietf/ietf-interfaces-
 vlan.yaml`), `metadata.version` → `v0.1.3`. Ugyanaz a ténylegesen
 ellenőrzött, kettős aláírás, mint `../ietf-interfaces-base/`-nál.
 
-Fájlonkénti release-aláírás: `v0.1.5`, `v0.1.6` a `tools/registry_sign.py`
-(proposals/schema-registry §5) szerint valódi Vault author-aláírással és
-CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
-a fájl végén).
+Fájlonkénti release-aláírás: `v0.1.5`, `v0.1.6`, `v0.1.7` a
+`tools/registry_sign.py` (proposals/schema-registry §5) szerint valódi
+Vault author-aláírással és CICSourceCA ellenjegyzéssel van ellátva
+(`release:`/`cic_countersign:` blokk a fájl végén).
+
+## v0.1.7 — extends.version valós pin, csak coverage-javítás miatt ([#81](https://github.com/CentralInfraCore/cic-schema-registry/issues/81))
+
+Ugyanaz az indoklás, mint a `v0.1.6`-nál: DEPRECATED blokk, ez a verzió
+kizárólag azért készült, hogy a `#81`-ben szigorított
+`check_yang_extends()` (valós `resolve_pin()` ellenőrzés placeholder
+`v0.0.dev` helyett) ne bukjon el a teljes corpuson emiatt a LATEST fájl
+miatt. `ietf-interfaces-base@v0.1.4`.
 
 ## v0.1.6 — config.name átnevezve vlan_name-re, csak coverage-javítás miatt ([#82](https://github.com/CentralInfraCore/cic-schema-registry/issues/82))
 
