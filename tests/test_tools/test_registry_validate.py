@@ -86,6 +86,151 @@ def test_schema_evolution_skips_yang_block_files_instead_of_false_passing(
     assert "YANGBlock" in skipped[0]
 
 
+def test_schema_evolution_catches_a_nested_field_change_deep_true_is_now_wired_in(
+    tmp_path,
+):
+    """#94: check_schema_evolution now calls check_coverage(deep=True) --
+    a change inside item_fields, invisible to the old shallow signature,
+    must surface as a real problem, not silently pass."""
+    schema_dir = tmp_path / "general" / "network" / "dhcp-service"
+    _write(
+        schema_dir / "dhcp-service.v0.1.0-src2026.yaml",
+        "spec:\n"
+        "  kind: DomainComposition\n"
+        "  config_surface:\n"
+        "    nodes:\n"
+        "      - name: reservations\n"
+        "        shape_type: collection\n"
+        "        item_fields:\n"
+        "          - name: mac_address\n"
+        "            scalar_type: string\n",
+    )
+    _write(
+        schema_dir / "dhcp-service.v0.1.1-src2026.yaml",
+        "spec:\n"
+        "  kind: DomainComposition\n"
+        "  config_surface:\n"
+        "    nodes:\n"
+        "      - name: reservations\n"
+        "        shape_type: collection\n"
+        "        item_fields:\n"
+        "          - name: mac_address\n"
+        "            scalar_type: integer\n",
+    )
+
+    problems, skipped = check_schema_evolution(tmp_path)
+    assert skipped == []
+    assert len(problems) == 1
+    assert "reservations" in problems[0]
+    assert "item_fields" in problems[0]
+
+
+def test_schema_evolution_grandfather_list_suppresses_only_the_named_case(
+    tmp_path,
+):
+    """#94's grandfather list is keyed to (dir, old filename, new filename,
+    field) exactly -- it must suppress the one real, already-reviewed case
+    it names, and NOT suppress a same-shaped nested change on a different
+    field in the same transition."""
+    schema_dir = tmp_path / "general" / "storage" / "storage-resource"
+    _write(
+        schema_dir / "storage-resource.v0.1.2-src2026.yaml",
+        "spec:\n"
+        "  kind: DomainComposition\n"
+        "  config_surface:\n"
+        "    nodes:\n"
+        "      - name: attached_to\n"
+        "        shape_type: scalar\n"
+        "      - name: unrelated_field\n"
+        "        shape_type: scalar\n",
+    )
+    _write(
+        schema_dir / "storage-resource.v0.1.3-src2026.yaml",
+        "spec:\n"
+        "  kind: DomainComposition\n"
+        "  config_surface:\n"
+        "    nodes:\n"
+        "      - name: attached_to\n"
+        "        shape_type: scalar\n"
+        "        access: {conformance: not_implemented}\n"  # grandfathered
+        "      - name: unrelated_field\n"
+        "        shape_type: scalar\n"
+        "        access: {conformance: not_implemented}\n",  # NOT grandfathered
+    )
+
+    problems, skipped = check_schema_evolution(tmp_path)
+    assert skipped == []
+    assert len(problems) == 1
+    assert "unrelated_field" in problems[0]
+    assert "attached_to" not in "".join(problems)
+
+
+def test_schema_evolution_catches_a_new_required_field_without_major_bump(
+    tmp_path,
+):
+    """#96: check_schema_evolution now calls check_coverage(
+    check_new_required=True) -- proposals/schema-registry §4 says a new
+    field must be optional within the same major version; this had no
+    code-level enforcement before."""
+    schema_dir = tmp_path / "general" / "compute" / "compute-resource"
+    _write(
+        schema_dir / "compute-resource.v0.2.0-src2026.yaml",
+        "spec:\n"
+        "  kind: DomainComposition\n"
+        "  config_surface:\n"
+        "    nodes:\n"
+        "      - name: cpu_count\n"
+        "        shape_type: scalar\n",
+    )
+    _write(
+        schema_dir / "compute-resource.v0.2.1-src2026.yaml",
+        "spec:\n"
+        "  kind: DomainComposition\n"
+        "  config_surface:\n"
+        "    nodes:\n"
+        "      - name: cpu_count\n"
+        "        shape_type: scalar\n"
+        "      - name: memory_gb\n"
+        "        shape_type: scalar\n"
+        "        mandatory: true\n",
+    )
+
+    problems, skipped = check_schema_evolution(tmp_path)
+    assert skipped == []
+    assert len(problems) == 1
+    assert "memory_gb" in problems[0]
+
+
+def test_schema_evolution_catches_adapter_contract_operations_removed(tmp_path):
+    """#95: AdapterContract's spec.operations is now read by
+    extract_fields() -- before this, this exact transition compared 0
+    fields to 0 fields and reported OK regardless of what happened to
+    `operations`."""
+    schema_dir = tmp_path / "general" / "network" / "ovs-adapter"
+    _write(
+        schema_dir / "ovs-adapter.v0.4.1-src2026.yaml",
+        "spec:\n"
+        "  kind: AdapterContract\n"
+        "  operations:\n"
+        "    - name: observe\n"
+        "    - name: apply\n"
+        "    - name: watch\n",
+    )
+    _write(
+        schema_dir / "ovs-adapter.v0.4.2-src2026.yaml",
+        "spec:\n"
+        "  kind: AdapterContract\n"
+        "  operations:\n"
+        "    - name: observe\n"
+        "    - name: apply\n",
+    )
+
+    problems, skipped = check_schema_evolution(tmp_path)
+    assert skipped == []
+    assert len(problems) == 1
+    assert "watch" in problems[0]
+
+
 def test_base_references_skips_bundle_shaped_files(tmp_path):
     schema_dir = tmp_path / "general" / "primitives" / "cic-primitives"
     _write(

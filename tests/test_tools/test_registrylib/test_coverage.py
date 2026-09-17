@@ -302,3 +302,179 @@ def test_check_coverage_yang_dialect_does_not_flag_fields_the_child_never_restat
         shape=yang_shape_signature,
     )
     assert result.ok
+
+
+# ── #80/#94/#95/#96: deep comparison, surface tracking, AdapterContract,
+# new-required-field detection ───────────────────────────────────────────
+
+
+def _state_doc(nodes):
+    return {"spec": {"state_surface": {"nodes": nodes}}}
+
+
+def _adapter_doc(operations):
+    return {"spec": {"kind": "AdapterContract", "operations": operations}}
+
+
+def test_extract_fields_tags_each_node_with_its_surface():
+    old = _doc([{"name": "a", "shape_type": "scalar", "scalar_type": "string"}])
+    fields = extract_fields(old)
+    assert fields["a"]["_surface"] == "config_surface"
+
+
+def test_deep_true_flags_a_field_moved_between_surfaces_without_major_bump():
+    """#80: config_surface -> state_surface is a real compatibility change
+    (a writable field becomes read-only) that the shallow shape_type/
+    scalar_type/collection_variant/contract signature alone can't see,
+    because none of those keys change — only which surface the field
+    lives in does."""
+    old = _doc([{"name": "a", "shape_type": "scalar", "scalar_type": "string"}])
+    new = _state_doc([{"name": "a", "shape_type": "scalar", "scalar_type": "string"}])
+    shallow = check_coverage(old, new, major_bump=False)
+    assert shallow.ok  # the blind spot: shallow signature sees no change
+
+    deep = check_coverage(old, new, major_bump=False, deep=True)
+    assert not deep.ok
+    assert deep.violations[0].field == "a"
+    assert deep.violations[0].kind == "mutated"
+    assert "_surface" in deep.violations[0].message
+
+
+def test_deep_true_flags_a_nested_item_fields_change_the_shallow_check_misses():
+    """#94: an inner item_fields entry's scalar_type changes while the
+    outer field's own top-level shape keys stay identical."""
+    old = _doc(
+        [
+            {
+                "name": "reservations",
+                "shape_type": "collection",
+                "item_fields": [{"name": "mac_address", "scalar_type": "string"}],
+            }
+        ]
+    )
+    new = _doc(
+        [
+            {
+                "name": "reservations",
+                "shape_type": "collection",
+                "item_fields": [{"name": "mac_address", "scalar_type": "integer"}],
+            }
+        ]
+    )
+    shallow = check_coverage(old, new, major_bump=False)
+    assert shallow.ok  # the blind spot #94 reports
+
+    deep = check_coverage(old, new, major_bump=False, deep=True)
+    assert not deep.ok
+    assert "item_fields[0].scalar_type" in deep.violations[0].message
+
+
+def test_deep_true_flags_operation_input_removed():
+    """#94: an operation's input list shrinking is a real breaking change
+    even though the operation node's own top-level keys don't change."""
+    old = _doc(
+        [
+            {
+                "name": "reset_pool",
+                "shape_type": "scalar",
+                "input": [{"name": "confirm", "scalar_type": "boolean"}],
+            }
+        ]
+    )
+    new = _doc([{"name": "reset_pool", "shape_type": "scalar", "input": []}])
+    deep = check_coverage(old, new, major_bump=False, deep=True)
+    assert not deep.ok
+    assert "input" in deep.violations[0].message
+
+
+def test_deep_true_description_only_change_still_not_a_mutation():
+    old = _doc([{"name": "a", "shape_type": "scalar", "description": "old"}])
+    new = _doc([{"name": "a", "shape_type": "scalar", "description": "new, better"}])
+    assert check_coverage(old, new, major_bump=False, deep=True).ok
+
+
+def test_deep_true_allowed_across_major_bump():
+    old = _doc([{"name": "a", "shape_type": "collection", "item_fields": [{"x": 1}]}])
+    new = _doc([{"name": "a", "shape_type": "collection", "item_fields": [{"x": 2}]}])
+    assert check_coverage(old, new, major_bump=True, deep=True).ok
+
+
+def test_extract_fields_reads_adapter_contract_operations_directly():
+    """#95: AdapterContract stores operations at spec.operations, not
+    spec.operation_surface.operations -- before this, extract_fields()
+    returned {} for every AdapterContract file."""
+    doc = _adapter_doc([{"name": "observe", "input": []}, {"name": "apply"}])
+    fields = extract_fields(doc)
+    assert set(fields) == {"observe", "apply"}
+    assert fields["observe"]["_surface"] == "operations"
+
+
+def test_adapter_contract_operations_change_is_caught_with_deep_true():
+    """Before #95: this transition compared 0 fields to 0 fields and
+    reported a trivially-true OK no matter what happened to `operations`
+    -- reproducing exactly the ovs-adapter/switch-netconf-adapter blind
+    spot the issue described, with a real removed operation."""
+    old = _adapter_doc([{"name": "observe"}, {"name": "apply"}, {"name": "watch"}])
+    new = _adapter_doc([{"name": "observe"}, {"name": "apply"}])
+    result = check_coverage(old, new, major_bump=False, deep=True)
+    assert not result.ok
+    assert result.violations[0].field == "watch"
+    assert result.violations[0].kind == "missing"
+
+
+def test_adapter_contract_operations_unchanged_is_fine():
+    old = _adapter_doc([{"name": "observe", "input": [{"name": "id"}]}])
+    new = _adapter_doc([{"name": "observe", "input": [{"name": "id"}]}])
+    assert check_coverage(old, new, major_bump=False, deep=True).ok
+
+
+def test_check_new_required_flags_a_new_mandatory_field_without_major_bump():
+    old = _doc([{"name": "a", "shape_type": "scalar", "scalar_type": "string"}])
+    new = _doc(
+        [
+            {"name": "a", "shape_type": "scalar", "scalar_type": "string"},
+            {"name": "b", "shape_type": "scalar", "mandatory": True},
+        ]
+    )
+    result = check_coverage(old, new, major_bump=False, check_new_required=True)
+    assert not result.ok
+    assert result.violations[0].field == "b"
+    assert result.violations[0].kind == "new_required"
+
+
+def test_check_new_required_ignores_a_required_on_create_field_too():
+    old = _doc([])
+    new = _doc([{"name": "b", "shape_type": "scalar", "required_on_create": True}])
+    result = check_coverage(old, new, major_bump=False, check_new_required=True)
+    assert not result.ok
+    assert result.violations[0].kind == "new_required"
+
+
+def test_check_new_required_allows_a_new_optional_field():
+    old = _doc([{"name": "a", "shape_type": "scalar", "scalar_type": "string"}])
+    new = _doc(
+        [
+            {"name": "a", "shape_type": "scalar", "scalar_type": "string"},
+            {"name": "b", "shape_type": "scalar", "mandatory": False},
+        ]
+    )
+    result = check_coverage(old, new, major_bump=False, check_new_required=True)
+    assert result.ok
+
+
+def test_check_new_required_allowed_across_major_bump():
+    old = _doc([])
+    new = _doc([{"name": "b", "shape_type": "scalar", "mandatory": True}])
+    result = check_coverage(old, new, major_bump=True, check_new_required=True)
+    assert result.ok
+
+
+def test_check_new_required_off_by_default_does_not_flag_it():
+    """check_base_references/check_yang_extends compare a base/parent
+    against a derived/child that is EXPECTED to declare additional
+    fields -- check_new_required must default False so those callers'
+    existing behavior is unaffected."""
+    old = _doc([])
+    new = _doc([{"name": "b", "shape_type": "scalar", "mandatory": True}])
+    result = check_coverage(old, new, major_bump=False)
+    assert result.ok

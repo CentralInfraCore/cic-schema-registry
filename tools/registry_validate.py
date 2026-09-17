@@ -84,6 +84,89 @@ def _is_yang_block(doc: dict) -> bool:
     return ((doc.get("spec") or {}).get("kind")) == "YANGBlock"
 
 
+# #94: (schema_dir relative to registry_root, old filename, new filename,
+# field name) tuples for already-merged, already-signed version
+# transitions that a real recursive deep-diff would otherwise flag as
+# false positives. Each is a deliberate, separately-reviewed additive
+# change from a prior fix, not an oversight -- verified against the
+# corpus's actual version history (git-checked-out full history, not a
+# synthetic fixture) before check_coverage(deep=True) was turned on here.
+# Anything NOT on this list is a real violation, both retroactively and
+# going forward -- this is not a blanket exemption, it is 10 named,
+# individually-justified entries.
+_DEEP_DIFF_GRANDFATHER: set[tuple[str, str, str, str]] = {
+    # #17: must-contract (delete-confirm / resize-only-grows) added to an
+    # existing operation's input -- an additive validation tightening,
+    # not a shape/contract-breaking change to the input itself.
+    (
+        "general/compute/compute-resource",
+        "compute-resource.v0.2.4-src2026.yaml",
+        "compute-resource.v0.2.5-src2026.yaml",
+        "terminate",
+    ),
+    (
+        "general/storage/storage-resource",
+        "storage-resource.v0.1.3-src2026.yaml",
+        "storage-resource.v0.1.4-src2026.yaml",
+        "delete",
+    ),
+    (
+        "general/storage/storage-resource",
+        "storage-resource.v0.1.3-src2026.yaml",
+        "storage-resource.v0.1.4-src2026.yaml",
+        "resize",
+    ),
+    # #18: capability/support-tier marker added to control-plane
+    # component fields -- additive metadata, not a shape change.
+    (
+        "general/kubernetes/kubernetes-cluster",
+        "kubernetes-cluster.v0.1.2-src2026.yaml",
+        "kubernetes-cluster.v0.1.4-src2026.yaml",
+        "api_server",
+    ),
+    (
+        "general/kubernetes/kubernetes-cluster",
+        "kubernetes-cluster.v0.1.2-src2026.yaml",
+        "kubernetes-cluster.v0.1.4-src2026.yaml",
+        "etcd",
+    ),
+    (
+        "general/kubernetes/kubernetes-cluster",
+        "kubernetes-cluster.v0.1.2-src2026.yaml",
+        "kubernetes-cluster.v0.1.4-src2026.yaml",
+        "controller_manager",
+    ),
+    (
+        "general/kubernetes/kubernetes-cluster",
+        "kubernetes-cluster.v0.1.2-src2026.yaml",
+        "kubernetes-cluster.v0.1.4-src2026.yaml",
+        "scheduler",
+    ),
+    # #99: the fix itself -- PyYAML boolean-coercion bug corrected by
+    # quoting True/False as 'True'/'False' in the enum contract.
+    (
+        "general/kubernetes/kubernetes-node",
+        "kubernetes-node.v0.1.4-src2026.yaml",
+        "kubernetes-node.v0.1.5-src2026.yaml",
+        "conditions",
+    ),
+    # Pre-#27-era additive fields (an `access` block, and a second
+    # `detach` input parameter) from before this check existed.
+    (
+        "general/storage/storage-resource",
+        "storage-resource.v0.1.2-src2026.yaml",
+        "storage-resource.v0.1.3-src2026.yaml",
+        "attached_to",
+    ),
+    (
+        "general/storage/storage-resource",
+        "storage-resource.v0.1.2-src2026.yaml",
+        "storage-resource.v0.1.3-src2026.yaml",
+        "detach",
+    ),
+}
+
+
 def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
     problems: list[str] = []
     skipped: list[str] = []
@@ -117,8 +200,23 @@ def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
                 )
                 continue
             major_bump = old_cv[0] != new_cv[0]
-            result = check_coverage(old_doc, new_doc, major_bump=major_bump)
+            result = check_coverage(
+                old_doc,
+                new_doc,
+                major_bump=major_bump,
+                deep=True,
+                check_new_required=True,
+            )
+            dir_key = str(schema_dir.relative_to(registry_root))
             for violation in result.violations:
+                grandfather_key = (
+                    dir_key,
+                    old_path.name,
+                    new_path.name,
+                    violation.field,
+                )
+                if grandfather_key in _DEEP_DIFF_GRANDFATHER:
+                    continue
                 problems.append(
                     f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
                     f"v{'.'.join(map(str, new_cv))}: {violation.message}"

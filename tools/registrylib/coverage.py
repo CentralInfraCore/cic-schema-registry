@@ -82,7 +82,14 @@ def extract_fields(doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
     {field_name: node_dict} map. Field names are assumed unique across
     surfaces within one schema — the corpus has never needed the same name
     in two surfaces of the same composition, and allowing it would make
-    "field X is missing" ambiguous about which surface it belonged to."""
+    "field X is missing" ambiguous about which surface it belonged to.
+
+    Each returned node dict carries a synthetic `_surface` key recording
+    which surface it came from (#80) — real YAML content never uses that
+    name, and it lets a same-name field that moved between surfaces (e.g.
+    config_surface -> state_surface) between versions be recognized as a
+    real, deep_diff-visible change instead of silently reading as
+    unchanged because the flattened name/shape happen to still match."""
     spec = _spec_of(doc)
     fields: dict[str, dict[str, Any]] = {}
     for surface_key, list_key in _NODE_LIST_KEYS.items():
@@ -94,7 +101,19 @@ def extract_fields(doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
             continue
         for node in nodes:
             if isinstance(node, dict) and "name" in node:
-                fields[node["name"]] = node
+                fields[node["name"]] = {**node, "_surface": surface_key}
+
+    # AdapterContract (#95): operations live directly at spec.operations,
+    # not wrapped in an operation_surface.operations the loop above reads
+    # -- so extract_fields() previously returned {} for every
+    # AdapterContract file, and check_coverage() trivially "passed" a 0
+    # vs. 0 comparison no matter what changed in spec.operations.
+    if spec.get("kind") == "AdapterContract":
+        operations = spec.get("operations")
+        if isinstance(operations, list):
+            for node in operations:
+                if isinstance(node, dict) and "name" in node:
+                    fields[node["name"]] = {**node, "_surface": "operations"}
     return fields
 
 
@@ -109,12 +128,59 @@ def _shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(node.get(k) for k in _SHAPE_KEYS)
 
 
+# Keys deliberately excluded from the deep comparison below — purely
+# informational, carry no compatibility/contract meaning (#94). Kept
+# separate from, and much smaller than, _shape_signature's own exclusion
+# set (which also drops mandatory/optional presence and default) because
+# deep_diff's whole purpose is to see what the shallow shape_signature()
+# check does not; only description is unambiguously safe to skip
+# everywhere, at every nesting depth.
+_DEEP_DIFF_IGNORE_KEYS = {"description"}
+
+
+def _deep_diff(old_node: Any, new_node: Any, path: str = "") -> list[str]:
+    """Recursively finds differing sub-paths between two field/operation
+    node values — beyond what the shallow _shape_signature() (top-level
+    keys only) catches. Used for #94 (nested item_fields/properties,
+    operation input/output substructure) and, via the `_surface` key
+    extract_fields() now injects, #80 (a field silently moving between
+    surfaces)."""
+    diffs: list[str] = []
+    if isinstance(old_node, dict) and isinstance(new_node, dict):
+        for key in sorted(set(old_node) | set(new_node)):
+            if key in _DEEP_DIFF_IGNORE_KEYS:
+                continue
+            sub_path = f"{path}.{key}" if path else key
+            if key not in old_node:
+                diffs.append(f"{sub_path} (added)")
+            elif key not in new_node:
+                diffs.append(f"{sub_path} (removed)")
+            else:
+                diffs.extend(_deep_diff(old_node[key], new_node[key], sub_path))
+    elif isinstance(old_node, list) and isinstance(new_node, list):
+        if len(old_node) != len(new_node):
+            diffs.append(f"{path} (list length {len(old_node)} -> {len(new_node)})")
+        else:
+            for i, (a, b) in enumerate(zip(old_node, new_node)):
+                diffs.extend(_deep_diff(a, b, f"{path}[{i}]"))
+    else:
+        if old_node != new_node:
+            diffs.append(f"{path} (value {old_node!r} -> {new_node!r})")
+    return diffs
+
+
+def _is_required(node: dict[str, Any]) -> bool:
+    return node.get("mandatory") is True or node.get("required_on_create") is True
+
+
 def check_coverage(
     old_doc: dict[str, Any],
     new_doc: dict[str, Any],
     *,
     major_bump: bool,
     check_missing: bool = True,
+    check_new_required: bool = False,
+    deep: bool = False,
     extract: Callable[[dict[str, Any]], dict[str, dict[str, Any]]] = extract_fields,
     shape: Callable[[dict[str, Any]], tuple[Any, ...]] = _shape_signature,
 ) -> CoverageResult:
@@ -142,6 +208,30 @@ def check_coverage(
     `item_type`/direct `config`/`state` lists) without duplicating the
     comparison itself — see extract_yang_fields()/yang_shape_signature()
     below.
+
+    `deep=True` (#80, #94, #95) replaces the shallow `shape()` comparison
+    with a full recursive diff (_deep_diff) of the old vs. new node —
+    catching a changed nested item_fields/properties entry, a changed
+    operation input/output list, and (via extract_fields()'s `_surface`
+    marker) a field that silently moved between surfaces, none of which
+    the top-level-only `shape()` signature can see. `deep` is a strict
+    superset of the shallow check, not an addition to it, so `shape` is
+    not also consulted when `deep=True` (that would double-report the
+    same top-level change once from each). Only check_schema_evolution
+    (registry_validate.py) passes `deep=True` — check_base_references and
+    check_yang_extends compare a base/parent's fields against a
+    derived/child schema's own, deliberately fuller restatement of them,
+    where deep, unrelated-looking differences are the norm, not a defect.
+
+    `check_new_required=True` (#96) additionally walks `new_fields` for
+    any name absent from `old_fields` and flags it if it is required
+    (`mandatory`/`required_on_create: true`) without a MAJOR bump — the
+    proposals/schema-registry §4 rule ("new field allowed, IF NOT
+    mandatory/sealed, within the same major version") had no code-level
+    enforcement before. Also only meaningful for check_schema_evolution:
+    check_base_references/check_yang_extends expect the derived/child
+    side to declare additional fields beyond the base/parent by design,
+    so a "new required field" there is normal, not a violation.
     """
     old_fields = extract(old_doc)
     new_fields = extract(new_doc)
@@ -165,7 +255,24 @@ def check_coverage(
                 )
             continue  # removed at a major bump: allowed, nothing further to check
 
-        if shape(old_node) != shape(new_node) and not major_bump:
+        if major_bump:
+            continue
+
+        if deep:
+            diffs = _deep_diff(old_node, new_node)
+            if diffs:
+                result.violations.append(
+                    Violation(
+                        field=name,
+                        kind="mutated",
+                        message=(
+                            f"field '{name}' changed shape in place without a MAJOR "
+                            f"version bump ({'; '.join(diffs)}) — introduce a new "
+                            "field name instead, or explicitly deprecate this one"
+                        ),
+                    )
+                )
+        elif shape(old_node) != shape(new_node):
             result.violations.append(
                 Violation(
                     field=name,
@@ -177,6 +284,25 @@ def check_coverage(
                     ),
                 )
             )
+
+    if check_new_required and not major_bump:
+        for name, new_node in new_fields.items():
+            if name in old_fields:
+                continue
+            if _is_required(new_node):
+                result.violations.append(
+                    Violation(
+                        field=name,
+                        kind="new_required",
+                        message=(
+                            f"field '{name}' is new in this version and marked "
+                            "required (mandatory/required_on_create) without a "
+                            "MAJOR version bump — a new field must be optional "
+                            "within the same major version (proposals/"
+                            "schema-registry §4)"
+                        ),
+                    )
+                )
 
     return result
 
