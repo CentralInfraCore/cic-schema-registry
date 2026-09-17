@@ -19,3 +19,16 @@ Fájlonkénti release-aláírás: v0.1.3 a `tools/registry_sign.py`
 (proposals/schema-registry §5) szerint valódi Vault author-aláírással és
 CICSourceCA ellenjegyzéssel van ellátva (`release:`/`cic_countersign:` blokk
 a fájl végén, minden létező verzión).
+
+## v0.1.4 — validatedBy javítva cic-yang-block-schema@v0.1.9-re ([#88](https://github.com/CentralInfraCore/cic-schema-registry/issues/88))
+
+A `metadata.validatedBy` eddig `cic-primitives`-re mutatott, ami nem a
+tényleges belső-struktúra validátor. A valódi struktúra-validátor a
+`cic-yang-block-schema` (`#83` óta rekurzív, ténylegesen futtatható) —
+`validatedBy` mostantól erre mutat, ténylegesen ellenőrizve
+`jsonschema.validate()`-tel a `block_schema` ellen commit előtt.
+
+**Szándékosan nem ennek a fájlnak/PR-nek a része**: a `#88` hosszú-távú
+javaslata (aláírt `validation:` lista, tartalmi hash-sel, beépítve az
+aláírt payloadba) — az a `tools/registry_sign.py` signing pipeline-t
+érintő, külön architektúra-döntést igénylő kezdeményezés.
