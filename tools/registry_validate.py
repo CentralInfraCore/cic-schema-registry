@@ -26,9 +26,12 @@ providers — no committed index:
    exact-version pin must fully account for every field its resolved base
    declares (implemented, or explicitly `not_implemented`/`deprecated`). A
    base pinned into the cic-primitives kernel bundle resolves through
-   registrylib.bundle — but most kernel types (ManagedEntity included)
-   declare their shape via `slots`/`fields`, not surface node-lists, so
-   coverage against them is reported SKIPPED, not silently passed.
+   registrylib.bundle — kernel types (ManagedEntity included) declare
+   their shape via `spec.slots`, not surface node-lists, so a field-by-
+   field diff doesn't apply (that case stays SKIPPED, not silently
+   passed) — but (#79) every kernel slot marked `mode: required` must
+   still be present as a top-level `spec.<slot>` key on the consumer;
+   a missing one is a real problem, not a skip.
 
 4. extends coverage (#45) — every YANGBlock whose `spec.extends` names a
    parent block must not silently mutate a field it shares with that
@@ -277,6 +280,28 @@ def check_src_year_identity(registry_root: Path) -> tuple[list[str], list[str]]:
     return problems, skipped
 
 
+def _kernel_required_slots(kernel_doc: dict) -> list[str]:
+    """(#79) Names of every `spec.slots` entry marked `mode: required` on a
+    resolved kernel type (e.g. ManagedEntity) -- the slots every consumer
+    pinning to that type must actually provide as a top-level `spec.<name>`
+    key. Kernel types describe themselves structurally (required/defaulted/
+    sealed slots, schemas/atomic|aggregate/*.yaml), not as a flat field
+    list -- this is deliberately NOT a field-by-field diff (that's what
+    extract_fields()/check_coverage() do for the DomainComposition/
+    YANGBlock dialects), just presence-of-the-required-slot. `defaulted`/
+    `sealed` slots (several still `status: placeholder` with no aggregate
+    model yet, e.g. lifecycle_surface/capability_surface) are deliberately
+    NOT required here -- the kernel itself doesn't treat them as such."""
+    slots = kernel_doc.get("spec", {}).get("slots")
+    if not isinstance(slots, dict):
+        return []
+    return [
+        name
+        for name, slot in slots.items()
+        if isinstance(slot, dict) and slot.get("mode") == "required"
+    ]
+
+
 def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
     problems: list[str] = []
     skipped: list[str] = []
@@ -326,19 +351,36 @@ def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
                 continue
             if not extract_fields(kernel_doc):
                 # A real, correctly-resolved kernel type (e.g. ManagedEntity)
-                # — but kernel types declare their shape via `slots`/`fields`
+                # — but kernel types declare their shape via `slots`
                 # (schemas/aggregate|atomic/*.yaml), not the
                 # config_surface/state_surface/... node-lists extract_fields()
-                # looks for. Running check_coverage anyway would silently
-                # find 0 fields and report a trivial, meaningless "pass" —
-                # exactly the false-confidence failure mode this whole
-                # module exists to avoid. Reported as skipped, not OK.
-                skipped.append(
-                    f"{newest.path}: base {base_pin!r} resolves to kernel "
-                    f"type {parsed.type_key!r}, which declares its shape "
-                    "via slots/fields, not surface node-lists — base-chain "
-                    "coverage against the kernel is not yet implemented"
-                )
+                # looks for, so check_coverage's field-by-field diff doesn't
+                # apply here (#79's original SKIP reason, still true for the
+                # field-level question). What IS checkable, and wasn't
+                # checked at all before #79: does the consumer actually
+                # provide every slot the kernel marks `mode: required`? A
+                # missing required slot (e.g. no binding_surface) is exactly
+                # the kind of contract violation this module exists to
+                # catch — reported as a real problem, not silently skipped.
+                required_slots = _kernel_required_slots(kernel_doc)
+                if not required_slots:
+                    skipped.append(
+                        f"{newest.path}: base {base_pin!r} resolves to "
+                        f"kernel type {parsed.type_key!r}, which declares "
+                        "no spec.slots with mode: required — nothing to "
+                        "check against"
+                    )
+                    continue
+                consumer_spec = doc.get("spec") or {}
+                missing_slots = [
+                    slot for slot in required_slots if slot not in consumer_spec
+                ]
+                for slot in missing_slots:
+                    problems.append(
+                        f"{newest.path} (base {base_pin}): missing required "
+                        f"slot 'spec.{slot}' — {parsed.type_key!r} declares "
+                        f"it as mode: required"
+                    )
                 continue
             base_doc = kernel_doc
         result = check_coverage(base_doc, doc, major_bump=False)
