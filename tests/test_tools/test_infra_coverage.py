@@ -164,6 +164,25 @@ class TestInfraCoverage:
         with pytest.raises(ReleaseError, match="An unexpected error occurred"):
             manager._validate_final_project_yaml()
 
+    def test_validate_final_yaml_success(self, manager, mocker):
+        """#103: neither this repo's project.yaml nor project.schema.yaml
+        (the actual default/configured meta_schema_file) wrap their content
+        in a top-level "spec" key -- schema["spec"] was a KeyError waiting
+        to fire the moment this path actually ran with real files. No prior
+        test exercised the success path at all (both existing tests raise
+        before reaching validate()); this one does, with an instance/schema
+        pair shaped like the real files, and confirms validate() is called
+        with the unwrapped schema."""
+        mocker.patch(
+            "tools.infra.load_and_resolve_schema",
+            return_value={"type": "object", "required": ["name"]},
+        )
+        mocker.patch("tools.infra.load_yaml", return_value={"name": "ok"})
+        manager._validate_final_project_yaml()
+        manager.logger.info.assert_any_call(
+            "✓ project.yaml is valid against the schema."
+        )
+
     def test_developer_prep_with_main_component(
         self, manager, full_mock_config, mocker
     ):

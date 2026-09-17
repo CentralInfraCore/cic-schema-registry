@@ -45,7 +45,7 @@ metadata:
 compiler_settings:
   component_name: schema-registry
   meta_schemas_dir: ./
-  meta_schema_file: md.meta.schema.yaml
+  meta_schema_file: project.schema.yaml
   canonical_source_file: schemas/index.yaml
   vault_key_name: cic-my-sign-key
   cic_root_ca_key_name: cic-root-ca-key
