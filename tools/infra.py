@@ -183,7 +183,7 @@ class ReleaseManager:
                 raise ConfigurationError(
                     f"Project YAML file '{project_yaml_path}' is empty."
                 )
-            validate(instance=instance, schema=schema["spec"])
+            validate(instance=instance, schema=schema)
             self.logger.info("✓ project.yaml is valid against the schema.")
         except (ConfigurationError, JsonSchemaValidationError) as e:
             raise ValidationFailureError(f"Final project.yaml validation failed: {e}")
