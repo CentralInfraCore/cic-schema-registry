@@ -31,9 +31,9 @@ Byte-azonos másolat `yang/@v0.1.3`-ból
 Ugyanaz a ténylegesen ellenőrzött, kettős aláírás, mint a többi `cic-yang`
 fájlnál.
 
-Fájlonkénti release-aláírás: `v0.1.4`, `v0.1.5`, `v0.1.6`, `v0.1.7` és
-`v0.1.8` a `tools/registry_sign.py` (proposals/schema-registry §5)
-szerint valódi Vault author-aláírással és CICSourceCA ellenjegyzéssel
+Fájlonkénti release-aláírás: `v0.1.4`, `v0.1.5`, `v0.1.6`, `v0.1.7`,
+`v0.1.8` és `v0.1.9` a `tools/registry_sign.py` (proposals/schema-registry
+§5) szerint valódi Vault author-aláírással és CICSourceCA ellenjegyzéssel
 van ellátva (`release:`/`cic_countersign:` blokk a fájl végén).
 
 ## v0.1.7 — két önellentmondás javítva ([#101](https://github.com/CentralInfraCore/cic-schema-registry/issues/101), [#84](https://github.com/CentralInfraCore/cic-schema-registry/issues/84))
@@ -70,3 +70,38 @@ jelenleg `rfc8343`) — ez RFC-szöveg-szintű ellenőrzést igényelne a
 strukturált `provenance` blokk `authority`/`document`/`module`/
 `relation: direct|normalized|inspired-by|extension`-nel, a flat `origin`
 enum helyett/mellett) szintén nem itt dől el.
+
+## v0.1.9 — meta-séma rekurzívvá téve ([#83](https://github.com/CentralInfraCore/cic-schema-registry/issues/83))
+
+`item_fields`, `properties` és a notification `payload.items` eddig
+csak `type: array`/`type: object` szinten voltak megkötve — a belsejük
+(egy lista elemeinek mezői, egy object belső mezői) teljesen
+validálatlan volt. Mindhárom most visszahivatkozik `#/$defs/field_schema`-ra.
+
+`field_schema.required` `[name, type]`-ról `[type]`-ra szűkült — a
+`name` most a HASZNÁLATI HELY (`config`/`state`/`item_fields`/
+`notifications[].payload`) felelőssége, `allOf: [$ref field_schema,
+required: [name]]`-lel hozzáadva. A `properties` (dict-alakú, kulcs =
+mezőnév) NEM kapott extra `name`-követelményt — a valós corpus
+`properties`-tartalma (pl. `ietf-ip-v6`/`ietf-interfaces-base`
+statisztikák, `dhcp6_overrides`) sosem hordoz `name` kulcsot a dict
+értékén belül, mert a dict-kulcs maga a mezőnév. Egy egységes
+`field_schema`-ra való `name`-kényszerítés minden ilyen fájlt
+elbuktatott volna.
+
+Ellenőrizve KÉTSZER: (1) a teljes `standards/yang` corpus minden
+`config`/`state`/`item_fields`/`properties`/`notifications.payload`
+tartalma megfelel ennek a szigorúbb struktúrának — semmit nem tör el.
+(2) a `jsonschema` könyvtárral ténylegesen lefuttatva a `block_schema`-t
+minden LATEST YANGBlock fájl ellen: 12/12 tisztán validál. (A régi,
+már lecserélt verziók — pl. `cic-yang-block-schema.v0.1.3`–`v0.1.6`
+hiányzó `metadata.source`-szal, `ietf-lldp.v0.1.3` `rfc8516`-tal —
+helyesen buknak, ezek pontosan a `#101`/`#42` már javított, korábbi
+hibái, nem regresszió.)
+
+**Fontos korlát:** ez a meta-séma jelenleg NINCS bekötve semmilyen
+valódi `jsonschema.validate()` hívásba a corpus ellen (az egyetlen
+`jsonschema.validate` a `tools/infra.py`-ban a `project.yaml`-t
+validálja, más sémával) — ez a fix a séma DEFINÍCIÓJÁT teszi belsőleg
+helyessé, de önmagában nem ad tényleges enforcementet, amíg nincs
+mögötte futó validátor (lásd `#88`/`#101`).
