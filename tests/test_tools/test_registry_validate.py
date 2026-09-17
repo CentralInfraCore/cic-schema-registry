@@ -6,6 +6,7 @@ from tools.registry_validate import (
     _parse_min_schemas,
     check_base_references,
     check_schema_evolution,
+    check_src_year_identity,
     check_yang_extends,
     main,
 )
@@ -229,6 +230,67 @@ def test_schema_evolution_catches_adapter_contract_operations_removed(tmp_path):
     assert skipped == []
     assert len(problems) == 1
     assert "watch" in problems[0]
+
+
+def test_src_year_identity_passes_when_two_src_years_share_identical_spec(tmp_path):
+    """#93: a legitimate re-sign -- same content version, different
+    -src<year>, identical `spec` block. metadata/release may differ
+    freely (signing year, signature bytes)."""
+    schema_dir = tmp_path / "standards" / "yang" / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  version: v0.1.0-src2026\nspec:\n  kind: YANGBlock\n"
+        "  config: [{name: a}]\nrelease:\n  build_hash: abc\n",
+    )
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2027.yaml",
+        "metadata:\n  version: v0.1.0-src2027\nspec:\n  kind: YANGBlock\n"
+        "  config: [{name: a}]\nrelease:\n  build_hash: def\n",
+    )
+
+    problems, skipped = check_src_year_identity(tmp_path)
+    assert problems == []
+    assert skipped == []
+
+
+def test_src_year_identity_catches_content_smuggled_under_a_resign(tmp_path):
+    """#93: check_schema_evolution's own by_content grouping keeps only
+    the FRESHEST -src<year> ("last wins"), so a content change hidden
+    behind a re-sign never gets compared against its older sibling --
+    this is the dedicated check that catches it."""
+    schema_dir = tmp_path / "standards" / "yang" / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  version: v0.1.0-src2026\nspec:\n  kind: YANGBlock\n"
+        "  config: [{name: a}, {name: b}]\n",
+    )
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2027.yaml",
+        "metadata:\n  version: v0.1.0-src2027\nspec:\n  kind: YANGBlock\n"
+        "  config: [{name: a}]\n",  # field "b" quietly dropped
+    )
+
+    problems, skipped = check_src_year_identity(tmp_path)
+    assert skipped == []
+    assert len(problems) == 1
+    assert "ietf-nat.v0.1.0-src2026.yaml" in problems[0]
+    assert "ietf-nat.v0.1.0-src2027.yaml" in problems[0]
+
+
+def test_src_year_identity_ignores_content_versions_with_only_one_src_year(tmp_path):
+    schema_dir = tmp_path / "standards" / "yang" / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  version: v0.1.0-src2026\nspec:\n  kind: YANGBlock\n",
+    )
+    _write(
+        schema_dir / "ietf-nat.v0.1.1-src2026.yaml",
+        "metadata:\n  version: v0.1.1-src2026\nspec:\n  kind: YANGBlock\n",
+    )
+
+    problems, skipped = check_src_year_identity(tmp_path)
+    assert problems == []
+    assert skipped == []
 
 
 def test_base_references_skips_bundle_shaped_files(tmp_path):

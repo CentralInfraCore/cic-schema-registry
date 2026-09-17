@@ -18,7 +18,12 @@ Two independent checks:
    history, not against a moving branch ref, so a legitimate corrective
    revert (like #51, which restores a file back to its original content)
    passes cleanly, while an in-place edit that changes content and stays
-   changed does not.
+   changed does not. Includes (#92): a file may gain its release
+   signature via the sanctioned exception AT MOST ONCE -- a later
+   signature SWAP is a real violation, not another "just signing" pass
+   -- and an enrolled directory that used to have versioned content and
+   now has none is flagged too, whether or not its LATEST.yaml was also
+   deleted.
 
 ENROLLED lists which directories this applies to. It started at exactly
 one entry (standards/yang/ietf-lldp) on purpose -- see #42/#49/#51 for the
@@ -28,6 +33,7 @@ rather than enrolling everything at once.
 
 from __future__ import annotations
 
+import re
 import subprocess  # nosec B404 -- fixed, local `git` invocations below, no shell, no user-supplied command text.
 import sys
 from pathlib import Path
@@ -56,7 +62,17 @@ def _latest_path(registry_root: Path, rel: str) -> Path:
 
 def check_drift(registry_root: Path, enrolled: list[str] | None = None) -> list[str]:
     """Dirs whose committed LATEST.yaml doesn't match render_latest()'s
-    current output. Returns the list of relative dir paths that drifted."""
+    current output. Returns the list of relative dir paths that drifted.
+
+    #92(b): render_latest() returns None for an empty directory, and a
+    missing LATEST.yaml also reads back as None -- so `expected == actual`
+    (both None) for a directory that was emptied AND had its LATEST.yaml
+    deleted, and no drift is reported. _dir_ever_had_versioned_content
+    catches the case check_no_frozen_edits's own (b) fix can't: this
+    triggers even in --check mode alone (LATEST.yaml regeneration was
+    never reached, because generate_latest.py's main() bails out on
+    check_no_frozen_edits first) and even if the caller only ever runs
+    check_drift directly."""
     drifted = []
     for rel in ENROLLED if enrolled is None else enrolled:
         expected = render_latest(registry_root / rel)
@@ -64,6 +80,9 @@ def check_drift(registry_root: Path, enrolled: list[str] | None = None) -> list[
         actual = latest_path.read_text() if latest_path.exists() else None
         if expected != actual:
             drifted.append(rel)
+        elif expected is None and actual is None:
+            if _dir_ever_had_versioned_content(registry_root, rel):
+                drifted.append(rel)
     return drifted
 
 
@@ -107,6 +126,33 @@ def _first_add_commit(registry_root: Path, path: Path) -> str | None:
     if result.returncode != 0 or not lines:
         return None
     return lines[-1]
+
+
+def _file_history_commits(registry_root: Path, path: Path) -> list[str]:
+    """Every commit that touched `path`, newest first."""
+    result = subprocess.run(
+        ["git", "log", "--format=%H", "--", str(path)],
+        cwd=registry_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )  # nosec B603 B607
+    if result.returncode != 0:
+        return []
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def _commit_content(registry_root: Path, commit: str, path: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{path.relative_to(registry_root)}"],
+        cwd=registry_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )  # nosec B603 B607
+    if result.returncode != 0:
+        return None
+    return result.stdout
 
 
 # Top-level keys a file gains ONLY when it receives its release signature
@@ -173,6 +219,71 @@ def _only_gained_release_signature(
     return True
 
 
+def _already_signed_before(registry_root: Path, first_commit: str, path: Path) -> bool:
+    """#92(a): True if some commit in `path`'s history -- other than
+    `first_commit`, and other than whatever commit's content exactly
+    equals `path`'s CURRENT content -- already carried a release/
+    cic_countersign block.
+
+    _only_gained_release_signature() on its own only ever compares
+    current-vs-first_commit, so it cannot tell a legitimate first-time
+    signing apart from a SIGNATURE SWAP: if the file was genuinely signed
+    at an intermediate commit and that signature was later replaced (a
+    forged countersign, say), both the original unsigned content and the
+    replacement signature still satisfy "original bytes + only signature
+    keys appended" -- the intermediate, already-signed state is never
+    consulted. tools.registrylib.signing.AlreadySignedError's own policy
+    is that a file is signed EXACTLY once; this is what actually
+    enforces that once frozen-file checking is in the picture.
+
+    Content-equality (not "is this the tip commit") is what distinguishes
+    "the commit IS what we're validating" from "prior, distinct history"
+    -- this works whether `path`'s current content is itself already
+    committed (CI's normal case) or is a not-yet-committed local edit."""
+    current = path.read_text()
+    for commit in _file_history_commits(registry_root, path):
+        if commit == first_commit:
+            continue
+        content = _commit_content(registry_root, commit, path)
+        if content is None or content == current:
+            continue  # this commit IS "current" (or unreadable) -- not prior history
+        try:
+            doc = yaml.safe_load(content) or {}
+        except yaml.YAMLError:
+            continue
+        if isinstance(doc, dict) and any(k in doc for k in _SIGNATURE_KEYS):
+            return True
+    return False
+
+
+_VERSIONED_SCHEMA_FILENAME_RE = re.compile(r"-src\d+\.yaml$")
+
+
+def _dir_ever_had_versioned_content(registry_root: Path, rel: str) -> bool:
+    """#92(b): True if `rel` has EVER contained a tracked, versioned
+    schema file (per git history reachable from HEAD) -- used to tell
+    "this directory was always/still legitimately empty" apart from
+    "this directory used to have content and all of it got deleted",
+    which neither check_no_frozen_edits (only iterates files that
+    CURRENTLY exist) nor check_drift (an empty dir and a missing
+    LATEST.yaml both render as None, so `expected == actual` and no
+    drift is reported) can otherwise distinguish."""
+    result = subprocess.run(
+        ["git", "log", "--diff-filter=A", "--format=", "--name-only", "--", rel],
+        cwd=registry_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )  # nosec B603 B607
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line and _VERSIONED_SCHEMA_FILENAME_RE.search(line):
+            return True
+    return False
+
+
 def check_no_frozen_edits(
     registry_root: Path, enrolled: list[str] | None = None
 ) -> list[str]:
@@ -180,11 +291,16 @@ def check_no_frozen_edits(
     files whose current content no longer matches the content they had
     when first committed -- the actual guard against a repeat of #49.
     Gaining a release signature (_only_gained_release_signature) is the
-    one sanctioned exception; everything else is a real violation."""
+    one sanctioned exception, but only ONCE (_already_signed_before) --
+    everything else is a real violation. Also flags an enrolled
+    directory that used to have versioned content and now has none
+    (#92(b) -- check_drift alone can't see this: an emptied directory
+    and a missing LATEST.yaml both render as None)."""
     problems: list[str] = []
     for rel in ENROLLED if enrolled is None else enrolled:
         schema_dir = registry_root / rel
-        for v in list_versions(schema_dir):
+        versions = list_versions(schema_dir)
+        for v in versions:
             first_commit = _first_add_commit(registry_root, v.path)
             if first_commit is None:
                 continue
@@ -194,10 +310,17 @@ def check_no_frozen_edits(
                 capture_output=True,
                 timeout=30,
             )  # nosec B603 B607
-            if result.returncode == 1 and not _only_gained_release_signature(
-                registry_root, first_commit, v.path
+            if result.returncode == 1 and (
+                not _only_gained_release_signature(registry_root, first_commit, v.path)
+                or _already_signed_before(registry_root, first_commit, v.path)
             ):
                 problems.append(str(v.path.relative_to(registry_root)))
+        if not versions and _dir_ever_had_versioned_content(registry_root, rel):
+            problems.append(
+                f"{rel} — previously had versioned content, now empty "
+                "(directory-emptying is not a sanctioned way to remove a "
+                "published schema)"
+            )
     return problems
 
 

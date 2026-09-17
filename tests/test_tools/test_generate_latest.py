@@ -284,3 +284,163 @@ def test_frozen_edits_flags_a_comment_change_smuggled_next_to_a_signature(tmp_pa
     assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
         "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
     ]
+
+
+# ── #92(a): signature swap -- the exception fires once, and only once,
+# even across an already-COMMITTED intermediate signing ─────────────────────
+
+
+def test_frozen_edits_clean_when_signing_is_its_own_commit(tmp_path):
+    """Sanity check for the fix's own logic: a legitimate first-time
+    signing that is ALREADY COMMITTED (not just a working-tree edit) must
+    still read as clean -- _already_signed_before must not mistake the
+    tip commit (which IS "current") for prior history."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "sign ietf-nat", cwd=tmp_path)
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == []
+
+
+def test_frozen_edits_flags_a_signature_swap_after_a_committed_legitimate_signing(
+    tmp_path,
+):
+    """#92(a): add (unsigned) -> sign (legitimate, committed) -> swap (a
+    forged replacement signature). _only_gained_release_signature() alone
+    compares current-vs-first_commit and would wrongly wave this through
+    (unsigned original + "only signature keys appended" both still hold)
+    -- _already_signed_before must catch that the file was ALREADY signed
+    at the middle commit, so this is a real violation, not a first-time
+    signing."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n  sign: vault:v1:legit\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "sign ietf-nat", cwd=tmp_path)
+
+    # the forged replacement -- also committed, so this is not just an
+    # uncommitted local edit either.
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n  sign: vault:v1:forged\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "swap the signature", cwd=tmp_path)
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
+        "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
+    ]
+
+
+def test_frozen_edits_flags_an_uncommitted_swap_over_a_committed_signing(tmp_path):
+    """Same #92(a) scenario, but the swap is an UNCOMMITTED working-tree
+    edit on top of an already-committed legitimate signing -- confirms
+    _already_signed_before doesn't rely on the swap itself being
+    committed to detect the prior signed state."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n  sign: vault:v1:legit\n",
+    )
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "sign ietf-nat", cwd=tmp_path)
+
+    # uncommitted swap
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        "metadata:\n  name: ietf-nat\nspec:\n  kind: YANGBlock\n"
+        "release:\n  build_hash: abc123\n  sign: vault:v1:forged\n",
+    )
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
+        "ietf-nat/ietf-nat.v0.1.0-src2026.yaml"
+    ]
+
+
+# ── #92(b): a directory that used to have versioned content, now emptied ────
+
+
+def test_frozen_edits_flags_a_directory_that_was_emptied(tmp_path):
+    """A previously non-empty, enrolled directory with all its versioned
+    files deleted (LATEST.yaml included) is a real integrity violation --
+    check_no_frozen_edits only walks CURRENTLY-listed files, so without an
+    explicit check, deleting everything makes it iterate zero files and
+    report clean."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(schema_dir / "ietf-nat.v0.1.0-src2026.yaml", "metadata:\n  name: ietf-nat\n")
+    _write(schema_dir / "LATEST.yaml", "schema: ietf-nat\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    (schema_dir / "ietf-nat.v0.1.0-src2026.yaml").unlink()
+    (schema_dir / "LATEST.yaml").unlink()
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == [
+        "ietf-nat — previously had versioned content, now empty "
+        "(directory-emptying is not a sanctioned way to remove a "
+        "published schema)"
+    ]
+
+
+def test_check_drift_flags_a_directory_that_was_emptied(tmp_path):
+    """Same scenario from check_drift's side: an emptied directory with
+    its LATEST.yaml also deleted renders as expected=None, actual=None --
+    "no drift" -- unless the directory's git history is consulted."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    _write(schema_dir / "ietf-nat.v0.1.0-src2026.yaml", "metadata:\n  name: ietf-nat\n")
+    write_latest(tmp_path, enrolled=["ietf-nat"])
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat", cwd=tmp_path)
+
+    (schema_dir / "ietf-nat.v0.1.0-src2026.yaml").unlink()
+    (schema_dir / "LATEST.yaml").unlink()
+
+    assert check_drift(tmp_path, enrolled=["ietf-nat"]) == ["ietf-nat"]
+
+
+def test_check_drift_clean_for_a_directory_that_was_always_empty(tmp_path):
+    """An ENROLLED directory that legitimately never had any content
+    (nothing committed under it, ever) must NOT be flagged -- only a
+    directory that HAD content and lost it is a violation."""
+    _init_repo(tmp_path)
+    _write(tmp_path / "README.md", "placeholder so the repo isn't empty\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "init", cwd=tmp_path)
+
+    assert check_drift(tmp_path, enrolled=["never-existed"]) == []

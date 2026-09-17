@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI entrypoint for the registry-specific checks (proposals/schema-registry).
 
-Four independent checks, all driven purely by walking general/standards/
+Five independent checks, all driven purely by walking general/standards/
 providers — no committed index:
 
 1. schema evolution — within each schema's own directory, every step from
@@ -15,7 +15,14 @@ providers — no committed index:
    meaningless "OK", so these transitions are reported SKIPPED instead
    (#28).
 
-2. base-chain coverage — every schema whose `spec.identity.base` is an
+2. -src<year> content identity (#93) — two files sharing the same content
+   version but a different -src<year> (a re-sign, per proposals/
+   schema-registry §6) must have byte-for-byte identical `spec` blocks.
+   check_schema_evolution above only ever keeps the freshest -src<year>
+   per content version, so without this, an older sibling's content is
+   never compared against anything.
+
+3. base-chain coverage — every schema whose `spec.identity.base` is an
    exact-version pin must fully account for every field its resolved base
    declares (implemented, or explicitly `not_implemented`/`deprecated`). A
    base pinned into the cic-primitives kernel bundle resolves through
@@ -23,14 +30,14 @@ providers — no committed index:
    declare their shape via `slots`/`fields`, not surface node-lists, so
    coverage against them is reported SKIPPED, not silently passed.
 
-3. extends coverage (#45) — every YANGBlock whose `spec.extends` names a
+4. extends coverage (#45) — every YANGBlock whose `spec.extends` names a
    parent block must not silently mutate a field it shares with that
    parent (e.g. narrowing an inherited enum). Unlike `identity.base`
    above, `extends` is implicit full inheritance, not explicit
    restatement, so only the "mutated in place" rule applies, not "every
    field must be restated".
 
-4. release signature verification (#102) — presence of a `release:`/
+5. release signature verification (#102) — presence of a `release:`/
    `cic_countersign:` block is not trust; every file that carries one
    gets its build_hash, author signature, countersign signature, and
    countersign-authority-to-root-certificate chain actually verified
@@ -221,6 +228,52 @@ def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
                     f"{schema_dir}: v{'.'.join(map(str, old_cv))} -> "
                     f"v{'.'.join(map(str, new_cv))}: {violation.message}"
                 )
+    return problems, skipped
+
+
+def check_src_year_identity(registry_root: Path) -> tuple[list[str], list[str]]:
+    """#93: the -src<year> mechanism (proposals/schema-registry §6)
+    promises that two files sharing the same (major, minor, patch)
+    content version but different -src years differ ONLY in signing
+    year/signature -- a re-sign is never a content change. Nothing
+    enforced that promise: check_schema_evolution above only ever keeps
+    the FRESHEST -src year per content version ("last wins"), so an
+    older -src<year> sibling is silently dropped from `by_content` and
+    never compared against anything -- a content change smuggled in
+    under a re-sign would pass unnoticed.
+
+    This walks every group of 2+ files sharing a content version and
+    requires their `spec` blocks (the actual content -- `metadata` and
+    the `release`/`cic_countersign` signature blocks are deliberately
+    excluded, since those legitimately differ between -src years) to be
+    structurally identical. Works uniformly across every dialect
+    (YANGBlock/DomainComposition/AdapterContract/bundle) -- it is a raw
+    structural comparison, not extract_fields()-based, so there is
+    nothing here to SKIP."""
+    problems: list[str] = []
+    skipped: list[str] = []
+    for schema_dir in iter_schema_dirs(registry_root):
+        by_content: dict[tuple[int, int, int], list] = {}
+        for schema_version in list_versions(schema_dir):
+            by_content.setdefault(schema_version.content_version, []).append(
+                schema_version
+            )
+        for content_version, group in sorted(by_content.items()):
+            if len(group) < 2:
+                continue
+            group = sorted(group, key=lambda v: v.src_year)
+            baseline = group[0]
+            baseline_spec = _load(baseline.path).get("spec")
+            for other in group[1:]:
+                other_spec = _load(other.path).get("spec")
+                if other_spec != baseline_spec:
+                    cv_str = "v" + ".".join(map(str, content_version))
+                    problems.append(
+                        f"{schema_dir}: {baseline.path.name} and "
+                        f"{other.path.name} both claim content version "
+                        f"{cv_str} but their spec blocks differ -- a "
+                        "-src<year> re-sign must never change content"
+                    )
     return problems, skipped
 
 
@@ -473,13 +526,24 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     evolution_problems, evolution_skipped = check_schema_evolution(registry_root)
+    src_year_problems, src_year_skipped = check_src_year_identity(registry_root)
     base_problems, base_skipped = check_base_references(registry_root)
     extends_problems, extends_skipped = check_yang_extends(registry_root)
     signature_problems, signature_skipped = check_release_signatures(registry_root)
     problems = (
-        evolution_problems + base_problems + extends_problems + signature_problems
+        evolution_problems
+        + src_year_problems
+        + base_problems
+        + extends_problems
+        + signature_problems
     )
-    skipped = evolution_skipped + base_skipped + extends_skipped + signature_skipped
+    skipped = (
+        evolution_skipped
+        + src_year_skipped
+        + base_skipped
+        + extends_skipped
+        + signature_skipped
+    )
 
     if skipped:
         print("registry_validate: SKIPPED (unsupported shape, not a failure)")
