@@ -3,6 +3,7 @@ import yaml
 from tools.registry_validate import (
     _is_bundle,
     _is_yang_block,
+    _kernel_required_slots,
     _parse_min_schemas,
     check_base_references,
     check_schema_evolution,
@@ -22,6 +23,27 @@ def test_is_bundle_detects_primitive_release_shape():
     assert _is_bundle({"specs": []})  # kind missing but still bundle-shaped
     assert not _is_bundle({"spec": {"identity": {}}})
     assert not _is_bundle({})
+
+
+def test_kernel_required_slots_filters_by_mode():
+    doc = {
+        "spec": {
+            "slots": {
+                "identity": {"mode": "required"},
+                "binding_surface": {"mode": "required"},
+                "operation_surface": {"mode": "defaulted"},
+                "lifecycle_surface": {"mode": "sealed"},
+                "weird": "not-a-dict",  # defensive: malformed slot, ignored
+            }
+        }
+    }
+    assert sorted(_kernel_required_slots(doc)) == ["binding_surface", "identity"]
+
+
+def test_kernel_required_slots_empty_when_no_slots_block():
+    assert _kernel_required_slots({"spec": {}}) == []
+    assert _kernel_required_slots({"spec": {"slots": "not-a-dict"}}) == []
+    assert _kernel_required_slots({}) == []
 
 
 def test_schema_evolution_skips_bundle_shaped_files_instead_of_false_passing(
@@ -315,14 +337,16 @@ def _write_kernel_bundle(path, specs_entries):
     )
 
 
-def test_base_references_pinned_into_kernel_slot_type_is_skipped_not_passed(
+def test_base_references_pinned_into_kernel_type_with_no_required_slots_is_skipped(
     tmp_path,
 ):
     """A domain composition correctly pins into the kernel (base resolves,
-    the type is found) — but ManagedEntity declares its shape via `slots`,
-    not the surface node-lists extract_fields() understands. This must be
-    reported SKIPPED, never silently OK — a silent pass here would be
-    exactly the false-confidence failure this checker exists to prevent."""
+    the type is found) — ManagedEntity declares its shape via `slots`, not
+    the surface node-lists extract_fields() understands, so the field-by-
+    field question stays unanswerable. But (#79) if the kernel type has no
+    slot actually marked `mode: required`, there's nothing to check either
+    way — this must be reported SKIPPED, never silently OK, and never a
+    fabricated problem."""
     bundle_dir = tmp_path / "general" / "primitives" / "cic-primitives"
     _write_kernel_bundle(
         bundle_dir / "cic-primitives.v0.2.0-src2026.yaml",
@@ -354,7 +378,107 @@ spec:
     kernel_skips = [s for s in skipped if "storage-resource" in s]
     assert len(kernel_skips) == 1
     assert "cic:core:ManagedEntity" in kernel_skips[0]
-    assert "slots/fields" in kernel_skips[0]
+    assert "no spec.slots with mode: required" in kernel_skips[0]
+
+
+def test_base_references_missing_required_kernel_slot_is_a_problem(tmp_path):
+    """(#79) A kernel type's `mode: required` slot (e.g. binding_surface)
+    absent from the consumer's own `spec` is a real contract violation —
+    not a skip, not a silent pass. This is the actual gap #79 closes: the
+    field-level diff against the kernel stays unanswerable, but slot
+    presence is checkable, and wasn't checked at all before."""
+    bundle_dir = tmp_path / "general" / "primitives" / "cic-primitives"
+    _write_kernel_bundle(
+        bundle_dir / "cic-primitives.v0.2.0-src2026.yaml",
+        [
+            {
+                "id": "managed-entity",
+                "spec": {
+                    "metadata": {"name": "ManagedEntity"},
+                    "spec": {
+                        "kind": "AggregatePrimitive",
+                        "slots": {
+                            "identity": {"mode": "required"},
+                            "config_surface": {"mode": "required"},
+                            "state_surface": {"mode": "required"},
+                            "binding_surface": {"mode": "required"},
+                            "operation_surface": {"mode": "defaulted"},
+                            "lifecycle_surface": {"mode": "sealed"},
+                        },
+                    },
+                },
+            }
+        ],
+    )
+    domain_dir = tmp_path / "general" / "storage" / "storage-resource"
+    _write(
+        domain_dir / "storage-resource.v1.0.0-src2026.yaml",
+        """---
+metadata:
+  name: StorageResource
+spec:
+  identity:
+    namespace: "cic:storage"
+    kind: StorageResource
+    base: "cic:core:ManagedEntity@v0.2.0"
+  config_surface: {}
+  state_surface: {}
+""",
+    )
+    problems, skipped = check_base_references(tmp_path)
+    assert not any("storage-resource" in s for s in skipped)
+    assert len(problems) == 1
+    assert "binding_surface" in problems[0]
+    assert "required" in problems[0]
+    # defaulted/sealed slots (operation_surface, lifecycle_surface) are
+    # never required -- their absence must not be flagged
+    assert "operation_surface" not in problems[0]
+    assert "lifecycle_surface" not in problems[0]
+
+
+def test_base_references_all_required_kernel_slots_present_is_clean(tmp_path):
+    """(#79) The common case: every mode: required slot is present. No
+    problem, no skip -- a real, positive pass, not a trivial 0-vs-0 OK."""
+    bundle_dir = tmp_path / "general" / "primitives" / "cic-primitives"
+    _write_kernel_bundle(
+        bundle_dir / "cic-primitives.v0.2.0-src2026.yaml",
+        [
+            {
+                "id": "managed-entity",
+                "spec": {
+                    "metadata": {"name": "ManagedEntity"},
+                    "spec": {
+                        "kind": "AggregatePrimitive",
+                        "slots": {
+                            "identity": {"mode": "required"},
+                            "config_surface": {"mode": "required"},
+                            "state_surface": {"mode": "required"},
+                            "binding_surface": {"mode": "required"},
+                        },
+                    },
+                },
+            }
+        ],
+    )
+    domain_dir = tmp_path / "general" / "storage" / "storage-resource"
+    _write(
+        domain_dir / "storage-resource.v1.0.0-src2026.yaml",
+        """---
+metadata:
+  name: StorageResource
+spec:
+  identity:
+    namespace: "cic:storage"
+    kind: StorageResource
+    base: "cic:core:ManagedEntity@v0.2.0"
+  config_surface: {}
+  state_surface: {}
+  binding_surface: {}
+""",
+    )
+    problems, skipped = check_base_references(tmp_path)
+    assert not any("storage-resource" in s for s in skipped)
+    assert not any("storage-resource" in p for p in problems)
 
 
 def test_base_references_pinned_to_kernel_type_missing_from_that_version_is_skipped(
