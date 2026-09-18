@@ -10,8 +10,10 @@
 # did it.
 schema: dhcp-service
 current:
-  version: v0.1.0
-  file: dhcp-service.v0.1.0-src2026.yaml
+  version: v0.1.1
+  file: dhcp-service.v0.1.1-src2026.yaml
 all_versions:
   - version: v0.1.0
     file: dhcp-service.v0.1.0-src2026.yaml
+  - version: v0.1.1
+    file: dhcp-service.v0.1.1-src2026.yaml
