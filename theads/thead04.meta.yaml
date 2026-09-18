@@ -69,8 +69,7 @@ rejected:
 
 opened: []
 
-nem nyitva (szándékosan, döntésre vár -- a review saját \"amit most
-  biztosan javítanék\" ötös listája):
+nem nyitva (szándékosan, döntésre vár -- a review saját javasolt öt fixe):
   - "ComputeResource.cpu_cores/cpu_cores_actual: integer -> number,
     mert OCI OCPU lehet tört (subcore) -- CONFIRMED hogy a registry
     ma integer, a javítás iránya elfogadható, de a user döntése kell,
