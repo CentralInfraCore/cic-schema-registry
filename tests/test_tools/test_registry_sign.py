@@ -17,17 +17,7 @@ REQUIRED_ENV = {
 }
 
 
-def _patch_collaborators(mock_module, *, countersign_authority="CIC Source CA"):
-    """Patches every collaborator registry_sign.main() calls, wired for a
-    clean success path -- individual tests override what they need."""
-    mock_module.compute_build_hash.return_value = "aGVsbG8="
-    mock_module._fetch_author_certificate.return_value = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
-    mock_module.sign_with_author_vault.return_value = "vault:v1:author-sig"
-    mock_module.get_cic_countersign.return_value = {
-        "authority": {"name": countersign_authority},
-        "sign": "vault:v1:counter-sig",
-    }
-    mock_module.format_signature_blocks.return_value = "release:\n  sign: x\n"
+FAKE_CERT = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
 
 
 def test_main_wrong_argc_prints_usage_and_returns_2(capsys):
@@ -81,7 +71,7 @@ def test_main_success_path_returns_0_and_calls_append(
     target.write_text("metadata:\n  name: X\n")
 
     mock_build_hash.return_value = "aGVsbG8="
-    mock_fetch_cert.return_value = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+    mock_fetch_cert.return_value = FAKE_CERT
     mock_vault_sign.return_value = "vault:v1:author-sig"
     mock_countersign.return_value = {
         "authority": {"name": "CIC Source CA"},
@@ -121,7 +111,7 @@ def test_main_cleans_up_temp_cert_file_even_on_countersign_failure(
     target.write_text("metadata:\n  name: X\n")
 
     mock_build_hash.return_value = "aGVsbG8="
-    mock_fetch_cert.return_value = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+    mock_fetch_cert.return_value = FAKE_CERT
     mock_vault_sign.return_value = "vault:v1:author-sig"
     mock_countersign.side_effect = RuntimeError("countersign server unreachable")
 
@@ -166,7 +156,9 @@ def test_main_generic_exception_returns_1_and_prints_failed(
 
 def test_fetch_author_certificate_returns_the_single_kv_field():
     resp = MagicMock()
-    resp.json.return_value = {"data": {"data": {"bar": "-----BEGIN CERTIFICATE-----\n..."}}}
+    resp.json.return_value = {
+        "data": {"data": {"bar": "-----BEGIN CERTIFICATE-----\n..."}}
+    }
     resp.raise_for_status.return_value = None
     with patch("tools.registry_sign.requests.get", return_value=resp) as mock_get:
         cert = registry_sign._fetch_author_certificate(
@@ -227,7 +219,7 @@ def test_main_uses_env_var_defaults_when_optional_ones_unset(
     target.write_text("metadata:\n  name: X\n")
 
     mock_build_hash.return_value = "aGVsbG8="
-    mock_fetch_cert.return_value = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+    mock_fetch_cert.return_value = FAKE_CERT
     mock_vault_sign.return_value = "vault:v1:author-sig"
     mock_countersign.return_value = {
         "authority": {"name": "CIC Source CA"},
