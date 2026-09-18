@@ -393,6 +393,23 @@ def test_deep_true_description_only_change_still_not_a_mutation():
     assert check_coverage(old, new, major_bump=False, deep=True).ok
 
 
+def test_deep_true_atomic_ref_format_change_still_not_a_mutation():
+    """cic-schema-registry#125: atomic_ref/aggregate_ref name WHICH shared
+    kernel primitive backs a field's category (determined by where the
+    field sits, e.g. every config/state node uses shape.yaml) -- never
+    the individual field's own type, which scalar_type/shape_type/
+    contract already fully capture. Rewriting the reference's string
+    format (schemas/atomic/<name>.yaml -> the working
+    cic:core:<Name>@v0.2.0 pin) must not by itself force a MAJOR bump."""
+    old = _doc(
+        [{"name": "a", "shape_type": "scalar", "atomic_ref": "schemas/atomic/shape.yaml"}]
+    )
+    new = _doc(
+        [{"name": "a", "shape_type": "scalar", "atomic_ref": "cic:core:Shape@v0.2.0"}]
+    )
+    assert check_coverage(old, new, major_bump=False, deep=True).ok
+
+
 def test_deep_true_allowed_across_major_bump():
     old = _doc([{"name": "a", "shape_type": "collection", "item_fields": [{"x": 1}]}])
     new = _doc([{"name": "a", "shape_type": "collection", "item_fields": [{"x": 2}]}])

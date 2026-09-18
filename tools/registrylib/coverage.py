@@ -135,7 +135,17 @@ def _shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
 # deep_diff's whole purpose is to see what the shallow shape_signature()
 # check does not; only description is unambiguously safe to skip
 # everywhere, at every nesting depth.
-_DEEP_DIFF_IGNORE_KEYS = {"description"}
+#
+# atomic_ref/aggregate_ref name WHICH shared kernel primitive definition
+# backs a field's category (shape/behavior/event/address/identity) — this
+# is determined by WHERE a field sits (a config/state node always uses
+# shape.yaml, an operation always uses behavior.yaml, ...), never by the
+# individual field's own type, which is already fully captured by
+# scalar_type/shape_type/contract elsewhere in the same node. Rewriting
+# the reference's STRING FORMAT (e.g. the schemas/atomic/<name>.yaml path
+# -> the working cic:core:<Name>@v0.2.0 pin, #125) changes zero actual
+# compatibility surface, so it must not by itself force a MAJOR bump.
+_DEEP_DIFF_IGNORE_KEYS = {"description", "atomic_ref", "aggregate_ref"}
 
 
 def _deep_diff(old_node: Any, new_node: Any, path: str = "") -> list[str]:
