@@ -1,0 +1,540 @@
+Na, megvan az első teljes semantic pass. A registry aktuális main állapotában a hat OCI szempontból releváns general/ resource-ban 137 top-level config/state/operation elemet néztem végig. Az eredmény jobb, mint amire számítottam: az alapmodell működik, de most már konkrétan látszik néhány valódi ontológiai rés és 2–3 sémahiba is.
+
+A jelölések: D = direct, T = transzformáció/normalizáció, C = több OCI resource-ból összerakott, X = más observer/API kell, U = OCI alatt nem támogatott/értelmezhető, M = valódi szemantikai mismatch.
+
+ComputeResource
+
+Az OCI Instance jó alap, de egy CIC ComputeResource nem egyetlen OCI resource: Instance + VNIC + boot/block volume + Monitoring együtt adja ki. Az Oracle is külön kezeli az Instance és VNIC objektumokat; például az IP-címekhez az Instance → VNIC attachment → VNIC láncot kell bejárni.
+
+CIC	OCI	státusz
+cpu_cores	Instance.shapeConfig.ocpus / shape lookup	T/M
+memory_mb	shapeConfig.memoryInGBs × 1024	T
+disk_gb	boot volume / local NVMe	C/M
+os_image	sourceDetails / image OCID	D/T
+network_interfaces	VnicAttachment + VNIC + PrivateIP	C
+availability_zone	availabilityDomain	T
+spot	preemptibleInstanceConfig	T
+tags	freeformTags + definedTags	T
+power_state	lifecycleState	T
+ip_addresses	VNIC/PrivateIP	C
+uptime_seconds	guest/agent/monitoring	X
+cpu_cores_actual	shapeConfig.ocpus	T/M
+memory_mb_actual	shapeConfig.memoryInGBs × 1024	T
+disk_gb_actual	boot volume/local NVMe	C
+cpu_usage_pct	OCI Monitoring CpuUtilization	X
+memory_usage_mb	Monitoring/agent + derivation	X
+hardware_health	nincs egyetlen OCI megfelelő	X/U
+cpu_temperature_celsius	nincs OCI Compute API megfelelő	U
+provider_id	Instance.id	D
+spot_interrupted	lifecycle/event/preemption állapotból	R/X
+
+A műveleteknél nagyon erős a megfelelés:
+
+start       -> InstanceAction(START)
+stop        -> SOFTSTOP / STOP
+restart     -> SOFTRESET / RESET
+terminate   -> TerminateInstance
+provision   -> LaunchInstance + VNIC/volume setup
+resize      -> UpdateInstance + esetleg Volume update
+snapshot    -> image/boot-volume backup semantics
+migrate     -> részben REBOOTMIGRATE
+
+Az InstanceAction ténylegesen START/STOP/RESET/SOFTSTOP/SOFTRESET típusú műveleteket ad.
+
+És itt van az első tényleges schema-hiba: a registryben
+
+cpu_cores:
+  scalar_type: integer
+
+de az OCI ocpus float. Oracle támogat például subcore/burstable OCPU-kat is.
+
+Tehát a canonical modellben a CPU mennyiséget szerintem nem szabad integerre korlátozni.
+
+StorageResource
+
+Ez talán a legtisztább correspondence.
+
+CIC StorageResource
+      │
+      ├── OCI Volume
+      ├── OCI VolumeAttachment[]
+      └── OCI Monitoring
+CIC	OCI	státusz
+size_gb	Volume.sizeInGBs	D
+access_mode	isReadOnly + isShareable	C/T
+filesystem	guest OS	X
+encryption	provider invariant	M
+encryption_key_ref	kmsKeyId	D
+tags	freeform/defined tags	T
+attach_state	VolumeAttachment state-ek aggregációja	R/C
+attached_to	VolumeAttachment.instanceId	C
+attachments	ListVolumeAttachments	C
+size_actual_gb	Volume.sizeInGBs	D
+usage_bytes	guest/filesystem	X
+iops_read/write	Monitoring	X
+health	lifecycle + metrics/alarms	R/X
+
+OCI közvetlenül modellezi a sizeInGBs, kmsKeyId értékeket, az attachment pedig külön instanceId, volumeId, isReadOnly, isShareable, lifecycleState mezőket hordoz.
+
+Műveletek:
+
+attach   -> AttachVolume             D
+detach   -> DetachVolume             D
+delete   -> DeleteVolume             D
+resize   -> UpdateVolume(size)       D/T
+snapshot -> CreateVolumeBackup       T
+Itt van a második valódi schema-probléma
+
+A registry:
+
+encryption:
+  type: boolean
+  default: false
+
+OCI Block Volume alatt ez fogalmilag nem stimmel.
+
+Oracle minden Block Volume-ot, Boot Volume-ot és backupot kötelezően AES-256-tal titkosít at-rest; nincs „unencrypted volume”. A választás az, hogy Oracle-managed vagy customer-managed key legyen.
+
+Vagyis OCI esetében:
+
+encryption = false
+
+értelmezhetetlen intent.
+
+Szerintem a canonical modell később inkább:
+
+encryption_mode:
+  enum:
+    - none
+    - provider_managed
+    - customer_managed
+    - guest_managed
+
+jellegű fogalmat kíván.
+
+NetworkInterface
+
+Itt sokkal rosszabb az 1:1 coverage — de nem azért, mert rossz a schema, hanem mert eredetileg erősen fizikai/network-device szemantikájú.
+
+OCI VNIC közvetlenül ad macAddress, privateIp, publicIp, ipv6Addresses, subnetId, nsgIds, routeTableId, vlanId, lifecycleState mezőket.
+
+Config
+type                R     constant/logical-vnic semantics
+description         T     displayName
+enabled             U/C   nincs admin up/down VNIC mező
+mtu                 U
+speed               U
+duplex              U
+vlans               U/partial
+logical_interfaces  C/partial
+vxlans              U
+stp                  U
+poe                  U
+storm_control        U
+qinq                 U
+lacp                 U
+lldp                 U
+port_mirror          U
+lower_layer_if       U
+State
+oper_status          T     lifecycleState
+phys_address         D     macAddress
+speed_actual         U
+assigned_addresses   C     PrivateIP/PublicIP/IPv6
+statistics           X     Monitoring
+stp_state            U
+poe_state            U
+lldp_neighbors       U
+lacp_state           U
+Operations
+enable               U/C
+disable              U/C
+flush_mac_table      U
+
+Tehát egy OCI VNIC leírható NetworkInterface-ként, de a jelenlegi interface schema nagyon sok fizikai switching fogalmat hordoz, miközben az OCI-specifikus lényeges dolgok:
+
+subnet
+NSG
+route-table
+public-IP policy
+source/destination check
+
+nincsenek elsőrendű canonical fogalomként jelen.
+
+Ez már modellfejlesztési kérdés.
+
+DHCPService
+
+Itt komolyabb szemantikai eltérés van.
+
+A registry egy valódi DHCP szervert modellez:
+
+pool_start
+pool_end
+lease_time
+static_reservations
+leases
+release_lease
+reset_pool
+
+OCI DhcpOptions viszont alapvetően DHCP-n át kiosztott DNS és search-domain konfigurációt kezel. Az Oracle modell két fő opciót említ: DhcpDnsOption és DhcpSearchDomainOption.
+
+Ezért:
+
+enabled                    U
+description                T
+address_family             U
+subnet                     C
+pool_start                 U
+pool_end                   U
+lease_time                 U
+gateway                    U
+dns_servers                D/T
+domain_name                D
+static_reservations        U
+
+status                     T/R
+active_lease_count         U
+pool_utilization_percent   U
+leases                     U
+
+release_lease              U
+reset_pool                 U
+
+Vagyis:
+
+OCI DhcpOptions != CIC DHCPService.
+
+Ez fontos.
+
+Nem kéne erőszakkal összekötni őket. Valószínűleg hiányzik egy olyan canonical fogalom, mint:
+
+DHCPOptions
+NetworkBootstrapOptions
+SubnetClientConfiguration
+KubernetesCluster → OKE
+
+Itt ismét jó a correspondence, de találtunk egy komoly hibát.
+
+OKE Cluster közvetlenül tartalmaz kubernetesVersion, endpointConfig, vcnId értékeket, az endpoint tényleges URL-jei pedig a ClusterEndpoints state-ben jelennek meg. A node pool külön OCI resource.
+
+kubernetes_version       D
+control_plane_endpoint   M
+control_plane_count      U
+cluster_network          C/partial
+api_server               U/partial
+etcd                     U
+controller_manager       U
+scheduler                U
+coredns                   X/partial
+node_pools               C/D
+discovery                U
+
+State:
+
+health                    R
+api_server_status         X/R
+etcd_status               U
+kubernetes_version_actual D
+node_count                C
+control_plane_node_count  U
+cert_expiry               X/U
+
+Operations:
+
+upgrade        C/D   UpdateCluster + NodePool update
+rotate_certs   U
+get_kubeconfig D     CreateKubeconfig
+
+Oracle konkrétan biztosít CreateKubeconfig, UpdateCluster, CreateNodePool, UpdateNodePool műveleteket.
+
+Harmadik valódi schema-probléma
+
+A registry jelenleg:
+
+control_plane_endpoint:
+  role: config
+  required_on_create: true
+
+OKE esetében ez nem igaz.
+
+Az OCI-nál az endpoint hálózati policy-ját állítod:
+
+subnetId
+nsgIds
+isPublicIpEnabled
+
+és a tényleges API server endpointot Oracle generálja:
+
+publicEndpoint
+privateEndpoint
+vcnHostnameEndpoint
+...
+
+Tehát a canonical modellben szerintem szét kell választani:
+
+config:
+    control_plane_endpoint_policy
+
+state:
+    control_plane_endpoint
+
+Self-managed Talos/Kubespray esetén pedig az adapter képes lehet explicit endpointot elfogadni.
+
+KubernetesNode → OKE
+
+Ez eleve több authority domain keveréke:
+
+OKE API
++ OCI Compute
++ Kubernetes API
+
+Config:
+
+machine_type   R/U
+cluster_ref    D
+install_disk   U
+hostname       R/U
+kubelet        X/partial
+sysctls        U
+ntp_servers    U
+cert_sans      U
+
+Ez ráadásul már részben benne van a saját cloud-managed-adapter conformance matrixotokban: install_disk, sysctls, ntp_servers, cert_sans unsupported, reset degraded.
+
+State:
+
+compute_ref          D/T   OKE Node.id = backing Compute OCID
+network_ref          C
+node_status          X     Kubernetes API
+kubelet_version      D/X   OKE Node / Kubernetes
+os_version           X
+allocatable_cpu      X     Kubernetes API
+allocatable_memory   X
+allocated_pods       X
+conditions           X
+
+Az OKE Node modell kifejezetten megadja, hogy az id a node mögötti Compute instance OCID-je, ami nagyon szépen illeszkedik a compute_ref gondolathoz.
+
+Operations:
+
+cordon      X    Kubernetes API
+uncordon    X
+drain       X
+reboot      C    kubectl/drain + Compute InstanceAction
+upgrade     C    NodePool update/cycling
+reset       C/U  node delete/recreate
+A hiányzó general/network ontology most már elég egyértelmű
+
+A jelenlegi Oracle module már ismeri:
+
+Vcn
+Subnet
+Instance
+
+de a registryben VCN/Subnet szinten nincs canonical megfelelő.
+
+Ez szerintem jelenleg a legnagyobb valódi coverage gap.
+
+A következő general fogalmak szinte biztosan kellenek:
+
+general/network/
+    network-space/
+    subnet/
+    route-table/
+    route/
+    network-security-group/
+    security-rule/
+    gateway/
+
+Ahol például:
+
+OCI VCN      ─┐
+AWS VPC       ├──> NetworkSpace
+Azure VNet   ─┘
+
+OCI Subnet   ─┐
+AWS Subnet    ├──> Subnet
+Azure Subnet ─┘
+
+És nem NetworkInterface-be próbáljuk belepréselni őket.
+
+A correspondence layer formája
+
+Most már szerintem elég bizonyítékunk van arra, hogy a providers/oracle-cloud/ nem sima provider schema copy kell legyen.
+
+Hanem például:
+
+kind: ProviderCorrespondence
+
+provider: oracle-cloud
+
+canonical:
+  kind: cic:compute:ComputeResource
+
+provider_resources:
+  - core.Instance
+  - core.Vnic
+  - core.BootVolume
+  - monitoring.Metric
+
+mappings:
+
+  - target: config_surface.cpu_cores
+    kind: transform
+    source: Instance.shapeConfig.ocpus
+
+  - target: config_surface.memory_mb
+    kind: transform
+    source: Instance.shapeConfig.memoryInGBs
+    expression: "value * 1024"
+
+  - target: config_surface.network_interfaces
+    kind: composition
+    sources:
+      - VnicAttachment
+      - Vnic
+      - PrivateIp
+
+  - target: state_surface.cpu_usage_pct
+    kind: external-observer
+    source:
+      service: monitoring
+      namespace: oci_computeagent
+      metric: CpuUtilization
+
+  - target: state_surface.cpu_temperature_celsius
+    kind: unsupported
+
+  - target: operation_surface.start
+    kind: action
+    operation: InstanceAction
+    arguments:
+      action: START
+
+Na ez lenne szerintem a hiányzó réteg.
+
+És a meglévő:
+
+module/correspondence/vcn.json
+
+az isIpv6Enabled ← ipv6CidrBlocks derivációval már pontosan ennek az első működő példája.
+
+Amit most biztosan javítanék a registryben
+
+Nem száz dolgot. Első körben ezt az ötöt:
+
+ComputeResource.cpu_cores / cpu_cores_actual: integer → number, mert OCI-nál az OCPU float és subcore is létezik.
+StorageResource.encryption szemantikájának átgondolása, mert OCI-nál false nem létező állapot.
+KubernetesCluster.control_plane_endpoint ne legyen minden implementáción required config; managed provider esetén provider-computed state.
+DHCPService és OCI DhcpOptions ne legyen azonos fogalomként kezelve.
+NetworkSpace/VCN + Subnet canonical sémák megalkotása, mert ez jelenleg tényleges lyuk az ontologyban.
+
+A fontos eredmény pedig: nem omlott össze a registry az OCI valós API-jának nekiengedve. Épp ellenkezőleg: most kezd látszani, hogy hol van canonical semantics, hol provider composition, és hol valódi modellhiba. A cic-module-oracle-cloud extractor által előállított OCI-native schema és a registry general/ rétege között tényleg egy formális correspondence réteg hiányzik. Ez most már nem elmélet, hanem konkrétan levezethető a két repo és az Oracle API alapján.
+
+státusz mit jelent?
+
+A mátrixban a „státusz” azt jelenti, milyen típusú megfeleltetés van a CIC canonical mező és az OCI valós API/modell között.
+
+D = Direct – közvetlen, lényegében 1:1 megfeleltetés. Példa: StorageResource.size_gb ↔ OCI Volume.sizeInGBs.
+T = Transform – ugyanaz a jelentés, de konverzió/normalizáció kell. Példa: memory_mb ↔ memoryInGBs × 1024, vagy CIC power state ↔ OCI lifecycle state.
+R = Derived – nem egyetlen mezőt olvasunk ki, hanem valamiből levezetjük. Példa: isIpv6Enabled = len(ipv6CidrBlocks) > 0.
+C = Composed – egy CIC mező/resource több OCI resource vagy API-hívás eredményéből áll össze. Példa: network_interfaces = VNIC attachments + VNIC + IP-k.
+X = External observer – nem abból az OCI resource API-ból származik, hanem más forrásból: Monitoring, Kubernetes API, guest agent stb. Példa: CPU utilization.
+U = Unsupported / not applicable – OCI ezen a backend-en ezt a fogalmat nem támogatja vagy nincs értelme. Példa: NetworkInterface.poe egy OCI VNIC-nél.
+M = Semantic mismatch – van hasonló OCI fogalom, de a CIC jelenlegi schema jelentése vagy típusa nem teljesen kompatibilis vele. Ez az érdekes kategória, mert itt lehet registry-javításra szükség.
+
+Ha kombináltat írtam, pl. T/M, az azt jelenti: technikailag leképezhető, de közben a canonical modellben is van egy megfontolandó eltérés.
+
+Például:
+
+ComputeResource.cpu_cores -> OCI shapeConfig.ocpus -> T/M
+
+Azért T, mert OCI-mezőre leképezhető. Azért M, mert CIC-ben jelenleg integer, miközben OCI OCPU értéke lehet tört szám is.
+
+Tehát röviden: a státusz nem „jó/rossz” minősítés, hanem a mapping mechanizmusának típusa. Ez alapján lehet később géppel eldönteni, hogyan kell intent → OCI és OCI → observed state fordítást végezni.
+
+ez egészen jó eredmény ha nem tévedek?
+
+Igen, ez kifejezetten jó eredmény.
+
+Azért, mert a modell nem csak néhány triviális mezőn állt meg, hanem egy valódi provider API-val szemben is működött úgy, hogy a legtöbb eltérés nem ontológiai bukás, hanem normális adaptermunka: transzformáció, aggregáció, deriváció vagy más observer bevonása.
+
+A legfontosabb jel az, hogy amikor mismatch jött elő, az többnyire értelmes, lokalizált probléma volt:
+
+cpu_cores típusa túl szűk,
+encryption boolean szemantikája túl egyszerű,
+managed Kubernetesnél a control-plane endpoint más authority oldalon van,
+hiányzik néhány network canonical resource,
+DHCPService nem ugyanaz a fogalom, mint az OCI DhcpOptions.
+
+Ez sokkal jobb, mintha az derült volna ki, hogy a teljes ConfigSurface / StateSurface / OperationSurface / BindingSurface felosztás rossz absztrakció. Pont ez nem történt meg.
+
+Sőt, az OCI teszt pont azt mutatta meg, hogy a registry egyik alapfeltevése helyes:
+
+canonical resource ≠ provider resource
+
+hanem inkább:
+
+Canonical semantic resource
+        ↓
+Correspondence
+        ↓
+1..N provider resources
+        ↓
+provider API
+
+És ez nagyon fontos, mert például:
+
+ComputeResource
+  != OCI Instance
+
+ComputeResource
+  ≈ Instance
+   + VNIC
+   + boot volume
+   + Monitoring
+
+ugyanez:
+
+StorageResource
+  ≈ Volume
+   + VolumeAttachment[]
+   + Monitoring
+
+Ez azt jelenti, hogy a CIC absztrakció nem túl alacsony szintű és nem is annyira absztrakt, hogy elveszítse a valós provider jelentését. Ez az egyik legnehezebb egyensúly.
+
+A még jobb jel az, hogy a cic-module-oracle-cloud már önmagától eljutott ehhez:
+
+isIpv6Enabled
+    ← derive from ipv6CidrBlocks
+
+Tehát a provider implementation fejlesztése során természetesen megjelent az a fogalom, amit most általánosítani kezdtünk:
+
+semantic correspondence.
+
+Magyarul nem most találtunk ki utólag valamilyen szép architektúrát, hanem az implementáció már kikényszerítette ugyanezt a mintát.
+
+Én jelenleg így értékelném:
+
+Primitive grammar          → működik
+ManagedEntity surfaces     → működik
+General domain abstraction → nagyrészt működik
+Adapter contract           → működik
+Provider-native extraction → működik
+Semantic correspondence    → HIÁNYZÓ FORMÁLIS RÉTEG
+Provider coverage          → még hiányos
+
+És ez a kettő között óriási különbség van.
+
+Nem azt találtuk, hogy:
+
+„a CIC modell rossz, újra kell tervezni.”
+
+Hanem azt, hogy:
+
+„a két már működő modell között formalizálni kell a fordítási kapcsolatot.”
+
+Ez egy architektúrának nagyon jó állapot.
+
+A következő igazán kemény teszt szerintem az lesz, amikor ugyanezt AWS-re vagy Azure-ra is ráengedjük. Ha ugyanaz a ComputeResource, StorageResource, KubernetesCluster csak más correspondence szabályokkal ráilleszthető egy második nagy providerre is, akkor már sokkal erősebben lehet mondani, hogy a canonical réteg valóban providerfüggetlen, és nem véletlenül illeszkedett jól az OCI-ra.
