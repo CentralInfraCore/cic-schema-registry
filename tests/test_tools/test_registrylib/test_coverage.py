@@ -402,7 +402,13 @@ def test_deep_true_atomic_ref_format_change_still_not_a_mutation():
     format (schemas/atomic/<name>.yaml -> the working
     cic:core:<Name>@v0.2.0 pin) must not by itself force a MAJOR bump."""
     old = _doc(
-        [{"name": "a", "shape_type": "scalar", "atomic_ref": "schemas/atomic/shape.yaml"}]
+        [
+            {
+                "name": "a",
+                "shape_type": "scalar",
+                "atomic_ref": "schemas/atomic/shape.yaml",
+            }
+        ]
     )
     new = _doc(
         [{"name": "a", "shape_type": "scalar", "atomic_ref": "cic:core:Shape@v0.2.0"}]
