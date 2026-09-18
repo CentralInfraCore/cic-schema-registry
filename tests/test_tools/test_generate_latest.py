@@ -1,8 +1,16 @@
 import subprocess
 
+from tools import generate_latest
 from tools.generate_latest import (
+    _already_signed_before,
+    _commit_content,
+    _dir_ever_had_versioned_content,
+    _file_history_commits,
+    _first_add_commit,
+    _only_gained_release_signature,
     check_drift,
     check_no_frozen_edits,
+    main,
     write_latest,
 )
 from tools.registrylib.latest import render_latest
@@ -444,3 +452,275 @@ def test_check_drift_clean_for_a_directory_that_was_always_empty(tmp_path):
     _git("commit", "-q", "-m", "init", cwd=tmp_path)
 
     assert check_drift(tmp_path, enrolled=["never-existed"]) == []
+
+
+# ---- write_latest() skips a directory render_latest() has nothing for ----
+
+
+def test_write_latest_skips_an_empty_enrolled_directory(tmp_path):
+    assert write_latest(tmp_path, enrolled=["never-existed"]) == []
+    assert not (tmp_path / "never-existed" / "LATEST.yaml").exists()
+
+
+# ---- private git-subprocess helpers -- direct, whitebox: their own
+# defensive "git failed" fallbacks are unreachable through the public
+# check_no_frozen_edits/check_drift entry points in most cases (the
+# callers only reach them once a diff/commit is already known to exist),
+# so these exercise them directly instead of contriving an indirect path
+# ----
+
+
+def test_first_add_commit_returns_none_outside_a_git_repo(tmp_path):
+    """Not a git repository at all -- git log itself fails."""
+    target = tmp_path / "schema.yaml"
+    _write(target, "a: 1\n")
+    assert _first_add_commit(tmp_path, target) is None
+
+
+def test_first_add_commit_returns_none_for_an_uncommitted_file(tmp_path):
+    """A real repo, but this particular file was never `git add`ed --
+    also covers check_no_frozen_edits's own `continue` when a version
+    file has no git history at all yet."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-lldp"
+    _write(schema_dir / "ietf-lldp.v0.1.3-src2026.yaml", "a: 1\n")
+    # deliberately never `git add`ed/committed
+
+    version_file = schema_dir / "ietf-lldp.v0.1.3-src2026.yaml"
+    assert _first_add_commit(tmp_path, version_file) is None
+    # and the public check must not crash on it -- just skip it
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-lldp"]) == []
+
+
+def test_file_history_commits_returns_empty_outside_a_git_repo(tmp_path):
+    target = tmp_path / "schema.yaml"
+    _write(target, "a: 1\n")
+    assert _file_history_commits(tmp_path, target) == []
+
+
+def test_commit_content_returns_none_for_a_bogus_commit(tmp_path):
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "a: 1\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+
+    assert _commit_content(tmp_path, "0" * 40, target) is None
+
+
+def test_dir_ever_had_versioned_content_false_outside_a_git_repo(tmp_path):
+    assert _dir_ever_had_versioned_content(tmp_path, "ietf-lldp") is False
+
+
+# ---- _only_gained_release_signature() -- individual defensive branches ----
+
+
+def test_only_gained_signature_false_for_a_bogus_first_commit(tmp_path):
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "a: 1\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+
+    assert _only_gained_release_signature(tmp_path, "0" * 40, target) is False
+
+
+def test_only_gained_signature_normalizes_a_missing_trailing_newline(tmp_path):
+    """The first-committed content itself has no trailing newline -- the
+    function must still recognize a clean signature-only append on top
+    of it, not choke on the byte-level prefix check."""
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-nat"
+    no_newline = "metadata:\n  name: ietf-nat"  # deliberately no trailing \n
+    _write(schema_dir / "ietf-nat.v0.1.0-src2026.yaml", no_newline)
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add ietf-nat (no trailing newline)", cwd=tmp_path)
+
+    _write(
+        schema_dir / "ietf-nat.v0.1.0-src2026.yaml",
+        no_newline + "\nrelease:\n  build_hash: abc123\n",
+    )
+
+    assert check_no_frozen_edits(tmp_path, enrolled=["ietf-nat"]) == []
+
+
+def test_only_gained_signature_false_when_nothing_was_appended(tmp_path):
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "metadata:\n  name: x\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+    first_commit = _first_add_commit(tmp_path, target)
+
+    assert _only_gained_release_signature(tmp_path, first_commit, target) is False
+
+
+def test_only_gained_signature_false_when_appended_text_is_not_valid_yaml(tmp_path):
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "metadata:\n  name: x\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+    first_commit = _first_add_commit(tmp_path, target)
+
+    _write(target, "metadata:\n  name: x\nrelease:\n  sign: [unterminated\n")
+
+    assert _only_gained_release_signature(tmp_path, first_commit, target) is False
+
+
+def test_only_gained_signature_false_when_appended_is_not_a_mapping(tmp_path):
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "metadata:\n  name: x\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+    first_commit = _first_add_commit(tmp_path, target)
+
+    _write(target, "metadata:\n  name: x\njust a scalar line\n")
+
+    assert _only_gained_release_signature(tmp_path, first_commit, target) is False
+
+
+def test_only_gained_signature_false_when_a_non_signature_key_is_appended(tmp_path):
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "metadata:\n  name: x\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+    first_commit = _first_add_commit(tmp_path, target)
+
+    _write(target, "metadata:\n  name: x\nextra_field: sneaked in\n")
+
+    assert _only_gained_release_signature(tmp_path, first_commit, target) is False
+
+
+def test_only_gained_signature_false_when_original_was_already_signed(tmp_path):
+    """The original (first-committed) content already carries a
+    signature key -- even a clean, signature-keys-only append on top of
+    it is not a first-time signing."""
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "metadata:\n  name: x\nrelease:\n  sign: old\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add already-signed", cwd=tmp_path)
+    first_commit = _first_add_commit(tmp_path, target)
+
+    _write(
+        target,
+        "metadata:\n  name: x\nrelease:\n  sign: old\ncic_countersign:\n  sign: new\n",
+    )
+
+    assert _only_gained_release_signature(tmp_path, first_commit, target) is False
+
+
+# ---- _already_signed_before() -- malformed intermediate history entry ----
+
+
+def test_already_signed_before_skips_unparseable_intermediate_commits(tmp_path):
+    """An intermediate commit's content fails to parse as YAML --
+    _already_signed_before must skip it (not crash) and keep looking."""
+    _init_repo(tmp_path)
+    target = tmp_path / "schema.yaml"
+    _write(target, "metadata:\n  name: x\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add", cwd=tmp_path)
+    first_commit = _first_add_commit(tmp_path, target)
+
+    _write(target, "not: [valid yaml\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "briefly broken", cwd=tmp_path)
+
+    _write(target, "metadata:\n  name: x\nrelease:\n  sign: abc\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "fix and sign", cwd=tmp_path)
+
+    assert _already_signed_before(tmp_path, first_commit, target) is False
+
+
+# ---- main() -- the CLI entry point itself, end to end with real git repos ----
+
+
+def test_main_default_mode_nothing_to_update(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(generate_latest, "ENROLLED", ["never-existed"])
+    _init_repo(tmp_path)
+    _write(tmp_path / "README.md", "placeholder\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "init", cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    rc = main([])
+
+    assert rc == 0
+    assert "nothing to update" in capsys.readouterr().out
+
+
+def test_main_default_mode_writes_latest_and_reports_it(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(generate_latest, "ENROLLED", ["ietf-lldp"])
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-lldp"
+    _write(schema_dir / "ietf-lldp.v0.1.3-src2026.yaml", "a: 1\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add v0.1.3", cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    rc = main([])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "generate_latest: updated:" in out
+    assert "ietf-lldp/LATEST.yaml" in out
+    assert (schema_dir / "LATEST.yaml").exists()
+
+
+def test_main_check_mode_ok_when_up_to_date(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(generate_latest, "ENROLLED", ["ietf-lldp"])
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-lldp"
+    _write(schema_dir / "ietf-lldp.v0.1.3-src2026.yaml", "a: 1\n")
+    write_latest(tmp_path, enrolled=["ietf-lldp"])
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add v0.1.3 + LATEST.yaml", cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["--check"])
+
+    assert rc == 0
+    assert "generate_latest: OK" in capsys.readouterr().out
+
+
+def test_main_check_mode_fails_on_drift(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(generate_latest, "ENROLLED", ["ietf-lldp"])
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-lldp"
+    _write(schema_dir / "ietf-lldp.v0.1.3-src2026.yaml", "a: 1\n")
+    # deliberately never ran write_latest -- LATEST.yaml is missing
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add v0.1.3", cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["--check"])
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "LATEST.yaml is stale" in out
+    assert "ietf-lldp/LATEST.yaml" in out
+
+
+def test_main_fails_on_a_frozen_edit_before_even_checking_drift(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(generate_latest, "ENROLLED", ["ietf-lldp"])
+    _init_repo(tmp_path)
+    schema_dir = tmp_path / "ietf-lldp"
+    _write(schema_dir / "ietf-lldp.v0.1.3-src2026.yaml", "source: RFC 8516\n")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-q", "-m", "add v0.1.3", cwd=tmp_path)
+    _write(schema_dir / "ietf-lldp.v0.1.3-src2026.yaml", "source: IEEE 802.1ABcu\n")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["--check"])
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "an already-published schema file was" in out
+    assert "ietf-lldp/ietf-lldp.v0.1.3-src2026.yaml" in out
