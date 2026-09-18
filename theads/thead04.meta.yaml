@@ -1,0 +1,109 @@
+thread: thead04
+status: reviewed
+date_reviewed: 2026-09-18
+
+summary: |
+  Külső AI-review a cic-schema-registry canonical sémái (ComputeResource,
+  StorageResource, NetworkInterface, DHCPService, KubernetesCluster,
+  KubernetesNode) és a cic-module-oracle-cloud valós, OCI Go SDK-ból
+  generált kontraktusa (module/schemas/core/{instance,vcn,subnet}.json)
+  közötti szemantikai megfeleltetésről -- 137 top-level config/state/
+  operation elemet néz végig, D/T/R/C/X/U/M jelöléssel (direct/transform/
+  derived/composed/external-observer/unsupported/mismatch). Javasol egy
+  hiányzó formális "ProviderCorrespondence" réteget + 5 konkrét registry-
+  javítást.
+
+  7 konkrét, ellenőrizhető ténybeli állítás lett függetlenül leellenőrizve
+  mindkét repo valós fájltartalmával (ugyanaz a diszciplína, mint
+  thead01-03-nál): 5/7 CONFIRMED pontosan, 1/7 PARTIALLY-CONFIRMED (a CIC
+  oldal igaz, az OCI oldal a kinyert artifactból nem demonstrálható), 1/7
+  WRONG -- a review egy konkrét OCI-műveletet (InstanceAction START/STOP/
+  RESET/SOFTSTOP/SOFTRESET) úgy állít be, mintha a ténylegesen elemzett
+  kinyert kontraktusból olvasta volna, holott az `instance.json`
+  `operations` blokkja ezt sehol nem tartalmazza (csak 5 műveletet:
+  ChangeInstanceCompartment/GetInstance/LaunchInstance/TerminateInstance/
+  UpdateInstance) -- ez általános OCI-tudás, nem a vizsgált artifact
+  tartalma.
+
+accepted:
+  - "ComputeResource.cpu_cores/cpu_cores_actual: scalar_type: integer --
+    CONFIRMED pontosan general/compute/compute-resource
+    compute-resource.v0.2.6-src2026.yaml-ban. Az OCI-oldali fél
+    (ocpus float) viszont NEM demonstrálható a kinyert artifactból: a
+    module/schemas/core/instance.json-ban a shapeConfig egy
+    opak, ki nem bontott object (x-cic-go-type: InstanceShapeConfig),
+    az extractor sosem bontja ki az ocpus-t skalár típus-taggel --
+    a float-állítás igaz OCI valós publikus API-jára (általános tudás),
+    de nem valami, amit maga a kinyert séma demonstrál."
+  - "StorageResource.encryption: type: boolean, default: false --
+    CONFIRMED pontosan, mind a versioned fájlban, mind a LATEST-ben
+    (v0.1.4-src2026.yaml)."
+  - "KubernetesCluster.control_plane_endpoint: role: config,
+    required_on_create: true -- CONFIRMED pontosan a LATEST-ben
+    (v0.1.4-src2026.yaml:68-74)."
+  - "module/correspondence/vcn.json létezik a cic-module-oracle-cloud-ban,
+    isIpv6Enabled <- ipv6CidrBlocks derivációval -- CONFIRMED pontosan,
+    a fájl létezik ezzel a pontos derivációval és indoklással."
+  - "cloud-managed-adapter conformance matrix: install_disk/sysctls/
+    ntp_servers/cert_sans unsupported, reset degraded -- CONFIRMED
+    pontosan cloud-managed-adapter.v0.1.2-src2026.yaml-ban."
+  - "DHCPService mezőlista (enabled/address_family/subnet/pool_start/
+    pool_end/lease_time/gateway/dns_servers/domain_name/
+    static_reservations/leases/release_lease/reset_pool/status) --
+    CONFIRMED, minden mező pontosan megvan, ahogy fel van sorolva."
+
+rejected:
+  - "InstanceAction(START/STOP/RESET/SOFTSTOP/SOFTRESET) mint az OCI
+    Instance start/stop/restart műveleteinek megfelelője -- WRONG,
+    ahogy a review beállítja. A ténylegesen kinyert instance.json
+    operations blokkja PONTOSAN 5 műveletet tartalmaz
+    (ChangeInstanceCompartment/GetInstance/LaunchInstance/
+    TerminateInstance/UpdateInstance), InstanceAction egyik sem
+    közülük. A cic-module-oracle-cloud saját tesztkódja
+    (resolve_test.go:68) arra utal, hogy az extractor resolve-logikája
+    szándékosan eldobja az InstanceAction-t az UpdateInstance/PUT
+    javára. A review ezt a részt úgy tálalja, mintha a vizsgált
+    kinyert kontraktusból olvasta volna ki, valójában külső OCI-tudás
+    -- ez a review egyetlen félrevezető pontja a 7 ellenőrzött
+    állítás közül."
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár -- a review saját \"amit most
+  biztosan javítanék\" ötös listája):
+  - "ComputeResource.cpu_cores/cpu_cores_actual: integer -> number,
+    mert OCI OCPU lehet tört (subcore) -- CONFIRMED hogy a registry
+    ma integer, a javítás iránya elfogadható, de a user döntése kell,
+    mielőtt bármi módosul."
+  - "StorageResource.encryption boolean szemantikájának átgondolása
+    (encryption_mode enum: none/provider_managed/customer_managed/
+    guest_managed helyett) -- CONFIRMED hogy a mai boolean+default:false
+    OCI-nál értelmezhetetlen intent (OCI mindent at-rest titkosít),
+    de ez egy canonical modell-váltás, user döntése kell."
+  - "KubernetesCluster.control_plane_endpoint szétválasztása
+    config.control_plane_endpoint_policy / state.control_plane_endpoint
+    -- CONFIRMED hogy a mai required_on_create:true nem igaz managed
+    (OKE-szerű) providerre, de strukturális séma-váltás."
+  - "DHCPService és OCI DhcpOptions ne legyen azonos fogalomként kezelve
+    -- ez már eleve így volt tervezve (a DHCPService ebben a sessionben
+    explicit adat-oldal-only, OCI-mapping nélkül épült), tehát ez a
+    pont valójában megerősíti a korábbi döntést, nem új felfedezés."
+  - "NetworkSpace/VCN + Subnet canonical sémák megalkotása (jelenleg
+    nincs cic-oldali megfelelőjük) -- ez a legnagyobb, önálló
+    kezdeményezés az öt közül, user döntése szükséges a scope-hoz."
+  - "ProviderCorrespondence formális réteg (kind: ProviderCorrespondence,
+    mappings: [...] D/T/R/C/X/U/M jelöléssel) -- ez maga a 'híd', amiről
+    korábban ebben a beszélgetésben volt szó; a review konkrét formátumot
+    is javasol rá, de ez egy új, önálló architektúra-kezdeményezés,
+    nem egy apró javítás."
+
+kapcsolódó:
+  - "general/compute/compute-resource/compute-resource.v0.2.6-src2026.yaml"
+  - "general/storage/storage-resource/storage-resource.v0.1.4-src2026.yaml"
+  - "general/kubernetes/kubernetes-cluster/kubernetes-cluster.v0.1.4-src2026.yaml"
+  - "general/network/dhcp-service/dhcp-service.v0.1.0-src2026.yaml"
+  - "general/kubernetes/cloud-managed-adapter/cloud-managed-adapter.v0.1.2-src2026.yaml"
+  - "cic-module-oracle-cloud/module/schemas/core/{instance,vcn,subnet}.json"
+  - "cic-module-oracle-cloud/module/correspondence/vcn.json"
+  - "cic-module-oracle-cloud/docs/design/primitives-alignment.md"
+  - "theads/thead01.meta.yaml, theads/thead02.meta.yaml, theads/thead03.meta.yaml"
