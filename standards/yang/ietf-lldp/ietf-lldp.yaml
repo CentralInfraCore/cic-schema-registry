@@ -1,0 +1,139 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth: the latest release
+# (ietf-lldp.v0.1.6-src2026.yaml) is frozen and signed, so it can
+# never be edited in place (tools/generate_latest.py
+# check_no_frozen_edits). Changes happen HERE first; when ready, a new
+# ietf-lldp.vX.Y.Z-src<year>.yaml is cut FROM this file's current
+# content and signed.
+#
+# Identical to ietf-lldp.v0.1.6-src2026.yaml except the
+# release:/cic_countersign: signature blocks are omitted (this file is
+# not itself a signed artifact).
+---
+metadata:
+  name: ietf-lldp
+  source: IEEE 802.1ABcu-2021 — LLDP YANG Data Model
+  version: v0.1.6
+  description: >
+    LLDP (Link Layer Discovery Protocol) building block — IEEE 802.1AB alapú
+    szomszéd discovery. ieee802-dot1ab-lldp YANG modul CIC adaptációja.
+    Interface szinten konfigurálja az LLDP hirdetést és exposolja a felfedezett
+    szomszédok adatait a state_surface-en.
+    v0.1.4: source/yang_source/yang_module javítva — a v0.1.3 tévesen
+    RFC 8516-ra hivatkozott (az egy CoAP hibakód, "Too Many Requests",
+    sosem volt LLDP YANG forrás). A helyes forrás IEEE 802.1ABcu-2021
+    (modul: ieee802-dot1ab-lldp). Lásd issue #42.
+    v0.1.5: lldp_neighbors kulcsa kompozittá bővítve (chassis_id +
+    port_id) — a korábbi, csak chassis_id kulcs ütközött, ha egy
+    switch több portja csatlakozott ugyanahhoz a szomszéd chassishoz
+    (pl. LAG/MLAG). Lásd #86. A chassis_id_subtype/port_id_subtype
+    (IEEE 802.1AB szerinti subtype-tagged azonosítók) SZÁNDÉKOSAN
+    nincs ebben a verzióban — nagyobb modellezési kérdés, nem ennek az
+    issue-nak a scope-ja.
+    v0.1.6: validatedBy javítva cic-yang-block-schema@v0.1.9-re — a tényleges
+    belső-struktúra validátor (korábban cic-primitives-re mutatott, ami nem
+    ellenőrzi a YANGBlock belső struktúráját). Ténylegesen ellenőrizve
+    jsonschema.validate()-tel a block_schema ellen. Lásd #88.
+
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ieee
+    - ieee8021ab
+    - lldp
+  validatedBy:
+    name: cic-yang-block-schema
+    version: v0.1.9
+
+spec:
+  kind: YANGBlock
+  yang_module: ieee802-dot1ab-lldp
+  yang_source: IEEE 802.1ABcu-2021
+  standalone: false     # mindig interfészhez kötött
+
+  config:
+    - name: lldp_enabled
+      type: boolean
+      required_on_create: false
+      default: true
+      description: LLDP engedélyezése ezen az interfészen
+      origin: ieee8021ab
+
+    - name: lldp_transmit
+      type: boolean
+      required_on_create: false
+      default: true
+      description: LLDP PDU küldés engedélyezése
+      origin: ieee8021ab
+
+    - name: lldp_receive
+      type: boolean
+      required_on_create: false
+      default: true
+      description: LLDP PDU fogadás engedélyezése
+      origin: ieee8021ab
+
+    - name: lldp_tlvs
+      type: list
+      item_type: string
+      required_on_create: false
+      description: >
+        Hirdetett TLV-k listája (management-address, port-description,
+        system-capabilities, system-description, system-name)
+      origin: ieee8021ab
+
+  state:
+    - name: lldp_neighbors
+      type: list
+      description: Felfedezett LLDP szomszédok listája
+      origin: ieee8021ab
+      item_fields:
+        - name: chassis_id
+          type: string
+          role: key
+          description: Szomszéd chassis azonosítója (MAC vagy IP)
+        - name: port_id
+          type: string
+          role: key
+          description: >
+            Szomszéd port azonosítója. role: key hozzáadva — chassis_id
+            önmagában nem egyedi, ha egy switch több portja
+            csatlakozik ugyanahhoz a szomszéd chassishoz (pl. LAG/MLAG).
+            Kompozit kulcs: chassis_id + port_id. Lásd #86.
+        - name: system_name
+          type: string
+          required_on_create: false
+          description: Szomszéd rendszer neve
+        - name: system_description
+          type: string
+          required_on_create: false
+          description: Szomszéd rendszer leírása
+        - name: port_description
+          type: string
+          required_on_create: false
+          description: Szomszéd port leírása
+        - name: capabilities
+          type: list
+          item_type: string
+          required_on_create: false
+          description: >
+            Hirdetett képességek (bridge, router, wlan-access-point, telephone,
+            docsis-cable-device, station-only, other)
+        - name: ttl_seconds
+          type: integer
+          description: Szomszéd bejegyzés érvényességi ideje másodpercben
+        - name: management_addresses
+          type: list
+          required_on_create: false
+          description: Szomszéd management IP cím(ek)
+          item_fields:
+            - name: address
+              type: string
+              role: key
+            - name: type
+              type: string
+              description: "inet: IPv4, inet6: IPv6"

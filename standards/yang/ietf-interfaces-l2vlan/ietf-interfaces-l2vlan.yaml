@@ -1,0 +1,121 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth: the latest release
+# (ietf-interfaces-l2vlan.v0.1.3-src2026.yaml) is frozen and signed, so it can
+# never be edited in place (tools/generate_latest.py
+# check_no_frozen_edits). Changes happen HERE first; when ready, a new
+# ietf-interfaces-l2vlan.vX.Y.Z-src<year>.yaml is cut FROM this file's current
+# content and signed.
+#
+# Identical to ietf-interfaces-l2vlan.v0.1.3-src2026.yaml except the
+# release:/cic_countersign: signature blocks are omitted (this file is
+# not itself a signed artifact).
+---
+metadata:
+  name: ietf-interfaces-l2vlan
+  source: RFC 8343 + IANA-IF-TYPE l2vlan
+  version: v0.1.3
+  description: >
+    VLAN interfész-entitás building block — az IEEE 802.1Q VLAN-t mint
+    ÖNÁLLÓ interfész-objektumot írja le (vlan_id, vlan_name, dhcp_service,
+    oper_status, mac_table_entries). Mindig fizikai VAGY logikai
+    interfészhez kötött, soha nem standalone.
+    #47 szerint kiválasztva a korábbi ietf-interfaces-vlan blokkból — az
+    ott egyszerre írt le két fogalmilag különböző dolgot: egy VLAN
+    interfész-entitást ÉS egy switchport VLAN policy-t (access/trunk/
+    hybrid mód, allowed_vlans, native_vlan). Ez utóbbi a testvér
+    cic-switchport-vlan blokkba került. A régi ietf-interfaces-vlan
+    (v0.1.5, aláírva) változatlanul megmarad — nincs mutálva, csak
+    idővel kivezetve az adapterek referenciáiból (külön lépés).
+    v0.1.1: a config.name mező átnevezve vlan_name-re — az örökölt
+    ietf-interfaces-base.name mező interfész-identitás (role: key,
+    required_on_create: true), ezt a blokk name mezője csendben
+    felülírta egy nem-kulcs, opcionális display-label mezővel, azonos
+    néven. Lásd #82.
+    v0.1.2: extends.version valós pinre cserélve (v0.0.dev helyett
+    ietf-interfaces-base@v0.1.4) — a placeholder eddig azt jelentette,
+    hogy a tooling csendben mindig a szülő legfrissebb verzióját vette,
+    ellenőrzés nélkül. Lásd #81.
+    v0.1.3: validatedBy javítva cic-yang-block-schema@v0.1.9-re — a tényleges
+    belső-struktúra validátor (korábban cic-primitives-re mutatott, ami nem
+    ellenőrzi a YANGBlock belső struktúráját). Ténylegesen ellenőrizve
+    jsonschema.validate()-tel a block_schema ellen. Lásd #88.
+
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - vlan
+  validatedBy:
+    name: cic-yang-block-schema
+    version: v0.1.9
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  interface_types:
+    - l2vlan              # IEEE 802.1Q VLAN (IANA-IF-TYPE, RFC 8343 által hivatkozva)
+
+  extends:
+    name: ietf-interfaces-base
+    version: v0.1.4
+  standalone: false       # mindig szülőhöz kötött (physical vagy logical)
+
+  config:
+    - name: vlan_id
+      type: vlan-id
+      range: "1..4094"
+      required_on_create: true
+      role: key
+      description: VLAN azonosító (IEEE 802.1Q)
+      origin: rfc8343
+
+    - name: vlan_name
+      type: string
+      required_on_create: false
+      description: >
+        VLAN neve / leírása (display label — NEM az örökölt
+        ietf-interfaces-base.name interfész-identitás mező, azzal
+        szándékosan más néven, hogy ne ütközzön a kulcs-szemantikával).
+      origin: cic-extension
+
+    - name: dhcp_service
+      type: ref
+      target_kind: DHCPService
+      required_on_create: false
+      description: >
+        Referencia egy DHCP service resource-ra amely erre a VLAN-ra oszt
+        IP címeket. Service réteg — máshol definiált, ez csak pointer.
+        Formátum: CIC address string (pl. "dhcp/server-01/pool-mgmt")
+      origin: cic-extension
+
+  state:
+    - name: oper_status
+      type: enum
+      values:
+        - up
+        - down
+        - unknown
+        - value: testing
+          conformance: not_implemented
+        - value: dormant
+          conformance: not_implemented
+        - value: not_present
+          conformance: not_implemented
+        - value: lower_layer_down
+          conformance: not_implemented
+      description: >
+        Operációs állapot. A teljes vokabulárium a base oper_status-ét
+        örökli (ietf-interfaces-base); ma csak up/down/unknown van
+        implementálva, a többi explicit not_implemented.
+      origin: rfc8343
+
+    - name: mac_table_entries
+      type: integer
+      description: Aktuális MAC tábla bejegyzések száma ezen a VLAN-on
+      origin: cic-extension

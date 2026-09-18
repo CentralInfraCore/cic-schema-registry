@@ -1,0 +1,95 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth: the latest release
+# (cic-switchport-vlan.v0.1.1-src2026.yaml) is frozen and signed, so it can
+# never be edited in place (tools/generate_latest.py
+# check_no_frozen_edits). Changes happen HERE first; when ready, a new
+# cic-switchport-vlan.vX.Y.Z-src<year>.yaml is cut FROM this file's current
+# content and signed.
+#
+# Identical to cic-switchport-vlan.v0.1.1-src2026.yaml except the
+# release:/cic_countersign: signature blocks are omitted (this file is
+# not itself a signed artifact).
+---
+metadata:
+  name: cic-switchport-vlan
+  source: CIC L2 switchport extension (nincs közvetlen RFC alap)
+  version: v0.1.1
+  description: >
+    Switchport VLAN policy building block — access/trunk/hybrid mód,
+    allowed_vlans, native_vlan. Ez egy Ethernet/LAG PORT konfigurációja
+    (mit enged be/ki taggelve/untaggelve), nem egy VLAN interfész-entitás
+    saját tulajdonsága — ezért nem `extends: ietf-interfaces-base`
+    (ugyanaz a "mixin, nincs saját interfész-identitása" minta, mint
+    ietf-ip-v4/ietf-ip-v6-nél: standalone: false, nincs extends, mindig
+    egy fizikai/LAG porthoz kötve, a port config-jára kompozit).
+    #47 szerint kiválasztva a korábbi ietf-interfaces-vlan blokkból — lásd
+    ../ietf-interfaces-l2vlan/README.md a testvér-blokk indoklásáért.
+    native_vlan-nak SZÁNDÉKOSAN nincs default értéke (a régi blokkban
+    `default: 1` volt) — a #47 javaslata szerint ez túl erős,
+    vendor-specifikus állítás egy standard building blockban; a defaultot
+    az adapternek/vendor-profilnak kell megadnia, nem a sémának.
+    v0.1.1: validatedBy javítva cic-yang-block-schema@v0.1.9-re — a tényleges
+    belső-struktúra validátor (korábban cic-primitives-re mutatott, ami nem
+    ellenőrzi a YANGBlock belső struktúráját). Ténylegesen ellenőrizve
+    jsonschema.validate()-tel a block_schema ellen. Lásd #88.
+
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - cic-extension
+    - vlan
+    - switchport
+  validatedBy:
+    name: cic-yang-block-schema
+    version: v0.1.9
+
+spec:
+  kind: YANGBlock
+  yang_module: cic-switchport-vlan
+  yang_source: CIC internal
+  standalone: false       # mindig egy fizikai/LAG porthoz kötve, sosem önálló
+
+  config:
+    - name: vlan_mode
+      type: enum
+      values: [access, trunk, hybrid]
+      required_on_create: false
+      default: access
+      description: >
+        Port VLAN működési mód.
+        access: egy VLAN, untagged forgalom.
+        trunk: több VLAN, tagged forgalom (allowed_vlans lista alapján).
+        hybrid: vegyes — egyes VLAN-ok tagged, mások untagged.
+      origin: cic-extension
+
+    - name: allowed_vlans
+      type: list
+      item_type: vlan-id
+      required_on_create: false
+      applicable_when:
+        field: vlan_mode
+        in: [trunk, hybrid]
+      description: >
+        Engedélyezett, TAGGED VLAN ID-k trunk/hybrid módban. Üres = minden
+        VLAN engedélyezett (trunk default). Hybrid módban a native_vlan
+        NEM ide tartozik — az az egy, untagged kivétel (lásd ott).
+      origin: cic-extension
+
+    - name: native_vlan
+      type: vlan-id
+      required_on_create: false
+      applicable_when:
+        field: vlan_mode
+        in: [trunk, hybrid]
+      description: >
+        Az egyetlen untagged/native VLAN trunk VAGY hybrid porton. Minden
+        más, allowed_vlans-ban felsorolt VLAN tagged. NINCS block-szintű
+        default (szemben a korábbi ietf-interfaces-vlan.v0.1.5-tel, ahol
+        default: 1 volt) — ez vendor-specifikus konvenció (pl. Cisco
+        "VLAN 1" default natív VLAN), amit az adapter/vendor-profil
+        adjon meg, ne a standard building block. Lásd #47.
+      origin: cic-extension

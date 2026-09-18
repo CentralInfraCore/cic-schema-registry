@@ -1,0 +1,169 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth: the latest release
+# (ietf-interfaces-physical.v0.1.8-src2026.yaml) is frozen and signed, so it can
+# never be edited in place (tools/generate_latest.py
+# check_no_frozen_edits). Changes happen HERE first; when ready, a new
+# ietf-interfaces-physical.vX.Y.Z-src<year>.yaml is cut FROM this file's current
+# content and signed.
+#
+# Identical to ietf-interfaces-physical.v0.1.8-src2026.yaml except the
+# release:/cic_countersign: signature blocks are omitted (this file is
+# not itself a signed artifact).
+---
+metadata:
+  name: ietf-interfaces-physical
+  source: RFC 8343 — A YANG Data Model for Interface Management
+  version: v0.1.8
+  description: >
+    Fizikai hálózati interfész building block — ethernetCsmacd és ieee8023adLag
+    (LAG/bond) típusok. Kiterjeszti az ietf-interfaces-base közös mezőit.
+    v0.1.6: state.duplex_actual és a notifications (link-up/link-down)
+    origin cic-extension-re javítva — az RFC 8343 normatív szövegében
+    nincs duplex leaf a base modulban (csak a nem-normatív A. függelék
+    illusztratív "ethernet" példamoduljában), és nincs YANG notification
+    definíció sem (csak egy link-up-down-trap-enable SNMP trap-vezérlő
+    config leaf, nem egy YANG notification statement). Lásd issue #63,
+    a #46 verifikációja közben talált, de akkor szándékosan a scope-on
+    kívül hagyott lelet.
+    v0.1.7: extends.version valós pinre cserélve (v0.0.dev helyett
+    ietf-interfaces-base@v0.1.4). Lásd #81.
+    v0.1.8: validatedBy javítva cic-yang-block-schema@v0.1.9-re — a tényleges
+    belső-struktúra validátor (korábban cic-primitives-re mutatott, ami nem
+    ellenőrzi a YANGBlock belső struktúráját). Ténylegesen ellenőrizve
+    jsonschema.validate()-tel a block_schema ellen. Lásd #88.
+
+  owner: Gabor Zoltan Sinko
+  tags:
+    - yang-block
+    - ietf
+    - rfc8343
+    - physical
+  validatedBy:
+    name: cic-yang-block-schema
+    version: v0.1.9
+
+spec:
+  kind: YANGBlock
+  yang_module: ietf-interfaces
+  yang_source: RFC 8343
+  extends:
+    name: ietf-interfaces-base
+    version: v0.1.4
+  interface_types:
+    - ethernetCsmacd      # standard Ethernet (RFC 8343)
+    - ieee8023adLag       # LAG / bond / port-channel (IEEE 802.3ad)
+
+  config:
+    - name: interface_type
+      type: enum
+      values: [ethernetCsmacd, ieee8023adLag]
+      required_on_create: true
+      description: >
+        RFC 8343 ifType altípus ezen a fizikai interfészen — melyik a
+        spec.interface_types listából. Ettől függ, mely mezők
+        alkalmazhatók (lásd applicable_when/required_when a lag_*
+        mezőkön). Az ietf-interfaces-logical logical_type mezőjének
+        mintáját követi.
+      origin: cic-extension
+
+    - name: speed
+      type: integer
+      unit: Mbps
+      required_on_create: false
+      description: >
+        Konfigurált port sebesség — null = auto-negotiate. Az RFC 8343
+        normatív base modulban a "speed" leaf READ-ONLY (config false,
+        "An estimate of the interface's current bandwidth"), nem
+        konfigurálható mező — a konfigurálható speed/duplex pár csak az
+        RFC A. függelékének nem-normatív, illusztratív "ethernet"
+        példamoduljában jelenik meg. Ez a mező CIC normalizáció.
+      origin: cic-extension
+
+    - name: duplex
+      type: enum
+      values: [full, half, auto]
+      required_on_create: false
+      default: auto
+      description: >
+        Duplex mód. Ugyanaz az indoklás, mint speed-nél: nincs normatív
+        RFC 8343 duplex leaf, csak a nem-normatív A. függelék
+        illusztrációjában — ez a mező CIC normalizáció.
+      origin: cic-extension
+
+    - name: connector_type
+      type: enum
+      values: [rj45, sfp, sfp_plus, qsfp, qsfp28, backplane, other]
+      required_on_create: false
+      description: Fizikai csatlakozó típusa
+      origin: cic-extension
+
+    # LAG-specifikus (ieee8023adLag esetén)
+    - name: lag_members
+      type: list
+      item_type: interface-ref
+      required_on_create: false
+      applicable_when:
+        field: interface_type
+        equals: ieee8023adLag
+      required_when:
+        field: interface_type
+        equals: ieee8023adLag
+      capability: lag
+      description: LAG taginterfészek nevei (csak ieee8023adLag típusnál)
+      origin: cic-extension
+
+    - name: lag_mode
+      type: enum
+      values: [active, passive, static]
+      required_on_create: false
+      default: active
+      applicable_when:
+        field: interface_type
+        equals: ieee8023adLag
+      capability: lag
+      description: LACP mód — active=küld, passive=fogad, static=nincs LACP
+      origin: cic-extension
+
+  state:
+    - name: speed_actual
+      type: integer
+      unit: Mbps
+      description: >
+        Tényleges tárgyalt sebesség. Az RFC 8343 base modul saját
+        READ-ONLY "speed" leaf-jének (ifSpeed/ifHighSpeed) valódi
+        megfelelője — ez a mező helyesen rfc8343-eredetű.
+      origin: rfc8343
+
+    - name: duplex_actual
+      type: enum
+      values: [full, half, unknown]
+      description: >
+        Tényleges duplex mód. Az RFC 8343 normatív szövegében nincs
+        duplex leaf a base modulban — csak a nem-normatív A. függelék
+        illusztratív "ethernet" példamoduljában jelenik meg egy hasonló,
+        szintén read-only mirror. Ez a mező CIC normalizáció, nem
+        közvetlen RFC 8343 tartalom.
+      origin: cic-extension
+
+  notifications:
+    - name: link-up
+      description: Interfész oper_status up-ra váltott
+      origin: cic-extension
+      payload:
+        - name: interface_name
+          type: string
+        - name: oper_status
+          type: string
+
+    - name: link-down
+      description: Interfész oper_status down-ra váltott
+      origin: cic-extension
+      payload:
+        - name: interface_name
+          type: string
+        - name: oper_status
+          type: string
