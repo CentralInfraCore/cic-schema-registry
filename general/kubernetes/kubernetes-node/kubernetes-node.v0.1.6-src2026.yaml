@@ -1,0 +1,551 @@
+---
+metadata:
+  name: KubernetesNode
+  version: v0.1.6
+  description: >
+    Kubernetes node mint infrastrukturális egység — machine konfiguráció, install,
+    kubelet, cross-domain referenciák (compute/network/storage).
+    Anchor: Talos MachineConfig v1alpha1 (dependency.yaml).
+    Mindig egy KubernetesCluster-hez tartozik.
+    v0.1.4: a kubernetes-adapter placeholder eltávolítva (issue #18
+    kapcsán talált, ugyanaz a hibaosztály, mint kubernetes-cluster-nél).
+    v0.1.3 szándékosan kihagyva — lásd kubernetes-cluster.v0.1.4 megjegyzését
+    a forrás cic-kubernetes @v0.1.3 regressziójáról (cic-kubernetes#3).
+    v0.1.5: a condition enum [True, False, Unknown] idézőjelbe téve
+    (["True", "False", "Unknown"]) — YAML 1.1 szerint az idézőjel
+    nélküli True/False boolean literál, nem string, miközben a mező
+    scalar_type: string és a valós Kubernetes NodeCondition.status is
+    string. Lásd #99.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - kubernetes
+    - node
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: "cic:core:ManagedEntity@v0.2.0"
+
+  # ── PolicySurface ─────────────────────────────────────────────────────────────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: KubernetesNode
+    namespace: "cic:kubernetes"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: Kubernetes node infrastruktúra egység
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      # ── Core (Talos machine.type) ─────────────────────────────────────────────
+      - name: machine_type
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: true
+        description: Node szerepe a clusterben
+        contract:
+          - type: enum
+            expression: [controlplane, worker]
+
+      - name: cluster_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:kubernetes:KubernetesCluster"
+        role: reference
+        required_on_create: true
+        description: A KubernetesCluster CIC address-e amelyhez ez a node tartozik
+
+      # ── Install disk (Talos machine.install) ─────────────────────────────────
+      - name: install_disk
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: true
+        description: >
+          Boot disk eszköz path VAGY StorageResource CIC address.
+          Eszköz path: "/dev/sda" (Talos natív — legtöbb esetben ez)
+          CIC address: "hypervisor/proxmox-01/local-lvm/vm-100-disk-0" (opcionális)
+
+      # ── Node identitás (Talos machine.network.hostname) ──────────────────────
+      - name: hostname
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        required_on_create: false
+        description: "Node hostname (default: compute_ref alapján generált)"
+
+      # ── Kubelet konfiguráció (Talos machine.kubelet) ──────────────────────────
+      - name: kubelet
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: object
+        role: config
+        required_on_create: false
+        description: kubelet konfiguráció
+        properties:
+          - name: extra_args
+            shape_type: object
+            required_on_create: false
+            description: Extra kubelet argumentumok
+          - name: node_labels
+            shape_type: object
+            required_on_create: false
+            description: Kubernetes node label-ek (key-value map)
+          - name: node_taints
+            shape_type: collection
+            collection_variant: list
+            required_on_create: false
+            description: Kubernetes node taint-ek
+            item_fields:
+              - name: key
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: value
+                shape_type: scalar
+                scalar_type: string
+                required_on_create: false
+              - name: effect
+                shape_type: scalar
+                scalar_type: string
+                contract:
+                  - type: enum
+                    expression: [NoSchedule, PreferNoSchedule, NoExecute]
+
+      # ── OS szintű konfiguráció (Talos machine.sysctls, machine.time) ──────────
+      - name: sysctls
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: object
+        role: config
+        required_on_create: false
+        description: Kernel paraméterek (key-value map, pl. net.ipv4.ip_forward=1)
+
+      - name: ntp_servers
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        required_on_create: false
+        description: NTP szerver(ek) időszinkronizációhoz
+        item_fields:
+          - name: server
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+      # ── Certifikát SANok (Talos machine.certSANs) ────────────────────────────
+      - name: cert_sans
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        required_on_create: false
+        description: Extra TLS SAN-ek a node certifikáthoz
+        item_fields:
+          - name: san
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: "provider-specific — see binding_surface.adapter_capabilities on KubernetesCluster"
+    freshness:
+      ttl: 30s
+      strategy: event-driven
+    nodes:
+
+      # ── Materializált cross-domain referenciák (D-005) ───────────────────────
+      - name: compute_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:compute:ComputeResource"
+        role: state
+        required_on_create: false
+        description: >
+          A tényleges ComputeResource CIC address-e amelyen ez a node fut.
+          Az adapter tölti ki miután a config materializálódott egy konkrét gépen.
+          Config-ban NEM szerepel — a Talos MachineConfig nem tudja melyik gépre megy (D-005).
+
+      - name: network_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:network:NetworkInterface"
+        role: state
+        required_on_create: false
+        description: >
+          A node elsődleges hálózati interfészének CIC address-e (cic-network domain).
+          Az adapter tölti ki a materializáció után.
+
+      - name: node_status
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: true
+        description: Kubernetes node kondíció (kubectl get node STATUS)
+        contract:
+          - type: enum
+            expression: [Ready, NotReady, SchedulingDisabled, Unknown]
+
+      - name: kubelet_version
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: Futó kubelet verzió
+
+      - name: os_version
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: Node operációs rendszer verzió
+
+      - name: allocatable_cpu
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: operational
+        required_on_create: false
+        description: Schedulable CPU kapacitás (pl. "3920m")
+
+      - name: allocatable_memory
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: operational
+        required_on_create: false
+        description: Schedulable memória kapacitás (pl. "7.5Gi")
+
+      - name: allocated_pods
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        required_on_create: false
+        description: Aktuálisan futó Pod-ok száma
+
+      - name: conditions
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: state
+        required_on_create: false
+        description: Node condition-ök (MemoryPressure, DiskPressure, PIDPressure, Ready)
+        item_fields:
+          - name: type
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: status
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: ["True", "False", "Unknown"]
+          - name: reason
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: cordon
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: action
+        idempotent: true
+        description: Node megjelölése SchedulingDisabled — új Pod nem kerül rá
+        input: null
+        output:
+          - name: node_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: uncordon
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: action
+        idempotent: true
+        description: Node visszaengedése a schedulingba
+        input: null
+        output:
+          - name: node_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: drain
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Futó Pod-ok kitelepítése a node-ról (graceful)
+        input:
+          - name: grace_period_seconds
+            shape_type: scalar
+            scalar_type: integer
+            default: 60
+          - name: ignore_daemonsets
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+        output:
+          - name: evicted_pods
+            shape_type: scalar
+            scalar_type: integer
+
+      - name: reboot
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        capability: node_reboot
+        description: Node újraindítása (graceful drain + reboot)
+        input:
+          - name: mode
+            shape_type: scalar
+            scalar_type: string
+            default: default
+            contract:
+              - type: enum
+                expression: [default, powercycle]
+        output: null
+
+      - name: upgrade
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        capability: node_upgrade
+        description: Node OS/Kubernetes verzió frissítése
+        input:
+          - name: target_version
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: true
+        output:
+          - name: os_version
+            shape_type: scalar
+            scalar_type: string
+          - name: kubelet_version
+            shape_type: scalar
+            scalar_type: string
+
+      - name: reset
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        capability: node_reset
+        description: "Node visszaállítása gyári állapotba — MANUAL ONLY (confirm: mandatory)"
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            required_on_create: true
+          - name: graceful
+            shape_type: scalar
+            scalar_type: boolean
+            default: true
+        output: null
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: node-status-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: warning
+        description: Node kondíció megváltozott
+        payload:
+          - name: previous_status
+            shape_type: scalar
+            scalar_type: string
+          - name: current_status
+            shape_type: scalar
+            scalar_type: string
+
+      - name: node-pressure-warning
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: threshold
+        severity: warning
+        description: Node erőforrás nyomás (MemoryPressure, DiskPressure, PIDPressure)
+        payload:
+          - name: condition_type
+            shape_type: scalar
+            scalar_type: string
+          - name: reason
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-kubernetes:clusters/cluster={provider}, {location}, {cluster_id}/nodes/node={id}"
+        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={provider}, {location}, {cluster_id}/nodes/node={id}"
+        logical_id: "cic:kubernetes:{provider}:{location}:{cluster_id}:node:{id}"
+        namespace: "cic:kubernetes"
+        key_fields:
+          - name: provider
+            type: string
+          - name: location
+            type: string
+          - name: cluster_id
+            type: string
+            description: A szülő KubernetesCluster id-ja
+          - name: id
+            type: string
+            description: Node neve (Kubernetes node name)
+    # v0.1.4 (issue #18 kapcsán): a korábbi `adapter: kubernetes-adapter`
+    # placeholder eltávolítva — ugyanaz a hibaosztály, mint a
+    # kubernetes-cluster.yaml-ben (lásd ott a részletes indoklást és a
+    # cic-kubernetes#3 hivatkozást). A `provider`-önkénti valódi
+    # adapter-mátrix a szülő KubernetesCluster.binding_surface-én él
+    # (adapter_capabilities.known_adapters) — a node ugyanazokat az
+    # adaptereket használja, amik a clustert kezelik, nincs itt külön
+    # node-szintű mátrixra szükség.
+
+# ── Relationships ─────────────────────────────────────────────────────────────
+relationships:
+  - name: member_of
+    from: KubernetesNode
+    to: KubernetesCluster
+    cardinality: many-to-one
+    via:
+      field: KubernetesNode.config_surface.cluster_ref
+    description: Minden node pontosan egy clusterhez tartozik.
+
+  - name: runs_on
+    from: KubernetesNode
+    to: ComputeResource
+    domain: cic-compute
+    cardinality: one-to-one
+    via:
+      field: KubernetesNode.state_surface.compute_ref
+    description: >
+      A node egy ComputeResource-on fut. State-surface-en jelenik meg —
+      az adapter tölti ki materializáció után (D-005).
+release:
+  createdBy:
+    name: Gabor Zoltan Sinko
+    email: sinkog@centralinfracore.hu
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICBjCCAaygAwIBAgIUSnRMR6RPnEbg296XWPOqq/u5PCwwCgYIKoZIzj0EAwIw
+
+      QzELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxGTAXBgNV
+
+      BAMMEENJQyBEZXZlbG9wZXIgQ0EwHhcNMjYwMzIwMTMyMjU5WhcNMjYxMjMxMTMy
+
+      MjU5WjBFMQswCQYDVQQGEwJIVTEZMBcGA1UECgwQQ2VudHJhbEluZnJhQ29yZTEb
+
+      MBkGA1UEAwwSR2Fib3IgWm9sdGFuIFNpbmtvMFkwEwYHKoZIzj0CAQYIKoZIzj0D
+
+      AQcDQgAEIG2CVmTfmLB9pLLclj7YmP2eedAjklpy4LGrU2ijoiy6Xqpuybv7OgJe
+
+      i+ez31s65NEV8+X/ByeX1cstR988z6N8MHowCQYDVR0TBAIwADAdBgNVHQ4EFgQU
+
+      yZN6AIX/TNnIJ9GwAa/NRN3ujHAwHwYDVR0jBBgwFoAUXn6CHYzPUqU4JVP8g+OS
+
+      WeDYjhcwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEF
+
+      BQcDBDAKBggqhkjOPQQDAgNIADBFAiEA+bFzXRoJ4PCQbhAAtpkcMjt0vNj5rEW0
+
+      lOMBGDNyaWkCIB1vmM7PcZzv/c9bIrxF5kqv6QXomouhByUfeNUTbpKW
+
+      -----END CERTIFICATE-----
+
+      '
+  build_hash: tBF0rIu/8j+yoKQptKIllo6yG5m77irmhYDe5P06K98=
+  sign: vault:v1:MEUCIQCR4roYyHC40u+5eN/gTSbs83/z9fIrNSyMDPu01RxqLgIgcfwoNLT42VCkICAX6NveoJIGDVVrZqwUEokZ8hhzEvk=
+cic_countersign:
+  authority:
+    name: CIC Source CA
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICMDCCAdagAwIBAgIUStyiR+g40cCBauhK8nOUNLIj0iIwCgYIKoZIzj0EAwIw
+
+      PjELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNV
+
+      BAMMC0NJQyBSb290IENBMB4XDTI2MDMyMDEzMjIzOVoXDTI2MTIzMTEzMjIzOVow
+
+      QDELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFjAUBgNV
+
+      BAMMDUNJQyBTb3VyY2UgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARuSq7+
+
+      gRkRwiZYbZBp8aWzFyK36YMBQ58PwUTtoL6Gzu5QZS2tDGLWvFqDY/BRavqcOfel
+
+      I6y+P9WlhntH4oI6o4GvMIGsMB0GA1UdDgQWBBTXWkl+CqRrqaEpr/fUmVHc6B7I
+
+      OTBnBgNVHSMEYDBegBSiQtbuMt81/vweajD7O4ogMMaKGqFCpEAwPjELMAkGA1UE
+
+      BhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBS
+
+      b290IENBggIQBDASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBhjAK
+
+      BggqhkjOPQQDAgNIADBFAiEA25x0lXd37TAiRROTXQtqXNoMiwl0wCZln3m/DMBR
+
+      YcQCID3gc64TnA9Y7QL96lY1nYhAl2NWeMjK8pFXXN2Dymuf
+
+      -----END CERTIFICATE-----
+
+      '
+    root_certificate: "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number: 4100\
+      \ (0x1004)\n        Signature Algorithm: ecdsa-with-SHA256\n        Issuer: C=HU, O=CentralInfraCore,\
+      \ CN=CIC Root CA\n        Validity\n            Not Before: Mar 19 12:59:30 2026 GMT\n         \
+      \   Not After : Dec 31 23:59:59 2026 GMT\n        Subject: C=HU, O=CentralInfraCore, CN=CIC Root\
+      \ CA\n        Subject Public Key Info:\n            Public Key Algorithm: id-ecPublicKey\n     \
+      \           Public-Key: (256 bit)\n                pub:\n                    04:cd:07:56:3a:e7:28:41:c4:99:76:3a:e8:5e:90:\n\
+      \                    39:54:be:e7:7d:42:ab:65:49:05:f0:f8:84:63:5f:\n                    5f:05:22:56:d1:29:e0:ac:7d:67:e3:cf:ac:8f:9c:\n\
+      \                    e2:be:71:6f:a8:91:00:e4:6c:af:1f:f2:86:3f:6d:\n                    03:1d:36:c7:f4\n\
+      \                ASN1 OID: prime256v1\n                NIST CURVE: P-256\n        X509v3 extensions:\n\
+      \            X509v3 Subject Key Identifier: \n                A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \            X509v3 Authority Key Identifier: \n                keyid:A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \                DirName:/C=HU/O=CentralInfraCore/CN=CIC Root CA\n                serial:10:04\n\
+      \            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:3\n          \
+      \  X509v3 Key Usage: critical\n                Digital Signature, Certificate Sign, CRL Sign\n \
+      \   Signature Algorithm: ecdsa-with-SHA256\n    Signature Value:\n        30:45:02:20:51:b0:f6:e5:50:ac:3b:f8:2e:d1:af:7a:7a:b3:\n\
+      \        42:7b:5d:8e:1d:d0:7d:e0:5c:60:48:42:aa:6b:f0:24:8b:a0:\n        02:21:00:d8:c6:94:12:db:f1:a8:b8:3b:45:46:b9:30:88:36:\n\
+      \        6c:f3:e2:56:76:02:35:f6:17:0b:b5:3a:7b:80:5d:16:24\n-----BEGIN CERTIFICATE-----\nMIICHDCCAcKgAwIBAgICEAQwCgYIKoZIzj0EAwIwPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMB4X\nDTI2MDMxOTEyNTkzMFoXDTI2MTIzMTIzNTk1OVowPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMFkw\nEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzQdWOucoQcSZdjroXpA5VL7nfUKrZUkF\n\
+      8PiEY19fBSJW0SngrH1n48+sj5zivnFvqJEA5GyvH/KGP20DHTbH9KOBrzCBrDAd\nBgNVHQ4EFgQUokLW7jLfNf78Hmow+zuKIDDGihowZwYDVR0jBGAwXoAUokLW7jLf\n\
+      Nf78Hmow+zuKIDDGihqhQqRAMD4xCzAJBgNVBAYTAkhVMRkwFwYDVQQKDBBDZW50\ncmFsSW5mcmFDb3JlMRQwEgYDVQQDDAtDSUMgUm9vdCBDQYICEAQwEgYDVR0TAQH/\n\
+      BAgwBgEB/wIBAzAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwIDSAAwRQIgUbD2\n5VCsO/gu0a96erNCe12OHdB94FxgSEKqa/Aki6ACIQDYxpQS2/GouDtFRrkwiDZs\n\
+      8+JWdgI19hcLtTp7gF0WJA==\n-----END CERTIFICATE-----\n"
+  signed_payload: build_hash
+  sign: vault:v1:MEYCIQDnujWC0fFmYr2CKlsvPw39ZgkBVdubzIRMNe6HtCQYCgIhAJOVopweSvkdGN/yMaiOqUQJFIZKs6Qzj4gUbbZGYhdJ
+  workflow: cic-schema-registry-sign@v1
+  ts: '2026-09-18T19:34:06Z'
