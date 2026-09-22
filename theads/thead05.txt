@@ -1,0 +1,116 @@
+Ez a szál a providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+javításából nőtt ki, és menet közben egy szinttel feljebb futott — a cic-primitives
+Address atomjáig.
+
+Kiindulás: a fájl eredetileg kind: AdapterContract volt, egy külön korrekció-
+dokumentum, ami a `domain` kulcson keresztül csak visszahivatkozott a canonical
+StorageResource-ra, és mező-szintű "support: full/degraded/unsupported" +
+"reason:" prózával írta le az OCI megfelelést. Ez rossz kind volt: az
+AdapterContract ebben a registryben mindig az observe/apply/watch interfész-
+szerződést jelenti, amit BÁRMELYIK konkrét implementáció teljesít (lásd
+general/storage/storage-adapter/README.md) — sosem egyetlen provider mező-
+szintű megfelelés-térképét.
+
+A javítás: kind: DomainComposition, identity.base / spec.base.ref =
+"cic:storage:StorageResource@v0.1.5" (tools/registrylib/identity.py pin-
+formátuma szerint — a docstring saját példája is namespace-agnosztikus:
+"cic:storage:StorageResource@v1.0.0"). A nem támogatott mezőt (filesystem)
+strukturálisan, access.conformance: not_implemented jelöli, nem prózával.
+
+Ellenőriztem tools/registrylib/coverage.py-t: identity.base / DomainComposition
+esetén a szabály explicit full restatement (coverage.py:210-213, szó szerint),
+szemben a YANG extends implicit öröklésével. Ez szándékos, dokumentált döntés
+— nem hiba, amit ki kellene javítani a provider-fájl kedvéért.
+
+Azt is ellenőriztem, hogy a "registry_validate zöld" állítás mennyit ér:
+semennyit. tools/registrylib/paths.py _FILENAME_RE numerikus
+vMAJOR.MINOR.PATCH-srcYEAR.yaml végződést vár; a working-copy fájlnevünk
+(storage-resource.yaml, .dev verzió) erre nem illeszkedik. Közvetlenül
+lefuttatva iter_schema_dirs()-t: a providers/oracle-cloud könyvtár nincs a
+talált 30 séma-könyvtár között, list_versions() üres listát ad rá. Vagyis
+check_base_references() — ami csak iter_schema_dirs() eredményein megy végig
+— soha nem éri el ezt a fájlt, amíg release nem lesz belőle. Ugyanez a státusz
+egyébként minden domain-objektum jelenlegi working copy-jára igaz (lásd a
+canonical storage-resource.yaml saját fejléc-kommentjét) — nem egyedi hiba.
+
+Közvetlenül meghívva check_coverage()-et (a discovery-réteg megkerülésével) a
+base (StorageResource@v0.1.5) és a fájl között: eredetileg 3 violation jött ki
+— a notification_surface három eseménye (attach-state-changed,
+threshold-exceeded, health-degraded) hiányzott a restatementből. Ez valódi
+mulasztás volt, nem nyitott kérdés: pótoltam, most 0 violation.
+
+Eddig minden a StorageResource szintjén dőlt el. Innen indult a mélyebb rész.
+
+A canonical StorageResource binding_surface.addresses[].key_fields listája
+(backend/provider/location/id) jelöli ki, hogy egy OCI-specializációnak
+(StorageResourceOracleCloud) hogyan kellene kimondania: backend == cloud,
+provider == oci. Megnéztem a cic-primitives Address atomjának formális
+definícióját a jelen repóban aláírt kernel bundle-ben
+(general/primitives/cic-primitives/cic-primitives.v0.2.0-src2026.yaml,
+~647-737. sor, "id: address"): a fields.properties kizárólag schema_path,
+api_path, logical_id, namespace, note. key_fields nincs benne.
+
+Ez elsőre "dokumentálatlan, kitalált konstrukció"-nak tűnt. Tévedés volt —
+csak a rossz repóban kerestem. A cic-primitives forrás-repóban (nem ez a
+registry, hanem a tervező repo, itt: primitives-group/primitives, nem
+klónozva ebbe a workdir-be) van egy proposals/atom-grammar/README.md, ami
+NÉV SZERINT ismeri a key_fields-et — csak nem azért, amiért mi kerestük.
+Idézet (README.md:124-129):
+
+  "Miért item_key és nem key_fields. A key_fields név a korpuszban már
+  foglalt, és mást jelent: a binding_surface.addresses[].key_fields az
+  Address kulcskomponenseit sorolja fel {name, type, values} objektumként
+  (compute-resource.yaml:489). A két fogalom nem ugyanaz és nem is azonos
+  alakú. Az első változat ezt a nevet vitte el — a korpusz futtatása derítette
+  ki, nem az átolvasás."
+
+Vagyis a proposal a saját céljára (Shape-collection összetett kulcsa, P0.1)
+tudatosan MÁS nevet választott (item_key), pont azért, mert a key_fields nevet
+már foglaltnak látta a corpuson mérve. A tervezési tudás tehát létezik — de
+csak mint névütközés-elkerülési indoklás, nem mint saját maga megoldandó
+kérdés.
+
+Ez fontos különbség. Végignéztem a proposal saját, explicit "Amit szándékosan
+NEM zárok le" szakaszát (README.md:331-392) — ott vannak felsorolva a
+tudottan nyitva hagyott kérdések: a capability/conformance mechanizmus helye,
+az access.inherit háromállapotúsága, és — külön kiemelve — "Az Address kontra
+ManagedEntity ellentmondás": address.yaml szerint "an entity may exist
+without an address", míg managed-entity.yaml binding_surface: mode: required-
+et ír elő. Ez utóbbi közeli rokona a mi kérdésünknek, de nem ugyanaz.
+
+A key_fields Shape/Role/Contract-formalizációja NINCS ezen a listán. Vagyis ez
+nem egy már ismert, csak el nem intézett tétel — ez egy a proposal saját
+nyitott-kérdés-listáján sem szereplő, új rés, amit a mi OCI-specializációs
+gyakorlatunk hozott fel elsőként konkrét reprodukálható formában.
+
+A konkrét reprodukáló eset:
+
+  StorageResource
+    backend  ∈ {hypervisor, san, cloud}
+    provider ∈ {aws, gcp, azure, hcloud, do, ovh, oci}
+           |
+           | specializáció
+           v
+  StorageResourceOracleCloud
+    backend  = cloud    (kellene)
+    provider = oci      (kellene)
+
+Erre ma nincs séma-szintű nyelv. A jelenlegi primitívkészlettel (Shape,
+Role, Contract, Access, Identity, Address) nem lehet szabályosan kimondani
+egy leszármazott DomainComposition Address-kulcsainak szűkítését, mert maga
+az Address-kulcs (key_fields) fogalom nincs Shape-ként deklarálva, nincs
+grammar/contract-validációja, és a jelen repóban aláírt kernel bundle nem
+hordozza primitívként.
+
+Ez nem storage-specifikus. A binding_surface.addresses[].key_fields mintát
+minden domain-objektum használja ebben a registry-ben (compute, network,
+kubernetes is) — tehát ez a réteg mindegyiket érinti, nem csak az OCI storage
+mappinget.
+
+Amit ebből most NEM csinálok: nem írok bele a
+providers/oracle-cloud/storage/storage-resource/storage-resource.yaml-ba
+semmilyen key_fields-narrowing kísérletet (se "fixed:", se Shape+Contract
+formában), mert azzal egy leaf provider-fájlban döntenék el egy kernel-design
+kérdést. Ez a fájl a policy_surface/binding_surface/derivation_chain-t
+szándékosan, dokumentáltan nem ismétli meg — ez a döntés így marad, amíg ez a
+kérdés nincs lezárva.

@@ -1,0 +1,508 @@
+metadata:
+  name: StorageResourceOracleCloud
+  version: v0.1.dev
+  description: >
+    Oracle Cloud Infrastructure altípusa a canonical StorageResource-nek
+    (general/storage/storage-resource/), az OCI Volume + VolumeAttachment +
+    Monitoring ellen verifikálva. Alapja a theads/thead04.txt review 7/7
+    független ellenőrzéssel megerősített állítása (5 CONFIRMED, 1 részben,
+    1 WRONG — lásd thead04.meta.yaml).
+
+    Korábbi verzió (ugyanezen path alatt) `kind: AdapterContract`-ként,
+    külön korrekció-dokumentumként írta le ugyanezt a tartalmat, a `domain`
+    kulcson keresztül csak visszahivatkozva a canonical StorageResource-ra
+    — ez tévesen az `AdapterContract` kind jelentését (observe/apply/watch
+    interfész-szerződés BÁRMELYIK implementációhoz, lásd
+    general/storage/storage-adapter/README.md) helyettesítette be egy
+    mező-szintű megfelelés-térképpel, holott a feladat a sémát leíró
+    objektum öröklése volt, nem az objektum-instance szintű dokumentálása.
+
+    Ez a verzió ehelyett valódi `kind: DomainComposition` séma, ami a
+    `spec.identity.base` / `spec.base.ref` pin-en (tools/registrylib/
+    identity.py, "cic:storage:StorageResource@v0.1.5" formátum) keresztül
+    örökli magát a StorageResource séma-objektumot — ugyanazzal a
+    mechanizmussal, ahogy a StorageResource maga örököl a
+    cic:core:ManagedEntity kernel-aggregátumtól. A nem támogatott mezőt
+    (filesystem) strukturálisan, `access.conformance: not_implemented`
+    narrowing-gal jelöli — ezt tools/registrylib/coverage.py már ismeri
+    (D-012 "acknowledged conformance" halmaz), nem prózai `reason:`
+    stringgel.
+
+    NYITOTT, NEM VERIFIKÁLT PONT: ez az első eset a corpuson belül, hogy
+    egy `identity.base` pin nem kernel-aggregátumra (cic:core:*), hanem
+    egy másik domain-objektumra (cic:storage:StorageResource) mutat.
+    identity.py resolve_pin()-je formailag elfogadja (a pin-formátum
+    namespace-agnosztikus, a docstring saját példája is
+    "cic:storage:StorageResource@v1.0.0"), és tools/registry_validate.py
+    check_base_references() ténylegesen kezel domain-to-domain base
+    pineket (nem csak kernel bundle-t) — ez implementálva van, nem
+    scaffold. A DE: ez a fájl maga JELENLEG kívül esik ezen az
+    ellenőrzésen, mert a fájlnév (`storage-resource.yaml`, nincs
+    `-src<év>` végződés) nem illeszkedik a tools/registrylib/paths.py
+    `_FILENAME_RE`-jére — ugyanaz a "working copy, tooling által
+    szándékosan figyelmen kívül hagyva, amíg release nem lesz belőle"
+    konvenció, amit a canonical storage-resource.yaml saját fejléce is
+    leír. Emiatt a "registry_validate zöld" tény korábban tévesen lett
+    idézve itt bizonyítékként — valójában a fájl láthatatlan a scanner
+    számára, nem validálva lett. Közvetlenül meghívva
+    tools/registrylib/coverage.py check_coverage()-öt (a discovery-réteg
+    megkerülésével) a base (StorageResource@v0.1.5) és e fájl között:
+    0 violation a config_surface/state_surface/operation_surface
+    restatementre — ez tényleg helyes. Ha/amikor ez a fájl release-be
+    kerül (-src<év>.yaml néven), a check_base_references() a fenti,
+    valódi mechanizmuson fut majd le ellene.
+
+    policy_surface / binding_surface / derivation_chain szándékosan
+    NINCS itt megismételve — ezeket tools/registrylib/coverage.py
+    `_NODE_LIST_KEYS`-e nem ellenőrzi (csak config_surface/
+    state_surface/operation_surface/notification_surface node-listáit),
+    tehát a hiányuk nem okoz coverage violationt még release után sem.
+    Ez viszont csak a tooling vakfoltja, nem architekturális döntés —
+    az "explicit full restatement, nincs implicit öröklés"
+    dokumentált elv (coverage.py check_coverage() docstring) szerint
+    ez a három surface is logikailag idetartozna. Nyitva hagyva, mert
+    OCI-specifikus tartalom nélkül puszta másolás lenne (a
+    binding_surface `cloud` backend address-kulcsa amúgy is
+    provider-paraméterezett, nem igényel OCI-specifikus szűkítést).
+
+    A filesystem mezőnél talált, MÉG NYITOTT ellentmondás a
+    general/storage/storage-adapter/ generikus cloud-backend
+    capabilities-listájával (lásd a mező access/description mezőjét)
+    továbbra is fennáll, változatlanul.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - storage
+    - oracle-cloud
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: StorageResource
+    ref: "cic:storage:StorageResource@v0.1.5"
+
+  provider_resources:
+    - core.Volume
+    - core.VolumeAttachment
+    - monitoring.Metric
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: StorageResourceOracleCloud
+    namespace: "cic:storage"
+    version: v0.1.dev
+    base: "cic:storage:StorageResource@v0.1.5"
+    abstract: false
+    description: Oracle Cloud Infrastructure altípusa a platform-agnosztikus block volume erőforrásnak
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      - name: size_gb
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: config
+        mandatory: true
+        description: Volume mérete GB-ban. OCI Volume.sizeInGBs — közvetlen, 1:1.
+        contract:
+          - type: range
+            expression: "1..65536"
+
+      - name: access_mode
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: >
+          Hozzáférési mód. OCI-n nincs egyetlen mező — az isReadOnly +
+          isShareable Volume-mezők kombinációjából vezethető le
+          (read_write_once/read_only_many/read_write_many → a kettő
+          párja).
+        contract:
+          - type: enum
+            expression: [read_write_once, read_only_many, read_write_many]
+        capability_values:
+          read_only_many: multi_attach
+          read_write_many: multi_attach
+
+      - name: filesystem
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: filesystem
+        access:
+          conformance: not_implemented
+        description: >
+          Filesystem típus (none = raw block device). Az OCI Volume
+          API-nak (és általában a block storage API-knak: EBS,
+          Persistent Disk) nincs filesystem-fogalma — a fájlrendszert a
+          guest OS hozza létre a csatolás után (mkfs), ez OCI API-szinten
+          nem látszik.
+          NYITOTT ELLENTMONDÁS: a general/storage/storage-adapter/
+          generikus adapter cloud-backend capabilities-listája ma
+          explicit TÁMOGATOTTKÉNT sorolja fel a filesystem-et [aws, gcp,
+          azure, hcloud, do, ovh, oci] providerekre (storage-adapter.yaml,
+          capabilities: [filesystem, ...] a cloud backend alatt) — ez a
+          narrowing ezzel szemben áll, nem lett összhangba hozva vele,
+          mert az a fájl saját, külön kérdés (nem ennek a fájlnak a
+          felelőssége eldönteni, melyik állítás a helyes).
+        contract:
+          - type: enum
+            expression: [ext4, xfs, ntfs, btrfs, none]
+
+      - name: encryption
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: false
+        capability: encryption
+        description: >
+          At-rest titkosítás engedélyezve. OCI minden Block/Boot
+          Volume-ot kötelezően AES-256-tal titkosít at-rest —
+          "unencrypted" állapot nem létezik. A boolean default:false
+          OCI-n értelmezhetetlen intent; a választás csak Oracle-managed
+          vs. customer-managed kulcs között van (lásd
+          encryption_key_ref). Canonical modell-váltás (encryption_mode
+          enum) javasolt, de nem ennek a fájlnak a scope-ja — lásd
+          theads/thead04.meta.yaml "nem nyitva" szakasza, a shape ezért
+          itt is változatlan marad.
+
+      - name: encryption_key_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: encryption
+        description: Titkosítási kulcs referencia (KMS key ID vagy path). OCI kmsKeyId — közvetlen.
+
+      - name: tags
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: >
+          Platform tag-ek. OCI freeformTags + definedTags —
+          normalizálható egységes listává.
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: storage-adapter
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: attach_state
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: >
+          Aktuális csatolási állapot — adapter normalizálja a platform
+          értékeket. attaching/detaching: tranziens állapot. error: I/O
+          hiba, adapter nem tudja kezelni a volume-ot. OCI-n nincs
+          egyetlen mező — a VolumeAttachment.lifecycleState értékek
+          aggregációjából vezethető le (nincs 1:1 megfelelő OCI
+          enum-érték minden canonical állapotra).
+        contract:
+          - type: enum
+            expression: [attached, detached, attaching, detaching, error, unknown]
+
+      - name: attached_to
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:compute:ComputeResource"
+        role: state
+        optional: true
+        access:
+          conformance: deprecated
+        description: >
+          ELAVULT (v0.1.3, öröklődik a canonicalból) — csak single-attach
+          (access_mode: read_write_once) esetén megbízható. multi_attach
+          módban használd az attachments listát. OCI-n
+          VolumeAttachment.instanceId — csak single-attach esetén
+          megbízható (a canonical mező is deprecated ugyanezen okból,
+          lásd issue #15); multi_attach esetén az attachments listát kell
+          használni.
+
+      - name: attachments
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: state
+        optional: true
+        description: >
+          Aktuális csatolások — minden csatolt ComputeResource saját
+          elemként, saját állapottal. OCI-n ListVolumeAttachments hívás
+          eredményéből áll össze, nem egyetlen mezőből.
+        item_fields:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:compute:ComputeResource"
+            role: key
+            description: A csatolt ComputeResource address-e
+          - name: state
+            shape_type: scalar
+            scalar_type: string
+            contract:
+              - type: enum
+                expression: [attached, detached, attaching, detaching, error, unknown]
+            description: Ennek az egy csatolásnak az állapota
+
+      - name: size_actual_gb
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: state
+        optional: true
+        description: Tényleges volume méret (resize után frissül). OCI Volume.sizeInGBs — közvetlen.
+
+      - name: usage_bytes
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: usage_metrics
+        description: >
+          Felhasznált tárhely byte-ban (csak filesystem esetén
+          értelmezett). Csak OCI Monitoring service-en keresztül érhető
+          el (oci_blockstore metrikák), nem a Volume API-ból közvetlenül
+          — külső observer szükséges hozzá.
+
+      - name: iops_read
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: usage_metrics
+        description: OCI Monitoring service (VolumeReadThroughput/VolumeReadOps metrikák), nem a Volume API.
+
+      - name: iops_write
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        capability: usage_metrics
+        description: OCI Monitoring service (VolumeWriteThroughput/VolumeWriteOps metrikák), nem a Volume API.
+
+      - name: health
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        optional: true
+        capability: health_monitoring
+        description: >
+          Az OCI Volume API-ban nincs közvetlen "health" mező — a
+          lifecycle state (AVAILABLE/TERMINATING/FAULTY stb.) és az OCI
+          Monitoring alarm-jelzések aggregációjából vezethető le, nem
+          egyetlen API-hívásból.
+        contract:
+          - type: enum
+            expression: [ok, degraded, failed, unknown]
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: attach
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Volume csatolása compute resource-hoz. OCI AttachVolume — közvetlen.
+        input:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+            description: ComputeResource address
+        output:
+          - name: attach_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: detach
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: true
+        description: >
+          Volume lecsatolása. multi_attach esetén target NEM opcionális a
+          gyakorlatban. OCI DetachVolume — közvetlen.
+        input:
+          - name: target
+            shape_type: scalar
+            scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:compute:ComputeResource"
+            optional: true
+            description: >
+              Melyik csatolást szüntesse meg — single-attach esetén
+              elhagyható, multi_attach esetén a gyakorlatban kötelező.
+          - name: force
+            shape_type: scalar
+            scalar_type: boolean
+            default: false
+        output:
+          - name: attach_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: delete
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: "Volume végleges törlése — MANUAL ONLY (confirm: mandatory). OCI DeleteVolume — közvetlen."
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre — confirm: false nem elfogadható bemenet, nem
+                  "megerősítés hiánya".
+        output: null
+
+      - name: resize
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        capability: resize
+        description: >
+          Volume méret növelése. Csökkentés NEM támogatott
+          (platform-agnosztikus korlát). OCI UpdateVolume(sizeInGBs) —
+          OCI is csak növelést enged (nem lehet csökkenteni), ami
+          pontosan megegyezik a canonical mező saját "resize kizárólag
+          növelhet" kontraktusával (issue #17 must-szabálya) — jó
+          szemantikai egyezés, a mezőnév/kifejezés-forma eltér
+          (sizeInGBs vs. size_gb), de a shape (integer, must-kontraktus)
+          változatlan marad itt is.
+        input:
+          - name: size_gb
+            shape_type: scalar
+            scalar_type: integer
+            mandatory: true
+            contract:
+              - type: must
+                expression: "size_gb >= ../../state_surface/size_actual_gb"
+                error_message: >
+                  size_gb nem lehet kisebb, mint a jelenlegi
+                  size_actual_gb — resize kizárólag növelhet.
+        output:
+          - name: size_actual_gb
+            shape_type: scalar
+            scalar_type: integer
+
+      - name: snapshot
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        capability: snapshot
+        description: >
+          Pillanatkép készítése — az eredmény egy adapter-specifikus
+          snapshot ref. A snapshot NEM önálló StorageResource. OCI
+          CreateVolumeBackup — más objektum-modell: az eredmény egy OCI
+          Boot/Volume Backup resource, nem maga a StorageResource.
+        input:
+          - name: snapshot_name
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: snapshot_ref
+            shape_type: scalar
+            scalar_type: string
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  # Explicit full restatement — check_coverage() (tools/registrylib/coverage.py)
+  # DomainComposition/identity.base esetén megköveteli, hogy minden base-beli
+  # mező (itt: notification_surface.events) megjelenjen, legalább
+  # access.conformance: not_implemented formában. OCI-specifikus narrowing
+  # egyik eseményhez sem szükséges — mindhárom közvetlenül leképezhető.
+  notification_surface:
+    events:
+      - name: attach-state-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: info
+        description: Csatolási állapot megváltozott
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+          - name: attached_to
+            shape_type: scalar
+            scalar_type: string
+            optional: true
+
+      - name: threshold-exceeded
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: threshold
+        severity: warning
+        capability: usage_metrics
+        description: >
+          Tárhely kihasználtság küszöböt átlépett. OCI Monitoring
+          alarm-jelzésből származtatott — lásd usage_bytes mező.
+        payload:
+          - name: usage_bytes
+            shape_type: scalar
+            scalar_type: integer
+          - name: size_bytes
+            shape_type: scalar
+            scalar_type: integer
+
+      - name: health-degraded
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: warning
+        capability: health_monitoring
+        description: >
+          Volume egészségi állapot romlott. OCI-n a lifecycle state és
+          az OCI Monitoring alarm-jelzések aggregációjából származtatott
+          — lásd health mező.
+        payload:
+          - name: previous_health
+            shape_type: scalar
+            scalar_type: string
+          - name: current_health
+            shape_type: scalar
+            scalar_type: string
