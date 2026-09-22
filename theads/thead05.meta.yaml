@@ -1,0 +1,122 @@
+thread: thead05
+status: reviewed
+date_reviewed: 2026-09-22
+
+summary: |
+  A providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+  javításából indult (kind: AdapterContract -> kind: DomainComposition,
+  identity.base öröklés a canonical StorageResource-tól), és menet közben
+  egy kernel-szintű hiányt tárt fel: a binding_surface.addresses[].
+  key_fields (backend/provider/location/id) nincs primitívként formalizálva
+  a cic-primitives Address atomjában.
+
+  Több körben, egymást korrigálva lett tisztázva: a jelenlegi
+  check_coverage() explicit-full-restatement szabálya
+  (identity.base/DomainComposition) szándékos, dokumentált döntés -- nem
+  kellett/nem szabad volt implicit öröklésre cserélni. A "registry_validate
+  zöld" korábbi állítás félrevezető volt: a fájl (mint -src<év> végződés
+  nélküli working copy) láthatatlan a scannernek, amíg release nem lesz
+  belőle -- ez minden domain-objektum jelenlegi drafjaira igaz, nem egyedi
+  hiba. A notification_surface három eseménye viszont valóban hiányzott a
+  restatementből -- ez pótolva lett, közvetlen check_coverage()-hívással
+  0 violationra ellenőrizve.
+
+  A mélyebb kérdés forrása is tisztázva lett: a key_fields nem "ismeretlen"
+  a CIC-ben, hanem a cic-primitives forrás-repo (nem ez a registry)
+  proposals/atom-grammar/README.md-je név szerint ismeri, corpus-
+  konvencióként (compute-resource.yaml:489 idézve), de kifejezetten más
+  célra (annak indoklására, hogy a Shape-collection összetett kulcsát miért
+  item_key-nek nevezték, nem key_fields-nek -- mert az utóbbi név már
+  foglalt). Az Address atom formális fields.properties-e (a jelen repóban
+  aláírt kernel bundle-ben) nem tartalmazza. A proposal saját, explicit
+  "szándékosan nem lezárt" listáján (README.md:331-392) SEM szerepel a
+  key_fields formalizációja -- tehát ez egy új, korábban nem trackelt rés,
+  nem egy ismert tétel megismétlése.
+
+accepted:
+  - "Az eredeti kind: AdapterContract választás hibás volt -- az
+    AdapterContract ebben a registryben mindig observe/apply/watch
+    interfész-szerződést jelent (lásd general/storage/storage-adapter/
+    README.md), sosem egy provider mező-szintű megfelelés-dokumentumát.
+    A kind: DomainComposition + identity.base öröklés a helyes irány,
+    CONFIRMED tools/registrylib/identity.py pin-formátuma alapján
+    (namespace-agnosztikus, a docstring saját példája is
+    cic:storage:StorageResource@v1.0.0)."
+  - "tools/registrylib/coverage.py identity.base/DomainComposition esetén
+    explicit full restatement-et ír elő, szemben a YANG extends implicit
+    modelljével -- CONFIRMED szó szerint, coverage.py:210-213. Ez szándékos
+    tervezési döntés, nem hiba."
+  - "A fájl (storage-resource.yaml, -src<év> végződés nélkül) jelenleg
+    láthatatlan tools/registrylib/paths.py _FILENAME_RE-je és így
+    iter_schema_dirs()/check_base_references() számára -- CONFIRMED
+    közvetlen futtatással: 0 találat providers/oracle-cloud-ra a 30 talált
+    séma-könyvtár között, list_versions() üres. A korábbi 'registry_validate
+    zöld' állítás ezért nem volt bizonyíték."
+  - "A notification_surface három eseménye (attach-state-changed,
+    threshold-exceeded, health-degraded) hiányzott a restatementből --
+    CONFIRMED közvetlen check_coverage()-hívással (3 violation), pótolva,
+    utána 0 violation."
+  - "A cic-primitives kernel bundle (general/primitives/cic-primitives/
+    cic-primitives.v0.2.0-src2026.yaml) Address atomjának fields.properties
+    -e nem tartalmaz key_fields-et -- CONFIRMED, csak schema_path/api_path/
+    logical_id/namespace/note szerepel benne."
+  - "A cic-primitives forrás-repo proposals/atom-grammar/README.md:124-129
+    név szerint ismeri a key_fields-et corpus-konvencióként
+    (binding_surface.addresses[].key_fields, {name,type,values} forma,
+    compute-resource.yaml:489 idézve) -- CONFIRMED, a fájl létezik és a
+    pontos idézet megtalálható benne. De ez csak névütközés-indoklás egy
+    másik fogalom (item_key) bevezetéséhez, nem saját maga megoldandó
+    tétele."
+  - "A proposal saját 'szándékosan nem lezárt' szakasza (README.md:331-392)
+    nem tartalmazza a key_fields/Address-kulcs formalizációját, miközben
+    más rokon nyitott kérdéseket igen (capability/conformance helye,
+    access.inherit háromállapotúsága, Address vs ManagedEntity
+    binding_surface required/optional ellentmondás) -- CONFIRMED, tehát ez
+    új felismerés, nem ismert tétel duplikálása."
+
+rejected: []
+
+opened:
+  - "Address keyed-binding formalization gap: a live domain corpus
+    (storage/compute/network/kubernetes mind) használja a
+    binding_surface.addresses[].key_fields konstrukciót az entitás
+    kulcsolt címzésére (backend/provider/location/id, a
+    cic:{domain}:{backend}:{provider}:{location}:{id} runtime reference
+    formátum alapja). A cic-primitives Address atomic primitive formális
+    definíciója ezt nem deklarálja, nincs rá Shape/Role/Contract-alapú
+    grammar-validáció, és a jelen repóban aláírt kernel bundle nem hordozza
+    primitívként. Emiatt egy leszármazott DomainComposition (pl.
+    StorageResourceOracleCloud) ma nem tudja séma-szinten, szabályosan
+    kimondani a kulcs-szűkítés invariánsait (pl. backend == cloud,
+    provider == oci). Konkrét reprodukáló teszteset kész: StorageResource
+    (backend ∈ {hypervisor,san,cloud}, provider ∈ {aws,...,oci}) ->
+    StorageResourceOracleCloud (backend = cloud, provider = oci)."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "Hogy a key_fields elemei Shape+Role+Contract primitívekké váljanak-e,
+    és ha igen, milyen konkrét grammatikával -- ez kernel-design döntés a
+    cic-primitives oldalán (proposals/atom-grammar folytatása), nem ebből a
+    threadből vagy a StorageResourceOracleCloud fájlból származik."
+  - "derivation_chain kezelése -- szándékosan NEM összemosva a key_fields
+    kérdésével. Külön kell eldönteni, hogy domain-object szemantika-e vagy
+    schema-provenance/build-evidence; ha utóbbi, nem primitívesítendő."
+  - "A providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+    policy_surface/binding_surface/derivation_chain restatementje --
+    szándékosan kihagyva, amíg a fenti kérdés nincs lezárva. A fájl jelenlegi
+    állapota (0 violation a checkelt négy surface-en: config/state/operation/
+    notification) végleges a jelen kernel-verzió mellett."
+  - "Az Address vs ManagedEntity binding_surface mode:required ellentmondás
+    (proposals/atom-grammar/README.md:388-392) -- előzőleg már azonosított,
+    ehhez a threadhez csak közeli rokon, nem ez oldja meg."
+
+kapcsolódó:
+  - "providers/oracle-cloud/storage/storage-resource/storage-resource.yaml"
+  - "general/storage/storage-resource/storage-resource.v0.1.5-src2026.yaml"
+  - "general/storage/storage-adapter/storage-adapter.yaml"
+  - "general/primitives/cic-primitives/cic-primitives.v0.2.0-src2026.yaml"
+  - "tools/registrylib/identity.py"
+  - "tools/registrylib/coverage.py"
+  - "tools/registrylib/paths.py"
+  - "tools/registry_validate.py (check_base_references)"
+  - "theads/thead04.meta.yaml (elődje -- ProviderCorrespondence réteg, még mindig nem nyitva)"
+  - "cic-primitives (forrás-repo, nem ez a registry) proposals/atom-grammar/README.md"
