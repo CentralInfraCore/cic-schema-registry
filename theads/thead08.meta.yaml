@@ -1,0 +1,79 @@
+thread: thead08
+status: reviewed
+date_reviewed: 2026-09-26
+
+summary: |
+  Egy beillesztett külső AI-review vizsgálata a HEAD 5351200-on
+  (thead04-thead07 után). Négy konkrét állítás, mind ellenőrizve előbb,
+  mielőtt bármit elfogadtunk volna: két valódi bug (kijavítva külön PR-ben,
+  nem itt), és két mélyebb, nyitott kérdés (itt dokumentálva).
+
+  A legfontosabb felismerés: a thead07/cic-schema-registry#137-ben
+  javasolt `contract_narrowing: true` megoldás architekturálisan hibás
+  lett volna (Liskov substitution violation) -- a helyes irány a YANG
+  dialektus MÁR LÉTEZŐ per-value conformance mechanizmusának portolása a
+  DomainComposition dialektusra, amit konkrét precedenssel (standards/
+  yang/ietf-interfaces-vlan, #45-ös incidens) és kódszintű ellenőrzéssel
+  (coverage.py _shape_signature() nem ismeri ezt a YANG-oldali
+  toleranciát) is alátámasztottunk.
+
+accepted:
+  - "ComputeResource.operation_surface.resize.input.cpu_cores még mindig
+    integer volt a #133 után -- CONFIRMED, kijavítva (fix/review-followup-
+    resize-and-network-ref branch)."
+  - "KubernetesCluster.control_plane_endpoint_policy.network_ref leírása
+    elavult volt (Subnet séma létrejötte után nem frissült) -- CONFIRMED,
+    kijavítva ugyanabban a PR-ben, semantic_type: cic-reference,
+    reference_target: cic:network:Subnet."
+  - "StorageResource.encryption_mode default: none inkonzisztens az
+    OCI-specializáció saját dokumentációjával, ami szerint none OCI-n
+    sosem fordul elő -- CONFIRMED mindkét fájlban."
+  - "A contract_narrowing: true (thead07 saját javaslata) klasszikus
+    Liskov substitution hibát vezetne be: egy legális base-szintű intent
+    (encryption_mode: none) illegálissá válna a szűkített specializáción
+    -- ez a review helyes, alapos kritikája volt."
+  - "A per-value conformance (teljes vokabulárium + érték-szintű
+    not_implemented) MÁR LÉTEZŐ, működő precedens a YANG dialektusban --
+    CONFIRMED standards/yang/ietf-interfaces-vlan/
+    ietf-interfaces-vlan.yaml:158-171, plusz egy valós, dokumentált
+    incidens (#45 elkapta a v0.1.4-es csendes szűkítést) ugyanezzel a
+    mintával megoldva."
+  - "Ez a mechanizmus MA CSAK a YANG dialektusban létezik --
+    tools/registrylib/coverage.py _shape_signature() (a DomainComposition-
+    oldali, identity.base ellenőrzéseket futtató függvény) nyers
+    tuple-egyezést csinál a contract mezőre, nincs benne a YANG-oldali
+    _yang_enum_value_names()-hez hasonló érték-szintű tolerancia --
+    CONFIRMED forráskódból."
+
+rejected:
+  - "A thead07 saját contract_narrowing: true javaslata -- ELVETVE, LSP-hibás.
+    Komment formájában rögzítve a cic-schema-registry#137-en, a fájlok
+    nem változtak emiatt (a teljes enum-lista marad, amíg a per-value
+    conformance mechanizmus meg nem épül)."
+
+opened:
+  - "StorageResource.encryption_mode canonical vokabulárium valószínűleg
+    hiányol egy 'unspecified'/'provider_default' értéket, külön a
+    none-tól -- cic-schema-registry#140."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "A YANG dialektus per-value conformance mechanizmusának portolása a
+    DomainComposition dialektusra (coverage.py _shape_signature()
+    bővítése) -- rögzítve cic-schema-registry#137 kommentjeként, nem
+    implementálva ebben a threadben."
+  - "Subnet.public_access összemossa a publikus IP-jogosultságot a
+    route-olással -- jogos észrevétel, nem vitt tovább issue-ig ebben a
+    menetben."
+  - "encryption_key_ref 'customer_managed esetén releváns' ma csak
+    prózában van, valódi must kontraktus lehetne -- nem vitt tovább."
+  - "Külön 'draft/working-copy validation gate' javaslat (meta-séma +
+    refs + surface/contract/operation konzisztencia, frozen-szabályok
+    nélkül) -- ez kapta volna el a resize.cpu_cores hibát elsőre. Nem
+    vitt tovább issue-ig ebben a menetben."
+
+kapcsolódó:
+  - "cic-schema-registry PR fix/review-followup-resize-and-network-ref (a két kijavított bug)"
+  - "cic-schema-registry#137 (thead07, contract_narrowing helyesbítve kommentben)"
+  - "cic-schema-registry#140 (encryption_mode default szemantika, új issue)"
+  - "standards/yang/ietf-interfaces-vlan/ietf-interfaces-vlan.yaml:158-171 (per-value conformance precedens)"
+  - "tools/registrylib/coverage.py (_shape_signature, _yang_enum_value_names)"
