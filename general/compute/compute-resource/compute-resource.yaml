@@ -17,7 +17,7 @@
 ---
 metadata:
   name: ComputeResource
-  version: v1.0.0
+  version: v1.1.0
   description: >
     Egységes compute erőforrás — hypervisor VM, bare metal fizikai szerver és cloud instance
     egyaránt leírható. A paradigma (vm/physical/cloud) az adapter és az address rétegben van,
@@ -38,6 +38,13 @@ metadata:
     tools/registrylib/coverage.py explicit csak MAJOR verzióváltás mellett
     enged — a `contract: range` határok (1..256) formailag számokra is
     érvényesek maradnak, nem kellett módosítani.
+    v1.1.0: binding_surface.addresses[].key_fields migrálva a formalizált
+    Shape+Role primitívekre (korábban {name, type, values}) — lásd
+    cic-primitives#5 és a cic-primitives proposals/atom-grammar/
+    README.md §2.7-et. MINOR bump: tools/registrylib/coverage.py
+    _NODE_LIST_KEYS-je nem ellenőrzi a binding_surface-t, tehát ez nem
+    coverage-mutáció, csak formalizáció — a mezők neve, jelentése és a
+    logical_id/schema_path/api_path összeállítása változatlan.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -586,24 +593,42 @@ spec:
         namespace: "cic:compute"
         key_fields:
           - name: backend
-            type: enum
-            values: [vm, physical, cloud]
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [vm, physical, cloud]
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Ki kezeli az erőforrást — routing kulcs az adapter kiválasztásához.
               cloud: enum [aws, gcp, azure, hcloud, do, ovh, oci]
               vm: hypervisor azonosítója (pl. proxmox-01, esxi-cluster-a)
               physical: datacenter/cluster azonosítója (pl. dc-ams-01)
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Hol fut az erőforrás.
               cloud: provider region (pl. eu-central-1, europe-west1) — kötelező
               vm: cluster/pool azonosítója vagy "-" ha a hypervisor kezeli
               physical: rack/zone azonosítója vagy "-" ha a datacenter kezeli
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
     adapter_capabilities:
       description: >
         Az adapter deklarálja a támogatott capability-ket a binding rétegben.

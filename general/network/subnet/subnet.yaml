@@ -24,6 +24,10 @@ metadata:
     és a thead04 review-t.
 
     Adapter: MÉG NINCS, ugyanúgy mint a NetworkSpace-nél.
+
+    binding_surface.addresses[].key_fields formalizált Shape+Role
+    primitívekkel íródott (nem {name, type, values}) — lásd
+    cic-primitives#5 és proposals/atom-grammar/README.md §2.7.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -225,16 +229,34 @@ spec:
         namespace: "cic:network"
         key_fields:
           - name: backend
-            type: enum
-            values: [cloud]
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [cloud]
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: "cloud provider enum-szerű értéke (pl. aws, gcp, azure, hcloud, do, ovh, oci)"
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Provider region (pl. eu-central-1)
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               A subnet egyedi azonosítója (pl. OCI Subnet OCID, AWS Subnet
               ID, Azure Subnet resource ID)

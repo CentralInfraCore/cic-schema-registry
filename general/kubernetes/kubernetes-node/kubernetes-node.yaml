@@ -17,7 +17,7 @@
 ---
 metadata:
   name: KubernetesNode
-  version: v0.1.5
+  version: v0.1.7
   description: >
     Kubernetes node mint infrastrukturális egység — machine konfiguráció, install,
     kubelet, cross-domain referenciák (compute/network/storage).
@@ -32,6 +32,10 @@ metadata:
     nélküli True/False boolean literál, nem string, miközben a mező
     scalar_type: string és a valós Kubernetes NodeCondition.status is
     string. Lásd #99.
+    v0.1.7: binding_surface.addresses[].key_fields migrálva a
+    formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
+    proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
+    mutáció.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -435,14 +439,30 @@ spec:
         namespace: "cic:kubernetes"
         key_fields:
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
           - name: cluster_id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: A szülő KubernetesCluster id-ja
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Node neve (Kubernetes node name)
     # v0.1.4 (issue #18 kapcsán): a korábbi `adapter: kubernetes-adapter`
     # placeholder eltávolítva — ugyanaz a hibaosztály, mint a

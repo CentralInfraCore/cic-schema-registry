@@ -31,6 +31,10 @@ metadata:
     definíció, a `binding_surface.adapter_capabilities.known_adapters`
     szándékosan üres/hiányzik, amíg egy valódi adapter (pl.
     cic-module-oracle-cloud VCN-implementációja) meg nem valósítja.
+
+    binding_surface.addresses[].key_fields formalizált Shape+Role
+    primitívekkel íródott (nem {name, type, values}) — lásd
+    cic-primitives#5 és proposals/atom-grammar/README.md §2.7.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -266,19 +270,37 @@ spec:
         namespace: "cic:network"
         key_fields:
           - name: backend
-            type: enum
-            values: [cloud]
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [cloud]
             description: >
               Ma kizárólag cloud backend — hypervisor/san-szerű on-prem
               megfelelő (pl. Proxmox SDN zóna) még nincs modellezve.
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: "cloud provider enum-szerű értéke (pl. aws, gcp, azure, hcloud, do, ovh, oci)"
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Provider region (pl. eu-central-1)
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               A hálózati tér egyedi azonosítója (pl. OCI VCN OCID, AWS
               VPC ID, Azure VNet resource ID)

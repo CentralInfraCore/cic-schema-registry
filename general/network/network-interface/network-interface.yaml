@@ -17,7 +17,7 @@
 ---
 metadata:
   name: NetworkInterface
-  version: v0.4.3
+  version: v0.4.5
   description: >
     Egységes hálózati interfész erőforrás — fizikai switch port, logikai interfész
     (OVS bridge, loopback), VLAN szegmens és tunnel (VXLAN/GRE) egyaránt leírható.
@@ -40,6 +40,11 @@ metadata:
     minta, mint #27 a compute-resource-nál. A valós útválasztás
     binding_surface.adapter_capabilities.known_adapters-en megy
     (switch-netconf-adapter, ovs-adapter). Lásd #98.
+
+    v0.4.5: binding_surface.addresses[].key_fields migrálva a
+    formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
+    proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
+    mutáció.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -900,21 +905,39 @@ spec:
         namespace: "cic:network"
         key_fields:
           - name: backend
-            type: enum
-            values: [switch, ovs]
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [switch, ovs]
             description: >
               switch: fizikai managed switch (NETCONF/RESTCONF)
               ovs: OVS / Linux bridge (OVS-VSCTL/OVSDB)
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               switch: switch azonosítója (pl. juniper-01, cisco-core)
               ovs: hypervisor/host azonosítója (pl. proxmox-01, ovs-host-a)
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Rack / panel / "-" ha a provider kezeli
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               switch: interface neve (pl. ge-0/0/1, Gi1/0/1)
               ovs: bridge/port neve (pl. ovs-br0, vmbr0, tap100)
