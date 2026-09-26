@@ -1,0 +1,106 @@
+Ez a szál egy beillesztett külső AI-review vizsgálatából nőtt ki, ami a
+cic-schema-registry akkori HEAD-jét (5351200, thead04+thead05+thead06+
+thead07 után) nézte át. Négy konkrét állítást ellenőriztem előbb, mielőtt
+bármit elfogadtam volna belőle.
+
+Két valódi, egyértelmű bug volt benne, amiket ki is javítottam
+(lásd külön PR, nem ez a thead):
+
+1. ComputeResource.operation_surface.resize.input.cpu_cores még mindig
+   scalar_type: integer volt, holott config_surface.cpu_cores/
+   cpu_cores_actual és a cloud-provider-adapter saját resize inputja már
+   number a #133 óta. Az én mulasztásom volt — nem futtattam végig egy
+   teljes grep-et a mezőnévre az egész fájlon.
+
+2. KubernetesCluster.control_plane_endpoint_policy.network_ref leírása
+   elavult volt ("nincs general/network canonical Subnet séma") — a
+   Subnet séma közben megszületett (ugyanabban a #133 munkamenetben,
+   csak később a task-sorrendben), és sosem tértem vissza frissíteni a
+   korábbi leírást.
+
+A harmadik és negyedik pont mélyebb, ide tartozó kérdés:
+
+## 3. encryption_mode default szemantika
+
+StorageResource.encryption_mode (a #136-ban bevezetve) default: none.
+A StorageResourceOracleCloud specializáció ugyanezt a default: none-t
+viszi tovább — miközben a mező saját description-je kimondja, hogy OCI-n
+"none" gyakorlatban sosem fordul elő. Vagyis ha egy intentből kimarad a
+mező, a séma effektív defaultja egy olyan állapotot állít, amit OCI
+strukturálisan nem tud produkálni.
+
+A "javítsuk default: provider_managed-re" ötlet NEM jó megoldás — a
+"none" (explicit ne titkosíts) és az "nincs véleményem a kulcskezelésről,
+a backend defaultja érvényes" két különböző intent. Ha egy backend
+(pl. csupasz hypervisor lokális disk) valós defaultja tényleg
+titkosítatlan, a "provider_managed" default hazug lenne — olyan
+kulcskezelési döntést állítana be, amit a hívó sosem kért.
+
+Valószínű hiányzó canonical érték: `unspecified` (vagy `provider_default`)
+— külön a `none`-tól. Ez modell-döntés, nem mechanikus fix — jelzem, nem
+döntöm el, ugyanúgy, ahogy az eredeti encryption boolean → enum váltás is
+explicit jóváhagyást igényelt a thead04.meta.yaml-ban, mielőtt bárki
+hozzányúlt.
+
+Külön issue-ként nyitva (nem #137-ként, mert az egy más kérdés — lásd
+lent): cic-schema-registry#140.
+
+## 4. thead07 helyesbítése — a contract_narrowing ötlet LSP-hibás volt
+
+A thead07/cic-primitives#137 (helyesen: cic-schema-registry#137) által
+javasolt `contract_narrowing: true` megoldást a review helyesen bírálta:
+klasszikus Liskov substitution hiba. Ha StorageResource.encryption_mode
+legálisan elfogad none-t, és a StorageResourceOracleCloud specializáció
+[provider_managed, customer_managed]-re szűkíti a saját Contract-ját,
+akkor egy általános StorageResource-kliens által legálisan létrehozott
+intent (encryption_mode: none) illegálissá válik a specializáción — a
+subtype pont a helyettesíthetőséget veszíti el, amit állítólag hordoz.
+
+A helyes irány, amit a review javasolt, és amit ellenőriztem, hogy MÁR
+LÉTEZIK precedensként a corpuson: a teljes vokabulárium megmarad
+(substitutability megtartva), csak ÉRTÉK-szinten kap `conformance:
+not_implemented`-et egy adott binding. Ez pontosan az, amit a YANG
+dialektus már csinál:
+
+standards/yang/ietf-interfaces-vlan/ietf-interfaces-vlan.yaml:158-171:
+
+  - down
+  - unknown
+  - value: testing
+    conformance: not_implemented
+  - value: dormant
+    conformance: not_implemented
+  - value: not_present
+    conformance: not_implemented
+  - value: lower_layer_down
+    conformance: not_implemented
+
+A changelog-jegyzet ugyanitt: "v0.1.4 csendben 3-ra szűkítette... amit a
+#45 extends-coverage ellenőrzése elkapott" — vagyis ez PONTOSAN a
+substitutability-hiba, ami már egyszer megtörtént ebben a corpuson, és a
+#45 el is kapta, ezzel a mechanizmussal javítva.
+
+Ellenőriztem: ez a mechanizmus MA CSAK a YANG dialektusban létezik.
+tools/registrylib/coverage.py `_shape_signature()` (a DomainComposition-
+oldali, amit check_base_references() használ) egyszerű
+`tuple(node.get(k) for k in _SHAPE_KEYS)`-t csinál — a `contract` mezőt
+nyers érték-egyezésként hasonlítja, nincs benne a YANG-oldali
+`_yang_enum_value_names()`-hez hasonló érték-szintű conformance-tolerancia.
+
+Vagyis a #137 helyes megoldása NEM egy új "narrowing" mechanizmus
+kitalálása, hanem a YANG dialektus per-value conformance
+összehasonlításának PORTOLÁSA a DomainComposition dialektusra. Ezt
+kommentként rögzítettem a #137-en, a fájlokon (StorageResourceOracleCloud
+encryption_mode mezője) egyelőre nem változtattam — a teljes,
+struktúrálatlan enum-lista marad, amíg a portolás meg nem történik.
+
+Kisebb, ehhez a threadhez lazán kapcsolódó, de NEM most kezelt
+észrevételek a review-ból: Subnet.public_access összemossa a publikus
+IP-jogosultságot a route-olással (külön policy-k lennének, főleg mert a
+route-table úgyis külön canonical objektum lesz); encryption_key_ref
+"customer_managed esetén releváns" ma csak prózában van, valódi `must`
+kontraktus lehetne belőle. És egy process-szintű javaslat: egy külön
+"draft/working-copy validation gate" (meta-séma + refs + surface/contract/
+operation konzisztencia, frozen-szabályok nélkül), ami elkapta volna a
+resize.cpu_cores hibát — ezeket nem vittem tovább issue-ig ebben a
+menetben.
