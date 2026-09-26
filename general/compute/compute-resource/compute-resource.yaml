@@ -17,7 +17,7 @@
 ---
 metadata:
   name: ComputeResource
-  version: v0.2.6
+  version: v1.0.0
   description: >
     Egységes compute erőforrás — hypervisor VM, bare metal fizikai szerver és cloud instance
     egyaránt leírható. A paradigma (vm/physical/cloud) az adapter és az address rétegben van,
@@ -30,6 +30,14 @@ metadata:
     korábban meghagyott másolata volt). A valós útválasztás
     binding_surface.adapter_capabilities.known_adapters-en megy
     (hypervisor-adapter/ipmi-adapter/cloud-provider-adapter). Lásd #97.
+    v1.0.0: cpu_cores és cpu_cores_actual scalar_type integer → number.
+    OCI OCPU (és sok más cloud provider vCPU/core mezője) lehet tört/subcore
+    érték — az integer korlát ezt kizárta. Lásd theads/thead04.txt, az OCI
+    valós API-jával szembeni review első talált sémahibája. MAJOR bump: ez
+    egy meglévő mező shape-mutációja (scalar_type), amit
+    tools/registrylib/coverage.py explicit csak MAJOR verzióváltás mellett
+    enged — a `contract: range` határok (1..256) formailag számokra is
+    érvényesek maradnak, nem kellett módosítani.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -73,10 +81,12 @@ spec:
       - name: cpu_cores
         atomic_ref: "cic:core:Shape@v0.2.0"
         shape_type: scalar
-        scalar_type: integer
+        scalar_type: number
         role: config
         mandatory: true
-        description: CPU magok száma
+        description: >
+          CPU magok száma. number, nem integer (v1.0.0) — sok cloud
+          provider (pl. OCI OCPU) tört/subcore értéket is elfogad.
         contract:
           - type: range
             expression: "1..256"
@@ -235,12 +245,13 @@ spec:
       - name: cpu_cores_actual
         atomic_ref: "cic:core:Shape@v0.2.0"
         shape_type: scalar
-        scalar_type: integer
+        scalar_type: number
         role: state
         optional: true
         description: >
           Ténylegesen allokált CPU magok száma — instance_type lookup esetén
-          eltérhet a config_surface.cpu_cores-tól, de csak felfelé.
+          eltérhet a config_surface.cpu_cores-tól, de csak felfelé. number,
+          nem integer (v1.0.0), ugyanazon okból, mint config_surface.cpu_cores.
         contract:
           - type: must
             expression: "cpu_cores_actual >= ../config_surface/cpu_cores"
