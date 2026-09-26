@@ -37,6 +37,11 @@ metadata:
     (a tényleges URL). MAJOR bump: mező surface-t váltott
     (config → state), amit tools/registrylib/coverage.py csak MAJOR
     verzióváltás mellett enged.
+    network_ref utólag (ugyanezen v1.0.0-n belül, working copy edit)
+    cic-reference-re kötve a general/network/subnet/ megszületése után —
+    korábban sima string volt, mert a mező írásakor még nem létezett
+    canonical Subnet séma; ez nem shape-mutáció (semantic_type/
+    reference_target nincs a coverage.py _SHAPE_KEYS-jében).
     Megjegyzés: v0.1.3-at szándékosan kihagytuk — a forrás cic-kubernetes
     repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
     cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
@@ -108,13 +113,14 @@ spec:
           - name: network_ref
             shape_type: scalar
             scalar_type: string
+            semantic_type: cic-reference
+            reference_target: "cic:network:Subnet"
             required_on_create: false
             description: >
-              Melyik hálózatban/subnetben helyezkedjen el az endpoint.
-              Ma sima string (nincs general/network/ canonical Subnet/
-              NetworkSpace séma, amire semantic_type: cic-reference-ként
-              mutathatna) — ha az megszületik, ez a mező cic-reference-re
-              vált.
+              Melyik Subnet-ben helyezkedjen el az endpoint (OCI-n pl. a
+              control plane subnetId-je). general/network/subnet/
+              megszületése óta cic-reference — korábban sima string volt,
+              mert még nem létezett canonical Subnet séma.
           - name: public_access
             shape_type: scalar
             scalar_type: boolean
