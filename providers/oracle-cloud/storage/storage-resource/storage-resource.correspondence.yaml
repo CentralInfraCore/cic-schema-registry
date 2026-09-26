@@ -1,0 +1,187 @@
+# DRAFT — nem commitolt, review alatt. Kind: ProviderCorrespondence még
+# sehol nincs formálisan bevezetve a corpuson: nincs meta-séma, nincs
+# registry_validate/coverage.py támogatás, egyetlen adapter sem olvassa.
+# Ez a fájl egy konkrét, teljes worked example, hogy a formátum
+# eldönthető legyen, mielőtt bármi más provider/domain ezt követné.
+---
+metadata:
+  name: StorageResourceOracleCloudCorrespondence
+  version: v0.1.dev
+  description: >
+    A StorageResourceOracleCloud (providers/oracle-cloud/storage/
+    storage-resource/storage-resource.yaml, cic:storage:
+    StorageResourceOracleCloud@v0.1.dev) mező-szintű megfeleltetése a
+    valós OCI Volume/VolumeAttachment/Monitoring API-ra. Ez a `thead04`
+    review-ban javasolt "ProviderCorrespondence" réteg első konkrét
+    kidolgozása.
+
+    Viszony a StorageResourceOracleCloud-hoz: az a séma azt mondja meg,
+    MELYIK mező támogatott (access.conformance narrowing) — ez a fájl
+    azt, HOGYAN kell kiszámolni/leképezni az értéket. A kettő nem
+    duplikátum: a séma saját `description` mezői is tartalmaznak prózai
+    utalást a mappingre (embereknek), ez a fájl ugyanazt strukturáltan,
+    gép által is olvasható formában adja (későbbi codegen/tooling
+    célra) — a két nézet együtt él, nem helyettesíti egymást.
+
+    Vocabulary — pontosítva a thead04.txt saját D/T/R/C/X/U/M
+    jelöléséhez képest: az M (semantic mismatch) NEM önálló mapping-kind
+    itt, hanem egy külön `mismatch: true` jelző, ami BÁRMELYIK kind-hoz
+    hozzáadható — mert az M egy átmeneti, canonical-hiba-jelző állapot
+    (amint a canonical mező javítva lesz, eltűnik), nem a leképezés
+    mechanizmusának állandó tulajdonsága. A hat valódi kind:
+      - direct: 1:1 mezőmegfeleltetés, nincs transzformáció
+      - transform: ugyanaz a jelentés, de konverzió/normalizáció kell
+      - derived: nem közvetlen mezőolvasás, hanem levezetés valamiből
+        (pl. isIpv6Enabled = len(ipv6CidrBlocks) > 0)
+      - composition: több OCI resource/API-hívás eredményéből áll össze
+      - external-observer: más forrásból jön (Monitoring, guest agent stb.)
+      - unsupported: OCI-n nincs megfelelője
+
+    Viszony a cic-module-oracle-cloud valódi correspondence.go
+    mechanizmusához: AZ egy futó, Go-ban írt, SZŰKEBB rendszer — csak
+    3 szabályt ismer (bool-from-nonempty, bool-invert, rename), csak a
+    "derived" kind egy részhalmazát fedi le, és explicit kizárja a
+    composition/external-observer eseteket ("stays out until a resolve
+    step exists" — module/correspondence.go:8-11). Ez a fájl NEM
+    helyettesíti/nem generálja azt — dokumentációs/tervezési szintű,
+    nem futtatott specifikáció. Ha valaha kódgenerálás készül belőle,
+    csak a `derived`-nek jelölt sorok egy részhalmaza fordítható át
+    ténylegesen `correspondence.go`-stílusú futó szabállyá; a többi
+    (`composition`, `external-observer`) ma sehol nem hajtódik végre,
+    emberi/adapter-fejlesztői referencia marad.
+
+    NYITOTT, EZ A FÁJL NEM DÖNTI EL: kell-e formális `kind:
+    ProviderCorrespondence` meta-séma + registry_validate támogatás,
+    vagy marad dokumentációs konvenció; hova kerüljön a fájl éles
+    esetben (ugyanide, a séma mellé, mint most, vagy külön
+    `correspondence/` alkönyvtárba); szükséges-e cross-repo generálás
+    a `cic-module-oracle-cloud` felé.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - provider-correspondence
+    - storage
+    - oracle-cloud
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: ProviderCorrespondence
+  provider: oracle-cloud
+  canonical: "cic:storage:StorageResourceOracleCloud@v0.1.dev"
+
+  provider_resources:
+    - core.Volume
+    - core.VolumeAttachment
+    - monitoring.Metric
+
+  mappings:
+
+    # ── ConfigSurface ───────────────────────────────────────────────────────
+    - target: config_surface.size_gb
+      kind: direct
+      source: Volume.sizeInGBs
+
+    - target: config_surface.access_mode
+      kind: transform
+      source: [Volume.isReadOnly, Volume.isShareable]
+      note: >
+        isReadOnly=false, isShareable=false -> read_write_once
+        isReadOnly=true,  isShareable=true  -> read_only_many
+        isReadOnly=false, isShareable=true  -> read_write_many
+
+    - target: config_surface.filesystem
+      kind: unsupported
+      note: OCI Volume API-nak nincs filesystem-fogalma — a guest OS hozza létre.
+
+    - target: config_surface.encryption
+      kind: derived
+      mismatch: true
+      note: >
+        Nincs valódi OCI forrásmező — OCI minden Volume-ot kötelezően
+        titkosít, tehát ez a leképezés mindig `true`-t adna vissza,
+        függetlenül attól, mit kér az intent. A canonical mező boolean
+        szemantikája megkérdőjelezhető (lásd thead04.meta.yaml "nem
+        nyitva" — encryption_mode enum javaslat), ez a `mismatch: true`
+        pont ezt jelöli — a mapping csak addig helyes, amíg a canonical
+        mező meg nem változik.
+
+    - target: config_surface.encryption_key_ref
+      kind: direct
+      source: Volume.kmsKeyId
+
+    - target: config_surface.tags
+      kind: transform
+      source: [Volume.freeformTags, Volume.definedTags]
+      note: a két OCI tag-mechanizmus egy egységes listává normalizálva.
+
+    # ── StateSurface ────────────────────────────────────────────────────────
+    - target: state_surface.attach_state
+      kind: derived
+      source: VolumeAttachment.lifecycleState
+      note: aggregáció — nincs 1:1 OCI enum minden canonical állapotra.
+
+    - target: state_surface.attached_to
+      kind: composition
+      source: VolumeAttachment.instanceId
+      note: csak single-attach esetén megbízható (a canonical mező is deprecated).
+
+    - target: state_surface.attachments
+      kind: composition
+      source: ListVolumeAttachments
+      provider_resources: [core.VolumeAttachment]
+
+    - target: state_surface.size_actual_gb
+      kind: direct
+      source: Volume.sizeInGBs
+
+    - target: state_surface.usage_bytes
+      kind: external-observer
+      source:
+        service: monitoring
+        namespace: oci_blockstore
+
+    - target: state_surface.iops_read
+      kind: external-observer
+      source:
+        service: monitoring
+        namespace: oci_blockstore
+        metric: VolumeReadOps
+
+    - target: state_surface.iops_write
+      kind: external-observer
+      source:
+        service: monitoring
+        namespace: oci_blockstore
+        metric: VolumeWriteOps
+
+    - target: state_surface.health
+      kind: composition
+      source: [Volume.lifecycleState, monitoring.alarms]
+      note: lifecycle state + Monitoring alarm-jelzések aggregációja, nem egyetlen API-hívás.
+
+    # ── OperationSurface ────────────────────────────────────────────────────
+    - target: operation_surface.attach
+      kind: action
+      operation: AttachVolume
+
+    - target: operation_surface.detach
+      kind: action
+      operation: DetachVolume
+
+    - target: operation_surface.delete
+      kind: action
+      operation: DeleteVolume
+
+    - target: operation_surface.resize
+      kind: action
+      operation: UpdateVolume
+      arguments:
+        sizeInGBs: size_gb
+
+    - target: operation_surface.snapshot
+      kind: action
+      operation: CreateVolumeBackup
+      note: >
+        más objektum-modell — az eredmény egy OCI Boot/Volume Backup
+        resource, nem maga a StorageResource.
