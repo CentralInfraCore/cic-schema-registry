@@ -17,7 +17,7 @@
 ---
 metadata:
   name: StorageResource
-  version: v1.0.0
+  version: v1.1.0
   description: >
     Egységes block volume erőforrás — hypervisor-managed disk, SAN/iSCSI LUN és cloud
     block storage egyaránt leírható. A paradigma (hypervisor/san/cloud) az adapter és
@@ -35,6 +35,10 @@ metadata:
     thead04.meta.yaml "nem nyitva" 2. tétele. MAJOR bump: mezőnév és
     shape is változott, amit tools/registrylib/coverage.py csak MAJOR
     verzióváltás mellett enged.
+    v1.1.0: binding_surface.addresses[].key_fields migrálva a
+    formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
+    proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
+    mutáció.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -464,24 +468,42 @@ spec:
         namespace: "cic:storage"
         key_fields:
           - name: backend
-            type: enum
-            values: [hypervisor, san, cloud]
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [hypervisor, san, cloud]
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Ki kezeli a volume-ot — routing kulcs az adapter kiválasztásához.
               hypervisor: hypervisor azonosítója (pl. proxmox-01)
               san: storage rendszer azonosítója (pl. netapp-01, pure-01)
               cloud: enum [aws, gcp, azure, hcloud, do, ovh, oci]
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Hol van a volume.
               hypervisor: storage pool neve (pl. local-lvm, ceph-pool)
               san: aggregate/pool neve (pl. aggr1)
               cloud: provider region (pl. eu-central-1)
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Volume egyedi azonosítója.
               hypervisor: disk neve (pl. vm-100-disk-0)

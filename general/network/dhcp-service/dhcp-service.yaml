@@ -17,7 +17,7 @@
 ---
 metadata:
   name: DHCPService
-  version: v0.1.0
+  version: v0.1.2
   description: >
     DHCP szolgáltatás — cím-pool, lease-kezelés, static reservation. Ez a
     hiányzó definíció ahhoz a `target_kind: DHCPService` referenciához,
@@ -34,6 +34,12 @@ metadata:
     `NetworkInterface` saját maga explicit kizárja a DHCP szervert a
     scope-jából ("Service réteg... NEM ide tartozik") — ez a fájl az a
     service-réteg objektum, amire a kizárás mutat.
+
+    v0.1.2: binding_surface.addresses[].key_fields migrálva a
+    formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
+    proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
+    mutáció (tools/registrylib/coverage.py nem ellenőrzi a
+    binding_surface-t).
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -332,17 +338,35 @@ spec:
         namespace: "cic:network:dhcp"
         key_fields:
           - name: backend
-            type: enum
-            values: [isc-dhcp, kea, dnsmasq]
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [isc-dhcp, kea, dnsmasq]
             description: DHCP szerver implementáció
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: A DHCP szervert futtató host/rendszer azonosítója
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Rack / panel / "-" ha a provider kezeli
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Pool/szolgáltatás neve (pl. pool-mgmt) — ezt a `{id}`-t
               hivatkozzák a standards/yang VLAN/L2VLAN blokkok

@@ -17,7 +17,7 @@
 ---
 metadata:
   name: KubernetesCluster
-  version: v1.0.0
+  version: v1.1.0
   description: >
     Kubernetes cluster mint infrastrukturális egység — lifecycle, control plane
     konfiguráció, cluster networking, cert management.
@@ -42,6 +42,10 @@ metadata:
     korábban sima string volt, mert a mező írásakor még nem létezett
     canonical Subnet séma; ez nem shape-mutáció (semantic_type/
     reference_target nincs a coverage.py _SHAPE_KEYS-jében).
+    v1.1.0: binding_surface.addresses[].key_fields migrálva a
+    formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
+    proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
+    mutáció (lásd ComputeResource v1.1.0 ugyanezen indoklása).
     Megjegyzés: v0.1.3-at szándékosan kihagytuk — a forrás cic-kubernetes
     repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
     cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
@@ -524,7 +528,11 @@ spec:
         namespace: "cic:kubernetes"
         key_fields:
           - name: provider
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: >
               Cluster provider azonosítója — az adapter routing kulcsa.
               talos: Talos Linux alapú cluster
@@ -539,10 +547,18 @@ spec:
               két mező) itt hiányzik — nem ez a fájl a helye ennek a
               strukturális döntésnek, lásd #25.
           - name: location
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Datacenter / site azonosítója ahol a cluster fut
           - name: id
-            type: string
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
             description: Cluster egyedi neve (pl. prod-cluster-01)
     # v0.1.4 (issue #18): a korábbi `adapter: kubernetes-adapter` egyetlen
     # placeholder-mező volt, ami nem felelt meg egyik valódi adapternek sem
