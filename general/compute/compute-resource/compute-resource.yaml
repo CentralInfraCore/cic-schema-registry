@@ -408,7 +408,7 @@ spec:
         input:
           - name: cpu_cores
             shape_type: scalar
-            scalar_type: integer
+            scalar_type: number
             optional: true
           - name: memory_mb
             shape_type: scalar
