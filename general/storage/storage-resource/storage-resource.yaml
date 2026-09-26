@@ -17,7 +17,7 @@
 ---
 metadata:
   name: StorageResource
-  version: v0.1.4
+  version: v1.0.0
   description: >
     Egységes block volume erőforrás — hypervisor-managed disk, SAN/iSCSI LUN és cloud
     block storage egyaránt leírható. A paradigma (hypervisor/san/cloud) az adapter és
@@ -26,6 +26,15 @@ metadata:
     önálló resource NEM tartozik ide (D-001).
     v0.1.3: attachments lista a multi_attach állapot leírására — lásd issue #15.
     v0.1.4: must-kontraktus a delete confirm és a resize-only-grows szabályra — lásd issue #17.
+    v1.0.0: encryption (boolean, default:false) → encryption_mode
+    (enum: none/provider_managed/customer_managed/guest_managed). A
+    boolean sok cloud provider-en (pl. OCI, ahol minden Block/Boot
+    Volume-ot kötelezően AES-256-tal titkosítanak) értelmezhetetlen
+    intent volt — "unencrypted" állapot ott nem létezik, a valós
+    választás csak a kulcskezelés módja. Lásd theads/thead04.txt és
+    thead04.meta.yaml "nem nyitva" 2. tétele. MAJOR bump: mezőnév és
+    shape is változott, amit tools/registrylib/coverage.py csak MAJOR
+    verzióváltás mellett enged.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -107,15 +116,23 @@ spec:
             expression: [ext4, xfs, ntfs, btrfs, none]
 
       # capability: encryption ───────────────────────────────────────────────────
-      - name: encryption
+      - name: encryption_mode
         atomic_ref: "cic:core:Shape@v0.2.0"
         shape_type: scalar
-        scalar_type: boolean
+        scalar_type: string
         role: config
         optional: true
-        default: false
+        default: none
         capability: encryption
-        description: At-rest titkosítás engedélyezve
+        description: >
+          At-rest titkosítás módja. v1.0.0 előtt `encryption: boolean,
+          default: false` volt — sok cloud provider-en (pl. OCI) nincs
+          "unencrypted" állapot, ott a mező gyakorlatban csak
+          provider_managed/customer_managed között mozog, a none/
+          guest_managed más backendekre (hypervisor/san) marad releváns.
+        contract:
+          - type: enum
+            expression: [none, provider_managed, customer_managed, guest_managed]
 
       - name: encryption_key_ref
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -124,7 +141,9 @@ spec:
         role: config
         optional: true
         capability: encryption
-        description: Titkosítási kulcs referencia (KMS key ID vagy path)
+        description: >
+          Titkosítási kulcs referencia (KMS key ID vagy path) —
+          encryption_mode: customer_managed esetén releváns.
 
       # capability: tagging ─────────────────────────────────────────────────────
       - name: tags
