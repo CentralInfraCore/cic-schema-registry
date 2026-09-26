@@ -1,0 +1,95 @@
+thread: thead06
+status: reviewed
+date_reviewed: 2026-09-26
+
+summary: |
+  A thead04.meta.yaml "nem nyitva" listájának ötödik, addig egyedül
+  megmaradt tétele: a "ProviderCorrespondence formális réteg". Mielőtt
+  bármit megterveztünk volna, ellenőriztük a thead04 saját állítását,
+  hogy a cic-module-oracle-cloud module/correspondence/vcn.json már ennek
+  a rétegnek "az első működő példája" — helyi klón alapján, nem csak
+  elhíve.
+
+  Az ellenőrzés eredménye: a vcn.json + correspondence.go valódi, futó
+  mechanizmus, de sokkal szűkebb, mint a thead04 YAML-vázlata sugallta —
+  csak 3 szabály (bool-from-nonempty/bool-invert/rename), csak ugyanazon
+  objektum saját state-jéből számol, explicit kizárva a name↔ID
+  resolution és (a kód scope-leírása szerint) a composition/
+  external-observer esetek. A thead04 túlbecsülte a saját idézett
+  precedens hatókörét.
+
+  Ebből egy tisztább kép állt össze: a cic-module-oracle-cloud
+  correspondence.go egy FUTÓ, szűk, Go-natív mechanizmus egy másik
+  repóban; a cic-schema-registry-beli "ProviderCorrespondence" egy
+  dokumentációs/tervezési szintű, teljes vocabulary-jú specifikáció
+  lenne, amit ma semmi nem futtat, és ami NEM generálja/helyettesíti a
+  Go-kódot.
+
+  Konkrét worked example készült:
+  providers/oracle-cloud/storage/storage-resource/storage-resource.correspondence.yaml
+  — a StorageResourceOracleCloud (thead05) mind a 19 mező/operation
+  mappingjét lefedi, hat kind-dal (direct/transform/derived/composition/
+  external-observer/unsupported) + action (operation_surface-hez), plusz
+  egy különálló `mismatch: true` jelzővel a thead04 M-kategóriájának
+  (ez utóbbi a saját elemzés szerint NEM önálló mapping-kind, hanem
+  átmeneti "canonical-hiba" jelző, ami a canonical fix után eltűnik —
+  lásd cpu_cores/control_plane_endpoint már megtörtént javítását
+  a #133-ban).
+
+accepted:
+  - "cic-module-oracle-cloud/module/correspondence/vcn.json +
+    correspondence.go valódi, futó kód — CONFIRMED helyi klónból
+    (~/sync/git.partners/CentralInfraCore/cic-module-oracle-cloud).
+    3 szabály: bool-from-nonempty, bool-invert, rename."
+  - "A Go kód saját dokumentációja explicit kizárja a name↔ID
+    resolutiont ('stays out until a resolve step exists',
+    correspondence.go:8-11) és a scope-leírás szerint nem fed le
+    composition/external-observer eseteket — CONFIRMED forráskódból."
+  - "A 'direct' mappingeket (pl. size_gb <- Volume.sizeInGBs) a
+    correspondence.go NEM tartalmazza — azokat a make oci.generate
+    SDK-tag-alapú generátora kezeli automatikusan. CONFIRMED a Go kód
+    kommentjéből ('separate from the generated schema')."
+  - "A thead04 YAML-vázlata (kind: ProviderCorrespondence, mappings:
+    transform/composition/external-observer/unsupported/action) a valós
+    vcn.json-nál SZÉLESEBB hatókört sugallt, mint amit a tényleges,
+    idézett precedens ('már pontosan ennek a rétegnek az első működő
+    példája') ténylegesen fed. A thead04 ezen a ponton túlbecsülte a
+    saját bizonyítékát."
+  - "Az M (semantic mismatch) jelölés thead04.txt-ben nem önálló mapping
+    mechanizmus, hanem egy 'canonical modell jelenleg hibás' átmeneti
+    jelző, ami a canonical fix után eltűnik — ezt a #133-ban ténylegesen
+    megtörtént cpu_cores/control_plane_endpoint javítás is alátámasztja
+    (mindkettő M volt, most már csak T)."
+
+rejected: []
+
+opened:
+  - "Kell-e formális `kind: ProviderCorrespondence` a cic-schema-registry
+    corpuson: meta-séma, registry_validate/coverage.py-szintű támogatás,
+    vagy marad dokumentációs konvenció (mint a derivation_chain
+    'specification-only' blokkjai ma)? A worked example
+    (storage-resource.correspondence.yaml) egyelőre validálatlan,
+    egyetlen adapter sem olvassa."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "Fájl-elhelyezés éles esetben: a séma mellé (ahogy a worked example
+    most), vagy külön correspondence/ alkönyvtárba."
+  - "Cross-repo kapcsolat a cic-module-oracle-cloud correspondence.go-ja
+    felé: szükséges/kívánatos-e valaha generálás vagy szinkronizáció, ha
+    a formális kind megszületik. A worked example explicit leszögezi,
+    hogy MA nem helyettesíti/generálja azt."
+  - "Ha a formális kind mellett döntenek: a `mismatch: true` jelző
+    validátor-szintű viselkedése (csak dokumentáció, vagy kötelező
+    hivatkozás egy nyitott canonical-fix issue-ra)."
+  - "A worked example kiterjesztése a többi öt canonical objektumra
+    (ComputeResource, NetworkInterface, DHCPService/DHCPOptions,
+    KubernetesCluster, KubernetesNode) — szándékosan nem történt meg,
+    amíg a formátum maga nincs eldöntve."
+
+kapcsolódó:
+  - "theads/thead04.meta.yaml (a ProviderCorrespondence ötlet eredete, 'nem nyitva' 5. tétel)"
+  - "providers/oracle-cloud/storage/storage-resource/storage-resource.yaml (StorageResourceOracleCloud, thead05)"
+  - "providers/oracle-cloud/storage/storage-resource/storage-resource.correspondence.yaml (worked example)"
+  - "cic-module-oracle-cloud/module/correspondence/vcn.json"
+  - "cic-module-oracle-cloud/module/correspondence.go"
+  - "cic-schema-registry#133 (cpu_cores/control_plane_endpoint MAJOR bump fixek — az M-kategória átmenetiségének élő példája)"

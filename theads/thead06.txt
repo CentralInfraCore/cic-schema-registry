@@ -1,0 +1,95 @@
+Ez a szál a thead04.meta.yaml "nem nyitva" listájának ötödik, legnagyobb
+tételéből indult: a "ProviderCorrespondence formális réteg" — amit a
+thead04 review saját maga vázolt fel (kind: ProviderCorrespondence,
+mappings: [...] D/T/R/C/X/U/M jelöléssel), de explicit "önálló
+architektúra-kezdeményezésnek" nevezett, nem apró javításnak.
+
+A négy másik thead04-tétel (cpu_cores, control_plane_endpoint, NetworkSpace/
+Subnet, DHCPOptions) időközben megvalósult (cic-schema-registry#133). Ez
+maradt az egyetlen, ami még nyitva volt.
+
+Mielőtt bármit megterveztem volna, megnéztem, hogy a thead04 saját
+állítása — "a meglévő module/correspondence/vcn.json már pontosan ennek a
+rétegnek az első működő példája" — mennyire pontos. Van helyi klón a
+cic-module-oracle-cloud repóból, tehát ez ellenőrizhető volt, nem csak
+elhihető.
+
+A valódi module/correspondence/vcn.json + module/correspondence.go
+tartalma:
+
+{
+  "kind": "cic:network:vcn",
+  "doc": "Semantic correspondences the SDK tags cannot express...",
+  "derivations": [
+    {"field": "isIpv6Enabled", "from": "ipv6CidrBlocks", "rule": "bool-from-nonempty", ...}
+  ]
+}
+
+A Go kód saját dokumentációja (correspondence.go:1-11) explicit kimondja a
+scope-ot: csak 3 szabály létezik (bool-from-nonempty, bool-invert, rename),
+mindegyik UGYANAZON objektum saját read-state-jéből számol, és explicit
+KI VAN ZÁRVA a name↔ID resolution ("stays out until a resolve step
+exists"). A "direct" mappingeket (pl. size_gb <- Volume.sizeInGBs) ez a
+mechanizmus nem is tartalmazza — azokat a make oci.generate SDK-tag-alapú
+generátora kezeli automatikusan, korrespondencia-fájl nélkül.
+
+Vagyis a thead04 túlbecsülte a saját idézett precedens hatókörét: a
+vcn.json tényleg valódi, futó, élő mechanizmus — de csak a "derived"
+(R) kategória egy szűk részhalmazát fedi le, ugyanazon objektumon belül.
+A thead04 YAML-vázlata composition/external-observer/action mappingeket
+is ugyanennek a mechanizmusnak a részeként mutatta be — azokat a
+correspondence.go ma sehol nem hajtja végre.
+
+Ez fontos különbségtétel, mielőtt bármit építünk:
+
+  cic-module-oracle-cloud/module/correspondence.go
+    -> FUTÓ Go-kód, szűk (3 rule), egy repóban él, nem YAML-specifikáció
+
+  cic-schema-registry-beli "ProviderCorrespondence" (amit most kidolgoztunk)
+    -> dokumentációs/tervezési szintű, SEMMI nem futtatja, teljes
+       vocabulary (D/T/R/C/X/U + action), a registryben él a séma mellett
+
+A kettő NEM ugyanaz a réteg, és a registry-szintű változat NEM generálja/
+helyettesíti a Go-kódot — legfeljebb a jövőben, a "derived" kind egy
+része fordítható át ténylegesen futó szabállyá.
+
+A konkrét worked example, amit megírtam:
+providers/oracle-cloud/storage/storage-resource/storage-resource.correspondence.yaml
+— a StorageResourceOracleCloud (thead05-ben helyrehozott DomainComposition
+specializáció) mind a 19 mező/operation-mappingjét lefedi.
+
+Pontosítottam a thead04.txt saját D/T/R/C/X/U/M jelölését: az M (semantic
+mismatch) NEM önálló mapping-kind lett, hanem egy külön `mismatch: true`
+jelző, ami bármelyik kind-hoz hozzáadható. Indoklás: az M egy ÁTMENETI,
+"ez ma helytelen a canonical modellben" jelzés (pl. encryption-nél, ahol
+OCI-n nincs is valódi forrásmező, mert OCI mindent kötelezően titkosít) —
+amint a canonical mező javítva lesz (mint ahogy cpu_cores és
+control_plane_endpoint már meg is történt a #133-ban), az M eltűnik és a
+mapping visszaesik D/T-re. Nem a leképezés mechanizmusának állandó
+tulajdonsága, tehát nem érdemes vele egy szintre tenni a hat valódi
+kind-ot.
+
+A hat kind: direct, transform, derived, composition, external-observer,
+unsupported. Plusz egy hetedik, `action`, kifejezetten az
+operation_surface bejegyzésekhez (azok nem érték-leképezések, egy OCI
+API-hívásra mutatnak).
+
+Amit ez a szál NEM dönt el (lásd a worked example fájl saját "NYITOTT"
+bekezdését is):
+
+- kell-e formális kind: ProviderCorrespondence meta-séma +
+  registry_validate/coverage.py-szintű támogatás, vagy marad
+  dokumentációs konvenció (mint ma a derivation_chain
+  "specification-only" blokkjai)
+- hova kerüljön éles esetben: a séma mellé (ahogy most), vagy külön
+  correspondence/ alkönyvtárba
+- szükséges-e/kívánatos-e valaha cross-repo generálás/szinkron a
+  cic-module-oracle-cloud correspondence.go-ja felé
+- ha a formális kind mellett döntenek: a `mismatch: true` jelző hogyan
+  viselkedjen egy jövőbeli validátorban (warning? kötelező hivatkozás egy
+  nyitott issue-ra?)
+
+A worked example fájl változatlanul megmarad — nem ismételtem meg a másik
+öt canonical objektumra (ComputeResource, NetworkInterface, DHCPService/
+DHCPOptions, KubernetesCluster/KubernetesNode), amíg a formátum maga
+nincs eldöntve.
