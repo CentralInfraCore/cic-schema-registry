@@ -1,0 +1,64 @@
+Ez a szál a thead04 ötödik, addig kihagyott javításából nőtt ki:
+StorageResource.encryption (boolean) → encryption_mode (enum) átalakítás.
+A canonical mezőt átírtam, MAJOR bump-ot kapott (v0.1.5 → v1.0.0),
+check_coverage(major_bump=True) 0 violation.
+
+A StorageResourceOracleCloud specializációban (thead05) restate-elni
+kellett az új encryption_mode mezőt is (a check_base_references()
+explicit full restatement szabálya szerint). Itt akartam megtenni azt,
+amit a thead06/külső review-beszélgetés korábban javasolt: nem a teljes
+canonical enum listát átvenni, hanem OCI valóságára szűkíteni —
+[none, provider_managed, customer_managed, guest_managed] helyett csak
+[provider_managed, customer_managed], mert OCI-n a másik kettő
+gyakorlatban sosem fordul elő.
+
+Ez violationt adott:
+
+  [mutated] encryption_mode: field 'encryption_mode' changed shape in
+  place without a MAJOR version bump
+
+Megnéztem, miért — a tools/registry_validate.py check_base_references()
+függvénye (325-389. sor) így hívja meg a check_coverage()-et:
+
+  result = check_coverage(base_doc, doc, major_bump=False)
+
+Ez a `major_bump=False` HARDCODE-OLVA van, nem a base fájl tényleges
+verziójából számolva. Vagyis függetlenül attól, hogy a StorageResource
+épp MAJOR-t lépett (v1.0.0), a specializáció ELLEN futtatott ellenőrzés
+mindig úgy viselkedik, mintha nem lenne szabad shape-mutációt csinálni —
+és mivel a `contract` a coverage.py _SHAPE_KEYS listájának tagja, EGY
+enum értékkészletének szűkítése is "mutated" hibának számít.
+
+Ez azért fontos, mert ez ÁLTALÁNOSABB, mint a cic-primitives#5-ben leírt
+Address/key_fields hiány. A #5 azt mondja: a binding_surface.key_fields
+nincs Shape/Contract-ként formalizálva, ezért nem lehet szűkíteni. De itt
+most egy TÖKÉLETESEN Shape+Contract-tipizált, rendes config_surface mezőn
+(encryption_mode) próbáltam szűkíteni, és UGYANúgy elbukott — nem azért,
+mert a mező nincs primitívként deklarálva (deklarálva van), hanem mert
+maga a check_base_references() sosem engedi meg a Contract-mutációt,
+függetlenül a base verziójától.
+
+Ez tehát NEM cic-primitives kernel-kérdés (nem az Address atom vagy a
+Shape/Role/Contract primitívek hiányoznak) — ez a cic-schema-registry
+SAJÁT tooling-jának (registry_validate.py) egy tervezési döntése/hiánya.
+
+A jelenlegi, dokumentált szabály (coverage.py check_coverage() docstring)
+explicit erre lett tervezve: "identity.base (DomainComposition)... explicit
+full restatement is required". Ez a szabály jó volt arra, amit eddig
+csináltunk (StorageResourceOracleCloud teljes node-lista átvétele,
+access.conformance: not_implemented a nem támogatott mezőkre). De nem
+számolt azzal az esettel, hogy egy specializáció egy MEGLÉVŐ, támogatott
+enum mező érték-KÉSZLETÉT akarja szűkíteni (nem eltávolítani, nem
+not_implementeddé tenni — csak kevesebb legális értéket engedni). Erre
+ma nincs primitívszintű kifejezőeszköz: vagy a teljes mezőt kell átvenni
+változatlanul (amit én is tettem a PR-ben), vagy a mezőt egészben
+not_implementeddé kell tenni (ami hazugság lenne, hiszen a mező
+támogatott, csak kevesebb értékkel).
+
+Amit most NEM csináltam: nem módosítottam a check_base_references()
+logikáját, hogy elfogadjon egy "subset narrowing" esetet major_bump
+nélkül is. Ez egy valódi tervezési döntés — nem magától értetődő, hogy
+egy Contract-alhalmaz szűkítés ugyanolyan biztonságos-e, mint az
+access.conformance narrowing, vagy kellene-e hozzá saját szemantika
+(pl. `contract_narrowing: true` jelző, ami explicit engedélyezi, hogy egy
+enum kisebb legyen, de más shape-mutációt nem).

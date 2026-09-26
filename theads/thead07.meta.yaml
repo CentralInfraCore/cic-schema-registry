@@ -1,0 +1,75 @@
+thread: thead07
+status: reviewed
+date_reviewed: 2026-09-26
+
+summary: |
+  A thead04 ötödik, PR #136-ban megvalósított javításából (StorageResource.
+  encryption boolean -> encryption_mode enum) nőtt ki. A StorageResourceOracleCloud
+  specializációban megpróbáltuk az új enumot OCI valóságára szűkíteni
+  ([none, provider_managed, customer_managed, guest_managed] helyett csak
+  [provider_managed, customer_managed]), és violationt kaptunk.
+
+  A gyökér-ok: tools/registry_validate.py check_base_references() (325-389.
+  sor) minden identity.base ellenőrzést `check_coverage(base_doc, doc,
+  major_bump=False)`-szal futtat -- a `major_bump=False` HARDCODE-OLVA van,
+  függetlenül a base fájl tényleges verziójától. Mivel `contract` a
+  coverage.py `_SHAPE_KEYS` tagja, ez azt jelenti, hogy EGY enum mező
+  érték-halmazának szűkítése ma tiltott bármely identity.base
+  specializációban -- nem csak a cic-primitives#5-ben leírt Address/
+  key_fields esetben (ahol a mező formálisan sincs Shape/Contract-ként
+  deklarálva), hanem BÁRMELYIK rendes, teljesen tipizált enum mezőn is.
+
+  Ez tehát nem cic-primitives kernel-kérdés, hanem a cic-schema-registry
+  saját tooling-jának (registry_validate.py) tervezési hiánya/döntése --
+  más repóban él a döntési felelősség, mint a cic-primitives#5/#6-nál.
+
+accepted:
+  - "tools/registry_validate.py:386 (check_base_references) ténylegesen
+    hardcode-olt major_bump=False-szal hívja meg check_coverage()-et,
+    függetlenül a base doc verziójától -- CONFIRMED forráskódból."
+  - "A `contract` mező a coverage.py `_SHAPE_KEYS`-ének tagja, tehát egy
+    Contract-enum szűkítés `shape()` signature-változást okoz, amit a
+    'mutated' violation elkap -- CONFIRMED: közvetlenül reprodukálva
+    (encryption_mode enum szűkítési kísérlet StorageResourceOracleCloud-ban,
+    1 violation), majd a teljes enum-lista visszaállításával 0 violation."
+  - "Ez általánosabb, mint a cic-primitives#5: ott a mező NINCS
+    primitívként deklarálva (Address key_fields); itt egy TELJESEN
+    Shape+Contract-tipizált, rendes config_surface mező (encryption_mode)
+    ütközik ugyanabba a korlátba, tisztán a check_base_references() saját
+    hardcode-olt paramétere miatt, nem primitív-hiány miatt."
+  - "A jelenlegi 'explicit full restatement' szabály (coverage.py
+    check_coverage() docstring) jó volt a korábbi esetekre
+    (teljes node-lista átvétel, access.conformance: not_implemented) --
+    nem számolt azzal az esettel, hogy egy specializáció egy MEGLÉVŐ,
+    támogatott mező érték-KÉSZLETÉT szeretné szűkíteni (nem eltávolítani,
+    nem not_implementeddé tenni)."
+
+rejected: []
+
+opened:
+  - "Kell-e a check_base_references()/coverage.py-nak egy 'Contract
+    subset narrowing' fogalom, ami külön a major_bump-tól engedélyezi egy
+    enum értékkészletének szűkítését identity.base specializációban
+    (pl. egy explicit `contract_narrowing: true` jelzővel a mezőn, ami
+    csak azt engedi, hogy a Contract enum-expression a base RÉSZHALMAZA
+    legyen, semmilyen más shape-mutációt nem)? Ez cic-schema-registry
+    saját tooling-döntés, nem cic-primitives kernel-kérdés."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "Ha a subset-narrowing mellett döntenek: hogyan ellenőrizze a kód
+    ténylegesen a részhalmaz-relációt (enum lista esetén egyszerű, de
+    range/pattern contract type-oknál már nem triviális, hogy mi számít
+    'szűkítésnek')."
+  - "A providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+    encryption_mode mezője egyelőre a TELJES canonical enum listát viszi
+    tovább (nem szűkítve OCI valós [provider_managed, customer_managed]
+    készletére) -- ez a PR #136-ban explicit dokumentálva van a mező
+    saját description-jében, változatlan marad, amíg ez a kérdés nincs
+    eldöntve."
+
+kapcsolódó:
+  - "theads/thead04.meta.yaml (StorageResource.encryption eredeti 'nem nyitva' 2. tétele)"
+  - "cic-schema-registry PR #136 (encryption -> encryption_mode fix, ahol a violation felmerült)"
+  - "cic-primitives#5 (Address key_fields -- rokon, de nem ugyanaz a probléma: ott a mező deklarálatlan, itt a check_base_references() saját hardcode-ja a korlát)"
+  - "tools/registry_validate.py:386 (check_base_references)"
+  - "tools/registrylib/coverage.py (_SHAPE_KEYS, check_coverage())"
