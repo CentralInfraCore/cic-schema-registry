@@ -94,17 +94,18 @@ spec:
       kind: unsupported
       note: OCI Volume API-nak nincs filesystem-fogalma — a guest OS hozza létre.
 
-    - target: config_surface.encryption
+    - target: config_surface.encryption_mode
       kind: derived
-      mismatch: true
+      source: Volume.kmsKeyId
       note: >
-        Nincs valódi OCI forrásmező — OCI minden Volume-ot kötelezően
-        titkosít, tehát ez a leképezés mindig `true`-t adna vissza,
-        függetlenül attól, mit kér az intent. A canonical mező boolean
-        szemantikája megkérdőjelezhető (lásd thead04.meta.yaml "nem
-        nyitva" — encryption_mode enum javaslat), ez a `mismatch: true`
-        pont ezt jelöli — a mapping csak addig helyes, amíg a canonical
-        mező meg nem változik.
+        A canonical mező v1.0.0-ban boolean-ból enum-má vált (lásd
+        thead04.meta.yaml "nem nyitva" 2. tétele, azóta megoldva) — ez
+        a bejegyzés a `mismatch: true`-t viselte korábban, most már
+        rendes `derived`: ha Volume.kmsKeyId üres, customer_managed
+        helyett provider_managed a levezetett érték (OCI-n `none` és
+        `guest_managed` sosem fordul elő, de ezt a canonical Contract
+        enum listája nem tudja kifejezni — lásd a séma saját mezőjének
+        leírását a mismatch-mentesítés részleteiről).
 
     - target: config_surface.encryption_key_ref
       kind: direct

@@ -69,6 +69,17 @@ metadata:
     general/storage/storage-adapter/ generikus cloud-backend
     capabilities-listájával (lásd a mező access/description mezőjét)
     továbbra is fennáll, változatlanul.
+
+    Frissítés: a canonical StorageResource encryption (boolean) mezőjét
+    encryption_mode (enum) váltotta fel, v1.0.0-ban — pontosan az a
+    modell-váltás, amit ez a fájl korábban
+    "nem ennek a fájlnak a scope-ja"-ként jelölt. A base pin frissítve
+    v1.0.0-ra, az encryption_mode mező teljes egészében átvéve (a teljes
+    enum-lista, nem szűkítve — lásd a mező saját description-jét: a
+    Contract-szűkítés ma nem lehetséges identity.base specializációban,
+    mert tools/registrylib/coverage.py check_base_references() minden
+    ilyen ellenőrzést major_bump=False-szal futtat, függetlenül attól,
+    hogy a base épp MAJOR-t lépett-e).
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -82,7 +93,7 @@ spec:
   kind: DomainComposition
   base:
     aggregate: StorageResource
-    ref: "cic:storage:StorageResource@v0.1.5"
+    ref: "cic:storage:StorageResource@v1.0.0"
 
   provider_resources:
     - core.Volume
@@ -95,7 +106,7 @@ spec:
     kind: StorageResourceOracleCloud
     namespace: "cic:storage"
     version: v0.1.dev
-    base: "cic:storage:StorageResource@v0.1.5"
+    base: "cic:storage:StorageResource@v1.0.0"
     abstract: false
     description: Oracle Cloud Infrastructure altípusa a platform-agnosztikus block volume erőforrásnak
 
@@ -160,24 +171,36 @@ spec:
           - type: enum
             expression: [ext4, xfs, ntfs, btrfs, none]
 
-      - name: encryption
+      - name: encryption_mode
         atomic_ref: "cic:core:Shape@v0.2.0"
         shape_type: scalar
-        scalar_type: boolean
+        scalar_type: string
         role: config
         optional: true
-        default: false
+        default: none
         capability: encryption
         description: >
-          At-rest titkosítás engedélyezve. OCI minden Block/Boot
-          Volume-ot kötelezően AES-256-tal titkosít at-rest —
-          "unencrypted" állapot nem létezik. A boolean default:false
-          OCI-n értelmezhetetlen intent; a választás csak Oracle-managed
-          vs. customer-managed kulcs között van (lásd
-          encryption_key_ref). Canonical modell-váltás (encryption_mode
-          enum) javasolt, de nem ennek a fájlnak a scope-ja — lásd
-          theads/thead04.meta.yaml "nem nyitva" szakasza, a shape ezért
-          itt is változatlan marad.
+          At-rest titkosítás módja. OCI minden Block/Boot Volume-ot
+          kötelezően AES-256-tal titkosít at-rest — "unencrypted"
+          (none) és guest_managed állapot OCI-n gyakorlatban nem
+          fordul elő, a mező itt csak provider_managed/customer_managed
+          között mozog (lásd encryption_key_ref). A canonical
+          encryption_mode enumot a StorageResource v1.0.0 vezette be
+          (korábban `encryption: boolean` volt, ami OCI-n értelmezhetetlen
+          intent volt — lásd theads/thead04.txt). A contract enum
+          teljes listáját (nem csak az OCI-n releváns két értéket)
+          változatlanul átvesszük — a tools/registrylib/coverage.py
+          check_base_references() minden identity.base ellenőrzést
+          major_bump=False-szal fut (registry_validate.py:386), tehát
+          egy szűkebb Contract-enum itt "mutated" violationt adna;
+          ma nincs primitívszintű módja annak, hogy egy specializáció
+          egy mező ÉRTÉKKÉSZLETÉT (nem a teljes mezőt) szűkítse — ez
+          ugyanaz a hiányzó mechanizmus, amit a cic-primitives#5 (Address
+          key_fields) is jelez, csak itt bármelyik enum mezőre igaz,
+          nem csak a binding_surface-re.
+        contract:
+          - type: enum
+            expression: [none, provider_managed, customer_managed, guest_managed]
 
       - name: encryption_key_ref
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -186,7 +209,10 @@ spec:
         role: config
         optional: true
         capability: encryption
-        description: Titkosítási kulcs referencia (KMS key ID vagy path). OCI kmsKeyId — közvetlen.
+        description: >
+          Titkosítási kulcs referencia (KMS key ID vagy path). OCI
+          kmsKeyId — közvetlen. encryption_mode: customer_managed
+          esetén releváns.
 
       - name: tags
         atomic_ref: "cic:core:Shape@v0.2.0"
