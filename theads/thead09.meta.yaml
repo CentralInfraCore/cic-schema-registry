@@ -1,0 +1,71 @@
+thread: thead09
+status: reviewed
+date_reviewed: 2026-09-26
+
+summary: |
+  A key_fields migráció (#142) végső ellenőrzéseként lefuttattuk a
+  cic-primitives proposals/atom-grammar/check_grammar.py-t a 9 érintett
+  cic-schema-registry working-copy fájl ellen — ez volt az ELSŐ alkalom,
+  hogy ez a grammatika egyáltalán futott a valódi corpus ellen. A
+  key_fields migráció önmagában 0 hibával validált mind a 9 fájlban
+  (4 fájl teljesen tisztán átment: compute-resource, dhcp-options, subnet,
+  storage-resource). Öt fájl viszont 109, a migrációtól teljesen független,
+  előzetes szerkezeti hibát dobott, négy kategóriában.
+
+accepted:
+  - "A key_fields migráció (#142) hibátlan — CONFIRMED: check_grammar.py
+    az összes 9 fájlon lefuttatva, nulla key_fields-kapcsolódó finding."
+  - "kubernetes-cluster.yaml és kubernetes-node.yaml a jelenlét-tengelyt
+    `required_on_create: true/false`-szal írja, nem a kernel Shape atom
+    dokumentált `mandatory`/`optional` mezőivel -- CONFIRMED, 47 finding,
+    a JSON Schema additionalProperties: false miatt minden előfordulás
+    önálló hiba."
+  - "Több mező `shape_type: object`-et ír, ami nincs a kernel closed
+    type_system-jében (scalar/composite/collection/choice/opaque) --
+    CONFIRMED, 27 finding, főleg network-interface.yaml-ban, de
+    kubernetes-cluster.yaml-ban is (cluster_network, api_server,
+    control_plane_endpoint_policy)."
+  - "control_plane_endpoint_policy (a #133-as thead04-fix saját mezője,
+    ugyanebben a sessionben írva) maga is ezt a nem-konform object+
+    properties mintát követi, mert a helyi fájl-konvenciót vette át
+    ellenőrzés nélkül -- ÖNKRITIKA, nem külső hiba."
+  - "10 lista (dns_servers, static_reservations, leases, vlans,
+    logical_interfaces, vxlans, ÉS a saját network-space.yaml
+    secondary_cidr_blocks mezője) nem deklarál kulcsot (C8) --
+    CONFIRMED, ugyanaz az önkritika a secondary_cidr_blocks-ra."
+  - "kubernetes-cluster.yaml cluster_ref mezője `role: reference` rövid
+    alakot ír, amit a grammatika kifejezetten tilt (R-SHORT, a rövid alak
+    hatóköre nem vezethető le) -- CONFIRMED, 1 finding."
+
+rejected: []
+
+opened:
+  - "Négy különálló javítási munka szükséges a cic-schema-registry
+    corpuson, amiket a grammatika valós futtatása most először tárt fel:
+    (1) required_on_create -> mandatory/optional átírás kubernetes-cluster/
+    kubernetes-node teljes config/state_surface-én; (2) shape_type: object
+    -> composite+fields átalakítás (network-interface főleg, +
+    kubernetes-cluster 3 mezője, beleértve a saját control_plane_endpoint_
+    policy-t); (3) item_key/role:key hozzáadása a 10 kulcstalan listához;
+    (4) cluster_ref role: reference hosszú alakra írása. Mindegyik saját
+    PR-t érdemel -- cic-schema-registry#(TBD, lásd issue)."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "Az (1) és (2) átírások valószínűleg coverage.py-észlelhető shape-
+    mutációk lennének minden érintett mezőn -- MAJOR bump-ot igényelnének
+    kubernetes-cluster/kubernetes-node/network-interface-en. Nem eldöntve,
+    csak jelezve."
+  - "Van-e más, még nem vizsgált working-copy fájl a corpuson, ami
+    hasonló, eddig fel nem tárt hibákat rejt -- ez az öt fájl csak azért
+    került elő, mert key_fields-et is tartalmaztak; a teljes corpus ellen
+    még sosem futott le a grammatika."
+
+kapcsolódó:
+  - "cic-schema-registry PR #142 (key_fields migráció, ahol ez felmerült)"
+  - "cic-primitives#5 / cic-primitives PR #7 (a formalizált grammatika forrása)"
+  - "cic-primitives proposals/atom-grammar/README.md §2.1 (closed type_system), §2.5 (mandatory/optional)"
+  - "general/kubernetes/kubernetes-cluster/kubernetes-cluster.yaml"
+  - "general/kubernetes/kubernetes-node/kubernetes-node.yaml"
+  - "general/network/network-interface/network-interface.yaml"
+  - "general/network/dhcp-service/dhcp-service.yaml"
+  - "general/network/network-space/network-space.yaml"

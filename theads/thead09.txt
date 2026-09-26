@@ -1,0 +1,64 @@
+Ez a szál a key_fields migráció (#142) végső ellenőrzéséből nőtt ki. Miután
+migráltam mind a 9 working-copy fájl key_fields blokkját a most formalizált
+Shape+Role primitívekre (cic-primitives#5, cic-primitives PR #7), a
+cic-primitives saját proposals/atom-grammar/check_grammar.py-jával is
+lefuttattam ellenük a validációt — nem csak a saját self-test fixture-jeimet,
+hanem a valódi corpus-tartalmat.
+
+Ez volt az ELSŐ alkalom, hogy ez a grammatika egyáltalán lefutott a
+cic-schema-registry valódi tartalma ellen. Az eredmény: 4 fájl tisztán
+átmegy (compute-resource, dhcp-options, subnet, storage-resource) — nulla
+key_fields-hiba egyikben sem, a migráció önmagában hibátlan. Öt fájl viszont
+109 findinget dobott, EGYIK SEM key_fields-kapcsolódó — mind előzetes,
+ettől független szerkezeti hiba, amit egyszerűen még soha nem futtatott
+ellenük semmi.
+
+Kategóriák (a teljes lista: check_grammar.py <5 fájl> kimenete):
+
+1. `required_on_create` mint fel nem ismert property (47 előfordulás,
+   túlnyomó többség kubernetes-cluster.yaml + kubernetes-node.yaml-ban).
+   A kernel Shape atom (schemas/atomic/shape.yaml, proposals/atom-grammar/
+   README.md §2.5) a jelenlét-tengelyt `mandatory`/`optional` mezőkkel
+   írja le — a `required_on_create` egy MÁSIK, soha nem formalizált
+   konvenció, amit ez a két fájl (és csak ez a kettő) használ
+   mindenhol, a séma teljes config/state_surface-én. A JSON Schema
+   `additionalProperties: false`, tehát minden egyes `required_on_create`
+   előfordulás önmagában hibát dob.
+
+2. `shape_type: object` mint érvénytelen típus (27 előfordulás, főleg
+   network-interface.yaml-ban: vlans/logical_interfaces/vxlans/stp/poe/
+   storm_control/qinq/lacp/lldp/port_mirror/statistics/stp_state/
+   poe_state/lacp_state; de kubernetes-cluster.yaml-ben is: cluster_network/
+   api_server/control_plane_endpoint_policy). A kernel type_system zárt
+   halmaza (proposals/atom-grammar/README.md §2.1): scalar, composite,
+   collection, choice, opaque — "object" nincs köztük. A helyes forma
+   composite + fields:, ezek a mezők viszont mind `properties:`-et írnak
+   `fields:` helyett.
+
+   FONTOS ÖNKRITIKA: a control_plane_endpoint_policy mezőt ÉN írtam
+   (thead04 fix, korábban ebben a sessionben), és tudtam nélkül átvettem
+   ugyanezt a nem-konform mintát a helyi (kubernetes-cluster.yaml-beli)
+   konvencióból, anélkül hogy leellenőriztem volna a kernel saját closed
+   type set-jét ellene. Ha korábban lefuttattam volna a grammatikát, ezt
+   elkaptam volna írás közben, nem most.
+
+3. Kulcs nélküli listák (10 C8-finding): dns_servers, static_reservations,
+   leases (dhcp-service), vlans, logical_interfaces, vxlans
+   (network-interface), és secondary_cidr_blocks — ez utóbbi az ÉN
+   network-space.yaml-om, ugyanaz az önkritika mint fent.
+
+4. `role: reference` rövid alak long form helyett (1 R-SHORT):
+   kubernetes-cluster.yaml cluster_ref mezője.
+
+Amit NEM csináltam: nem javítottam ki ezt a 109 findinget. Ez négy
+különböző, valódi javítási munka (required_on_create -> mandatory/optional
+átnevezés két teljes fájlon át; object -> composite+fields átalakítás hat+
+fájlon át, amivel a beágyazott mezőneveket is át kell gondolni; item_key
+hozzáadása 7 listához; egy role hosszú alakra írása) — mindegyik saját
+maga is elég munka egy külön PR-hez, és mindegyiknél végig kell gondolni,
+okoz-e coverage.py-észlelhető shape-mutációt (a required_on_create->
+mandatory/optional és az object->composite átírás valószínűleg igen,
+tehát MAJOR bump-ot igényelne minden érintett fájlon).
+
+Ez a szál csak azt rögzíti, amit a grammatika valós corpus-futtatása
+elsőre talált — a javítás külön, tudatos munkamenet.
