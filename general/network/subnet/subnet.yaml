@@ -1,0 +1,245 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth. When ready, a new
+# subnet.vX.Y.Z-src<year>.yaml is cut FROM this file's current content
+# and signed (cic-schema-registry#125).
+---
+metadata:
+  name: Subnet
+  version: v0.1.dev
+  description: >
+    Egy NetworkSpace-en (VCN/VPC/VNet) belüli, cím-tartomány szerint
+    particionált al-hálózat — OCI Subnet, AWS Subnet, Azure Subnet közös
+    absztrakciója. Lásd general/network/network-space/ — ugyanaz a
+    thead04-eredetű coverage-rés, egy szinttel lejjebb.
+
+    Scope: KIZÁRÓLAG a particionálás maga (cím-tartomány, elhelyezkedés a
+    szülő NetworkSpace-ben, publikus elérhetőség). Route-tábla-hozzárendelés,
+    security group-hozzárendelés és a DHCP-vel szétosztott DNS/search-domain
+    opciók (OCI DhcpOptions-szerű fogalom) NEM tartoznak ide — ez utóbbi
+    külön canonical fogalom, lásd general/network/dhcp-service/ README-jét
+    és a thead04 review-t.
+
+    Adapter: MÉG NINCS, ugyanúgy mint a NetworkSpace-nél.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: "cic:core:ManagedEntity@v0.2.0"
+
+  # ── PolicySurface — Access atom alapú jogosultság (cic-primitives D-011) ────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: Subnet
+    namespace: "cic:network"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: Cím-tartomány szerint particionált al-hálózat egy NetworkSpace-en belül
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      - name: network_space_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:network:NetworkSpace"
+        role: config
+        mandatory: true
+        description: A szülő NetworkSpace (VCN/VPC/VNet) address-e
+
+      - name: cidr_block
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: >
+          A subnet CIDR blokkja. A szülő NetworkSpace cidr_block-ján belül
+          kell essen — ezt a séma nem tudja kikényszeríteni (cross-entity
+          contract, a `must` kontraktus ma csak ugyanazon entitás
+          surface-ei között demonstrálva a corpuson), az adapter felelőssége.
+        contract:
+          - type: pattern
+            expression: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+
+      - name: availability_zone
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: >
+          Az a rendelkezésre állási zóna, amihez a subnet kötve van — nem
+          minden provider AZ-hoz köti a subnetet (OCI regionális subnetet is
+          enged), ezért optional.
+
+      - name: public_access
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: false
+        description: >
+          A subneten létrehozott erőforrások alapból kapnak-e publikus IP-t /
+          útvonalat internet gateway felé.
+
+      - name: tags
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: Platform tag-ek
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: "provider-specific — see binding_surface.adapter_capabilities"
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: lifecycle_state
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: A subnet életciklus-állapota
+        contract:
+          - type: enum
+            expression: [pending, available, deleting, deleted, unknown]
+
+      - name: available_ip_count
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        description: Szabad (ki nem osztott) IP-cím a subneten
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: provision
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Új subnet létrehozása egy NetworkSpace-en belül
+        input:
+          - name: network_space_ref
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+          - name: cidr_block
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: lifecycle_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: delete
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: "Subnet végleges törlése — MANUAL ONLY (confirm: mandatory)"
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre.
+        output: null
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: lifecycle-state-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: info
+        description: A subnet életciklus-állapota megváltozott
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-network:subnets/subnet={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:subnets/subnet={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network"
+        key_fields:
+          - name: backend
+            type: enum
+            values: [cloud]
+          - name: provider
+            type: string
+            description: "cloud provider enum-szerű értéke (pl. aws, gcp, azure, hcloud, do, ovh, oci)"
+          - name: location
+            type: string
+            description: Provider region (pl. eu-central-1)
+          - name: id
+            type: string
+            description: >
+              A subnet egyedi azonosítója (pl. OCI Subnet OCID, AWS Subnet
+              ID, Azure Subnet resource ID)
+    adapter_capabilities:
+      known_adapters: []
+      note: >
+        Üres szándékosan — nincs még execution-layer adapter, az
+        adat-oldali munka jelenlegi fókusza.

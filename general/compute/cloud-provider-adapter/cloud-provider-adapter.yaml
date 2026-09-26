@@ -155,8 +155,11 @@ spec:
       idempotent: false
       input:
         - name: cpu_cores
-          type: integer
+          type: number
           optional: true
+          description: >
+            number, nem integer — ComputeResource.config_surface.cpu_cores
+            v1.0.0 óta (OCI OCPU subcore-t is elfogad).
         - name: memory_mb
           type: integer
           optional: true

@@ -1,0 +1,269 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth. When ready, a new
+# dhcp-options.vX.Y.Z-src<year>.yaml is cut FROM this file's current
+# content and signed (cic-schema-registry#125).
+---
+metadata:
+  name: DHCPOptions
+  version: v0.1.dev
+  description: >
+    A DHCP-vel egy NetworkSpace-en (VCN/VPC/VNet) belül szétosztott
+    bootstrap-paraméterek (DNS szerverek, search domain, NTP szerverek) —
+    OCI DhcpOptions, AWS DHCP Options Set közös absztrakciója.
+
+    Miért nem DHCPService: a `../dhcp-service/` egy VALÓDI DHCP szervert
+    ír le (cím-pool, lease-kezelés, static reservation — lásd annak saját
+    README-jét). Az OCI DhcpOptions (és az AWS megfelelője) NEM egy DHCP
+    szerver — csak egy kis paraméter-halmaz, amit a providernek a VCN/VPC
+    saját, beépített (nem konfigurálható) DHCP-je oszt szét. A thead04 OCI
+    correspondence review kifejezetten figyelmeztetett, hogy a kettőt NE
+    kezeljük azonos fogalomként ("OCI DhcpOptions != CIC DHCPService") —
+    ez a séma az akkor hiányzónak talált, önálló canonical fogalom.
+
+    Kapcsolat a NetworkSpace/Subnet-hez: OCI-n és AWS-en is a NetworkSpace
+    (VCN/VPC) szintjén él, egy adott Subnet pedig örökli a szülő
+    NetworkSpace alapértelmezett DHCPOptions-ét (OCI-n subnet-enként
+    felül is írható — ez a `../subnet/` sémában ma nincs modellezve,
+    szándékos, dokumentált nyitott pont, nem ennek a fájlnak kellett
+    eldöntenie egyetlen menetben).
+
+    Adapter: MÉG NINCS, ugyanúgy mint a NetworkSpace/Subnet-nél.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+    - dhcp
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: "cic:core:ManagedEntity@v0.2.0"
+
+  # ── PolicySurface — Access atom alapú jogosultság (cic-primitives D-011) ────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: DHCPOptions
+    namespace: "cic:network"
+    version: v0.1.dev
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: DHCP-vel szétosztott bootstrap-paraméterek egy NetworkSpace-en belül
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      - name: network_space_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:network:NetworkSpace"
+        role: config
+        mandatory: true
+        description: A NetworkSpace (VCN/VPC/VNet), amihez ez a paraméter-halmaz tartozik
+
+      - name: dns_servers
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: >
+          Egyedi DNS szerver IP-k. Ha üres/hiányzik, a provider saját belső
+          resolverét kell használni (OCI: VcnLocalPlusInternet /
+          VcnLocal, AWS: AmazonProvidedDNS).
+        item_fields:
+          - name: ip
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+      - name: domain_name
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: A hoszteknek szétosztott domain name (DHCP option 15)
+
+      - name: search_domains
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        description: DNS search domain lista (DHCP option 119)
+        item_fields:
+          - name: domain
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+      - name: ntp_servers
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: ntp
+        description: >
+          NTP szerver IP-k (DHCP option 42) — nem minden provider osztja
+          szét ezt DhcpOptions-ön keresztül, ezért capability-jelölt.
+        item_fields:
+          - name: ip
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+      - name: tags
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: Platform tag-ek
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: "provider-specific — see binding_surface.adapter_capabilities"
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: lifecycle_state
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: A paraméter-halmaz életciklus-állapota
+        contract:
+          - type: enum
+            expression: [pending, available, deleting, deleted, unknown]
+
+      - name: attached_subnet_count
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        description: Hány Subnet használja jelenleg ezt a paraméter-halmazt
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: provision
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Új DHCP-paraméter-halmaz létrehozása egy NetworkSpace-en belül
+        input:
+          - name: network_space_ref
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: lifecycle_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: delete
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: >
+          Paraméter-halmaz végleges törlése — MANUAL ONLY
+          (confirm: mandatory). Csak akkor hajtható végre, ha
+          attached_subnet_count = 0 (adapter felelőssége kikényszeríteni).
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre.
+        output: null
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: lifecycle-state-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: info
+        description: A paraméter-halmaz életciklus-állapota megváltozott
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-network:dhcp-options/dhcp-options={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:dhcp-options/dhcp-options={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network"
+        key_fields:
+          - name: backend
+            type: enum
+            values: [cloud]
+          - name: provider
+            type: string
+            description: "cloud provider enum-szerű értéke (pl. aws, gcp, azure, hcloud, do, ovh, oci)"
+          - name: location
+            type: string
+            description: Provider region (pl. eu-central-1)
+          - name: id
+            type: string
+            description: >
+              A paraméter-halmaz egyedi azonosítója (pl. OCI DhcpOptions
+              OCID, AWS DHCP Options Set ID)
+    adapter_capabilities:
+      known_adapters: []
+      note: >
+        Üres szándékosan — nincs még execution-layer adapter, az
+        adat-oldali munka jelenlegi fókusza.

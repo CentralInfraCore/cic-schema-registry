@@ -17,7 +17,7 @@
 ---
 metadata:
   name: KubernetesCluster
-  version: v0.1.4
+  version: v1.0.0
   description: >
     Kubernetes cluster mint infrastrukturális egység — lifecycle, control plane
     konfiguráció, cluster networking, cert management.
@@ -26,6 +26,17 @@ metadata:
     v0.1.4: capability-jelölés a control-plane mezőkön (issue #18) + a
     kubernetes-adapter placeholder helyett valódi, provider-önkénti
     adapter_capabilities mátrix (lásd README).
+    v1.0.0: control_plane_endpoint szétválasztva. Managed (OKE-szerű)
+    providernél a mai config_surface.control_plane_endpoint,
+    required_on_create: true nem igaz — a provider generálja az endpointot,
+    a felhasználó csak hálózati policy-t állít. Az OKE valóságban ez
+    subnetId/nsgIds/isPublicIpEnabled-et konfigurál, a tényleges
+    publicEndpoint/privateEndpoint/vcnHostnameEndpoint-et Oracle adja
+    (thead04). Ezért: config_surface.control_plane_endpoint_policy (network_ref/
+    public_access/explicit_endpoint) + state_surface.control_plane_endpoint
+    (a tényleges URL). MAJOR bump: mező surface-t váltott
+    (config → state), amit tools/registrylib/coverage.py csak MAJOR
+    verzióváltás mellett enged.
     Megjegyzés: v0.1.3-at szándékosan kihagytuk — a forrás cic-kubernetes
     repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
     cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
@@ -81,13 +92,43 @@ spec:
         required_on_create: true
         description: Kubernetes verzió (pl. v1.32.0)
 
-      - name: control_plane_endpoint
+      - name: control_plane_endpoint_policy
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: scalar
-        scalar_type: string
+        shape_type: object
         role: config
-        required_on_create: true
-        description: API server endpoint URL (pl. https://k8s.example.com:6443)
+        required_on_create: false
+        description: >
+          Control plane endpoint hálózati policy-ja. Managed (OKE-szerű)
+          providernél a tényleges endpoint URL-t a provider generálja (lásd
+          state_surface.control_plane_endpoint) — itt csak a hálózati
+          elhelyezést és elérhetőséget lehet konfigurálni. Self-managed
+          (Talos/Kubespray/RKE2) esetén az adapter az explicit_endpoint
+          mezőn keresztül explicit URL-t is elfogadhat.
+        properties:
+          - name: network_ref
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+            description: >
+              Melyik hálózatban/subnetben helyezkedjen el az endpoint.
+              Ma sima string (nincs general/network/ canonical Subnet/
+              NetworkSpace séma, amire semantic_type: cic-reference-ként
+              mutathatna) — ha az megszületik, ez a mező cic-reference-re
+              vált.
+          - name: public_access
+            shape_type: scalar
+            scalar_type: boolean
+            required_on_create: false
+            default: false
+            description: Publikus (internet-elérhető) endpoint engedélyezve-e
+          - name: explicit_endpoint
+            shape_type: scalar
+            scalar_type: string
+            required_on_create: false
+            description: >
+              Self-managed provider esetén explicit endpoint URL. Managed
+              (OKE-szerű) esetén nem használt — ott a provider generálja,
+              lásd state_surface.control_plane_endpoint.
 
       - name: control_plane_count
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -302,6 +343,20 @@ spec:
       ttl: 30s
       strategy: event-driven
     nodes:
+
+      - name: control_plane_endpoint
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        required_on_create: false
+        description: >
+          Tényleges API server endpoint URL (pl. https://k8s.example.com:6443).
+          v1.0.0 előtt config_surface alatt élt, required_on_create: true-val
+          — ez managed (OKE-szerű) providerre nem igaz, ott a provider
+          generálja, a felhasználó csak a hálózati policy-t (lásd
+          config_surface.control_plane_endpoint_policy) állítja. Self-managed
+          providernél tükrözheti az explicit_endpoint policy-t.
 
       - name: health
         atomic_ref: "cic:core:Shape@v0.2.0"
