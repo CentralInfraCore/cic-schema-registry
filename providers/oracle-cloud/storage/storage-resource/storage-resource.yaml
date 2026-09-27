@@ -614,9 +614,9 @@ spec:
             shape_type: scalar
             scalar_type: string
 
-  # ── BindingSurface (részleges restatement, #131/thead12) ───────────────────────
-  # Csak addresses.key_fields -- adapter/adapter_capabilities NINCS itt
-  # megismételve, lásd a fájl description-jét.
+  # ── BindingSurface (teljes restatement, #131/thead12) ───────────────────────────
+  # addresses.key_fields + adapter + adapter_capabilities mind kiadva,
+  # lásd a fájl description-jét a két eltérő öröklési szemantikáról.
   binding_surface:
     addresses:
       - atomic_ref: "cic:core:Address@v0.2.0"
