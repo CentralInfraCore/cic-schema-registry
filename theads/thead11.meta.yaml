@@ -1,0 +1,79 @@
+thread: thead11
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  Egy beillesztett külső AI-review vizsgálata a #148-ról (a #137 -- YANG
+  per-érték enum conformance portolása DomainComposition-ra --
+  megoldásáról), mielőtt mergeltük volna. A review két különálló pontot
+  vetett fel: (1) a StorageResourceOracleCloud.encryption_mode leírásában
+  szereplő "Liskov substitution megtartva" állítás összemossa a séma-
+  szintű (TYPE/VOCABULARY) és a futásidejű (IMPLEMENTATION CAPABILITY)
+  garanciát; (2) _dc_enum_value_names() sorted() hívása TypeError-t
+  dobna vegyes típusú enum-értékeken.
+
+  Mindkét pont ellenőrzésre került a #148 branch-en (fix/enum-per-value-
+  conformance), amíg a PR még nyitva volt, és mindkettő javításra
+  került ugyanabban a PR-ban -- nem szükséges külön PR/issue, mert a
+  branch nem volt még mergelve.
+
+accepted:
+  - "A D-012 (Access atom) kernel-dokumentációja explicit kimondja, hogy
+    egy `conformance: not_implemented` mezőre írt intentet a Relay
+    futásidőben HARD REJECT-eli ('Silent acceptance is FORBIDDEN'). A
+    schema leírás korábbi 'NEM válik illegálissá... Liskov substitution
+    megtartva' megfogalmazása ezt a runtime-viselkedést figyelmen kívül
+    hagyta -- CONFIRMED a kernel doksi szövegéből."
+  - "A #137/#148 implementációja (coverage.py _dc_enum_value_names()/
+    _normalize_contract()) VÁLTOZATLANUL helyes marad: az mindig is csak
+    a TYPE/VOCABULARY axist ellenőrizte (a Contract enum névhalmaza
+    azonos-e), sosem a runtime conformance-t -- az utóbbi nem is a
+    coverage.py feladata. Ami javításra szorult, kizárólag a leírás
+    szövege volt, ami a két axist egy mondatban összemosta."
+  - "A helyes framing: TYPE/VOCABULARY (coverage.py ellenőrzi, azonos
+    marad a specializáción -- ez a valódi LSP-releváns garancia) vs.
+    IMPLEMENTATION CAPABILITY (access.conformance/D-012 ellenőrzi,
+    futásidőben, szándékosan eltérhet providerenként). A #137 csak az
+    elsőt garantálja, és ez elég is -- de a leírásnak ezt kell mondania,
+    nem azt, hogy a teljes viselkedés Liskov-kompatibilis maradt."
+  - "_dc_enum_value_names() sorted(names) hívása valóban TypeError-t
+    dobna egy vegyes típusú (pl. int+str) enum expression-ön -- CONFIRMED
+    olvasással. Empirikusan ellenőrizve: a teljes corpusban (general/,
+    providers/, standards/, -src kiadott fájlok nélkül) jelenleg NULLA
+    olyan `type: enum` Contract van, ami nem string scalar_type-on él --
+    tehát ma nem aktív hiba, de valódi, javítandó robosztussági rés,
+    amíg a PR úgyis nyitva volt."
+  - "Ugyanez a sorted() hiba a YANG-dialektus _yang_enum_value_names()-
+    ében is fennállt már a #137 előtt is (onnan lett mintaként átvéve) --
+    a hardening emiatt egy közös _sorted_enum_value_names() segédbe lett
+    kivonva, mindkét dialektust javítva, nem csak a DomainComposition
+    oldalt."
+
+rejected: []
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár):
+  - "A TYPE/VOCABULARY vs. IMPLEMENTATION CAPABILITY (capability vs.
+    conformance) duality formális, kernel-szintű kimondása -- ma csak
+    coverage.py docstringjeiben és ebben a threadben él dokumentálva.
+    Az atom-grammar README '§ Amit szándékosan NEM zárok le' szekciója
+    már korábban is jelezte ugyanezt a nyitott kérdést anélkül, hogy
+    lezárta volna -- ez a review ugyanannak a kérdésnek egy konkrét,
+    reprodukáló megjelenése, nem egy új kérdés. Nem ez a szál dönti el;
+    cic-primitives kernel-tervezési kérdés marad."
+
+kapcsolódó:
+  - "cic-schema-registry PR #148 (a javítás, amit ez a review átnézett --
+    mergelhető, a leírás-pontosítással és a sorted() hardeninggel
+    kiegészítve, ugyanabban a branch-ben)"
+  - "theads/thead07.txt + thead08.txt (a #137 eredeti, majd helyesbített
+    megoldása, amiből a #148 lett)"
+  - "tools/registrylib/coverage.py: _dc_enum_value_names(),
+    _yang_enum_value_names(), _sorted_enum_value_names() (új, közös),
+    check_coverage() docstring"
+  - "providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+    encryption_mode leírása (a pontosított TYPE vs. CAPABILITY szöveg)"
+  - "primitives-group/primitives/proposals/atom-grammar/README.md
+    '§ Amit szándékosan NEM zárok le' (a kapcsolódó, még nyitott
+    capability/conformance duality kérdés)"

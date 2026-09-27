@@ -124,6 +124,21 @@ def _conformance_of(node: dict[str, Any]) -> str | None:
     return None
 
 
+def _sorted_enum_value_names(names: list[Any]) -> tuple[Any, ...]:
+    """Shared tail of _dc_enum_value_names() and _yang_enum_value_names():
+    reduces an enum's bare value names to a sorted, order-independent
+    tuple. `sorted(names)` alone breaks with a TypeError if the list mixes
+    incompatible types (e.g. int and str) -- which would already be a
+    scalar_type-inconsistent enum declaration, a different bug one layer
+    down, but shape comparison must not crash on it. Falls back to a
+    type-qualified sort key in that case: still deterministic and
+    order-independent, which is all callers need."""
+    try:
+        return tuple(sorted(names))
+    except TypeError:
+        return tuple(sorted(names, key=lambda v: (type(v).__name__, str(v))))
+
+
 def _dc_enum_value_names(expression: Any) -> tuple[str, ...] | None:
     """DomainComposition counterpart to _yang_enum_value_names() (below,
     #137/thead07/thead08): normalizes a `contract: type: enum` entry's
@@ -143,7 +158,11 @@ def _dc_enum_value_names(expression: Any) -> tuple[str, ...] | None:
     them from the Contract outright, which would still correctly be
     flagged as a real shape mutation (and, per thead08, would be a
     Liskov substitution violation for any value a base-typed caller
-    could otherwise legally set)."""
+    could otherwise legally set) -- but only at the TYPE/vocabulary
+    level: it says nothing about whether the Relay accepts a write of
+    that value at runtime, which D-012 governs separately (a
+    `not_implemented` value is still a hard reject on write; see
+    thead11). coverage.py checks the former, not the latter."""
     if not isinstance(expression, list):
         return None
     names = []
@@ -154,7 +173,7 @@ def _dc_enum_value_names(expression: Any) -> tuple[str, ...] | None:
             names.append(entry["value"])
         else:
             return None  # malformed -- let the raw comparison below catch it
-    return tuple(sorted(names))
+    return _sorted_enum_value_names(names)
 
 
 def _normalize_contract(contract: Any) -> Any:
@@ -280,6 +299,12 @@ def check_coverage(
     name tuple and is correctly flagged as a mutation — that would be a
     Liskov substitution violation for a base-typed caller, not a
     conformance narrowing.
+
+    This function only ever checks the TYPE/vocabulary axis. Whether a
+    `not_implemented` value is actually acceptable to write at runtime is
+    a separate, D-012-governed axis (IMPLEMENTATION CAPABILITY) that this
+    module does not and should not adjudicate — see thead11 for the
+    distinction and why conflating the two overclaims what #137 buys.
 
     `extract`/`shape` are pluggable so the same missing/mutated logic
     serves both field vocabularies (DomainComposition's `shape_type`/
@@ -455,7 +480,7 @@ def _yang_enum_value_names(values: Any) -> tuple[str, ...] | None:
             names.append(entry["value"])
         else:
             return None  # malformed -- let the raw comparison below catch it
-    return tuple(sorted(names))
+    return _sorted_enum_value_names(names)
 
 
 # Defaults documented in cic-yang-block-schema's field_schema for the

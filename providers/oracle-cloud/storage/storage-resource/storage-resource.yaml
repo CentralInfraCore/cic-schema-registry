@@ -197,14 +197,30 @@ spec:
           hosszú alakja, portolva a DomainComposition oldalra) — a teljes
           vokabulárium
           (unspecified/none/provider_managed/customer_managed/
-          guest_managed) megmarad, tehát egy általános StorageResource-
-          kliens által legálisan beállított `encryption_mode: none`
-          NEM válik illegálissá ezen a specializáción (Liskov
-          substitution megtartva, lásd thead08 kritikája a korábbi
-          Contract-szűkítési kísérletről). A tools/registrylib/
-          coverage.py check_base_references() ezt már conformance-
-          blind módon hasonlítja (a vokabulárium NÉV-halmaza számít, a
-          per-érték conformance nem) — 0 violation, verifikálva.
+          guest_managed) megmarad. Ez két KÜLÖN dolgot jelent, nem egyet:
+
+          TYPE/VOCABULARY szinten a mező a StorageResource bázissal
+          azonos marad — egy általános StorageResource-kliens által
+          leírt `encryption_mode: none` intent ezen a specializáción is
+          séma-szinten legális marad (nem lesz Contract-szűkítés/mutated
+          shape, lásd thead08 kritikája a korábbi contract_narrowing
+          kísérletről). A tools/registrylib/coverage.py
+          check_base_references() ezt már conformance-blind módon
+          hasonlítja (a vokabulárium NÉV-halmaza számít, a per-érték
+          conformance nem) — 0 violation, verifikálva.
+
+          IMPLEMENTATION CAPABILITY szinten viszont a `none`/
+          `guest_managed` NEM egyenértékű a támogatott értékekkel: a
+          kernel Access atom D-012 szabálya szerint egy `conformance:
+          not_implemented` mezőre írt intentet a Relay futásidőben HARD
+          REJECT-eli ("Silent acceptance is FORBIDDEN"). Vagyis a fenti
+          intent séma-szinten érvényes marad, de a write ettől még
+          runtime-ban elutasításra kerül ezen a specializáción — ez NEM
+          Liskov substitution a viselkedés szintjén, csak a
+          típus/vokabulárium szintjén. A #137 ezt a két szintet
+          szándékosan szétválasztja (nem összemossa): coverage.py a
+          TYPE-ot ellenőrzi, a conformance/D-012 a CAPABILITY-t —
+          lásd thead11.
         contract:
           - type: enum
             expression:

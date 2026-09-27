@@ -1,0 +1,78 @@
+Ez a szál egy beillesztett külső AI-review vizsgálatából nőtt ki, ami a
+#148-at (a #137 megoldása, YANG-stílusú per-érték conformance portolása
+DomainComposition-ra) nézte át, még mielőtt mergeltük volna.
+
+A review a StorageResourceOracleCloud.encryption_mode mező leírásában
+(providers/oracle-cloud/storage/storage-resource/storage-resource.yaml)
+szereplő "Liskov substitution megtartva" állítást vitatta, és a
+tools/registrylib/coverage.py _dc_enum_value_names()-ének sorted()
+hívásában egy type-safety hiányra mutatott rá.
+
+1. A Liskov-állítás pontosítása
+
+Ellenőriztem a kritikát közvetlenül a kernel dokumentáción keresztül,
+mielőtt elfogadtam volna: az Access atom D-012 szabálya kimondja, hogy
+`conformance: not_implemented`-re írt intentet a Relay futásidőben HARD
+REJECT-eli ("Silent acceptance is FORBIDDEN — the Relay rejects the
+write"). A schema leírás korábbi megfogalmazása ("encryption_mode: none
+NEM válik illegálissá ezen a specializáción, Liskov substitution
+megtartva") ezt figyelmen kívül hagyta — összemosta a séma-szintű
+legalitást a futásidejű elfogadhatósággal, holott a kettő különböző
+kérdés.
+
+A review pontos volt: a #137 fix két KÜLÖN axist old meg, nem egyet.
+
+  TYPE / VOCABULARY
+    Amit coverage.py check_base_references() ellenőriz. A Contract
+    enum teljes névhalmaza azonos marad a bázis és a specializáció
+    között — ez a tényleges Liskov-releváns garancia, és VALÓBAN
+    megmarad (ellentétben a thead07-ben javasolt contract_narrowing
+    escape hatch-csel, amit thead08 helyesen utasított el LSP-sértésként).
+
+  IMPLEMENTATION CAPABILITY
+    Amit az access.conformance (D-012) ellenőriz, futásidőben, a Relay-
+    ben. Ez SZÁNDÉKOSAN eltérhet specializációnként — épp ez a
+    conformance mechanizmus célja. Egy `not_implemented` érték a
+    vokabulárium RÉSZE marad, de az ÍRÁSA hard reject.
+
+A #137 helyes és mergelhető maradt VÁLTOZATLAN kóddal — a
+_dc_enum_value_names()/_normalize_contract() implementáció eleve csak a
+TYPE axist ellenőrzi, ez korrekt (coverage.py sosem volt hivatott a
+runtime conformance-t ellenőrizni, az egy másik komponens, a Relay
+feladata). Ami javításra szorult, az kizárólag a leírás/dokumentáció
+szövege volt, ami a két axist egy mondatban összemosta. Javítva: a
+schema leírás és a coverage.py két docstring-je (_dc_enum_value_names,
+check_coverage) most explicit szétválasztja a TYPE/VOCABULARY és az
+IMPLEMENTATION CAPABILITY állítást, és nem mondja ki tévesen, hogy a
+runtime-viselkedés is Liskov-kompatibilis marad.
+
+2. A sorted() type-safety kérdés
+
+A review helyesen mutatott rá, hogy `sorted(names)` TypeError-t dobna,
+ha egy enum kontraktus vegyes típusú értékeket tartalmazna (pl. int és
+str keverve). Ellenőriztem: a teljes corpusban (general/, providers/,
+standards/, a -src kiadott fájlok kizárva) jelenleg NULLA olyan
+`type: enum` Contract van, ami nem string scalar_type-on él — tehát ma
+ez nem aktív hiba, csak egy látens robosztussági rés.
+
+Mivel a PR #148 még nyitva volt, a javítást bele lehetett venni:
+_dc_enum_value_names() és a YANG-dialektus már meglévő,
+UGYANEZZEL a hibalehetőséggel élő _yang_enum_value_names() közös
+segédfüggvénybe (_sorted_enum_value_names()) lett kivonva, ami
+TypeError esetén egy típus-kvalifikált kulcsra esik vissza — a cél nem
+a szemantikus rendezés, csak a determinisztikus, sorrend-független
+összehasonlíthatóság megőrzése. Új teszt igazolja, hogy egy
+type-inkonzisztens enum már nem dobja el a check_coverage()-et.
+
+Ez a második pont is jelzi, hogy a YANG-dialektus eredeti
+_yang_enum_value_names()-e (amiből a #137 mintát vett) ugyanezt a hibát
+öröklte volna — a hardening ezért mindkét dialektust érinti, nem csak a
+DomainComposition oldalt, konzisztencia okán.
+
+A mélyebb, kernel-szintű kérdés, amit a review felszínre hozott, de amit
+ez a szál NEM zár le: a TYPE/VOCABULARY vs. IMPLEMENTATION CAPABILITY
+megkülönböztetés ma csak a coverage.py docstringjeiben és ebben a
+threadben van kimondva — az atom-grammar README-je (§ "Amit szándékosan
+NEM zárok le") már korábban is jelezte a `capability` vs `conformance`
+duality kérdést anélkül, hogy formálisan lezárta volna. Ez a review
+ugyanannak a nyitott kérdésnek egy konkrét, reprodukáló megjelenése.

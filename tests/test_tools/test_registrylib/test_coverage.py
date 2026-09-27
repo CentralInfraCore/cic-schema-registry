@@ -273,6 +273,26 @@ def test_contract_enum_differs_when_a_value_is_genuinely_missing():
     assert result.violations[0].kind == "mutated"
 
 
+def test_contract_enum_survives_heterogeneous_value_types():
+    """A scalar_type-inconsistent enum (mixed int/str values -- already a
+    bug one layer down, but not this function's to catch) must not crash
+    check_coverage(): plain sorted() raises TypeError on an int/str mix.
+    _sorted_enum_value_names()'s type-qualified fallback keeps the
+    comparison deterministic instead."""
+    doc = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", 1, "b"]}],
+            }
+        ]
+    )
+    result = check_coverage(doc, doc, major_bump=False)
+    assert result.ok
+
+
 def test_non_enum_contract_types_are_unaffected_by_enum_normalization():
     """A range/must/pattern contract must still compare as a real
     mutation when changed -- the enum-specific normalization must not
