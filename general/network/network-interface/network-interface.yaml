@@ -17,7 +17,7 @@
 ---
 metadata:
   name: NetworkInterface
-  version: v0.4.5
+  version: v1.0.0
   description: >
     Egységes hálózati interfész erőforrás — fizikai switch port, logikai interfész
     (OVS bridge, loopback), VLAN szegmens és tunnel (VXLAN/GRE) egyaránt leírható.
@@ -45,6 +45,20 @@ metadata:
     formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
     proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
     mutáció.
+    v1.0.0 (#143): stp/poe/storm_control/qinq/lacp/lldp/port_mirror/
+    statistics/stp_state/poe_state/lacp_state `shape_type: object` →
+    `composite` + `properties:` → `fields:` (az `object` nincs a kernel
+    zárt típuskészletében). logical_interfaces[].ip/nameservers
+    ugyanígy, +sima cím-listák (ip.addresses, nameservers.addresses/
+    search, lldp_neighbors[].capabilities/management_addresses)
+    `collection_variant: set` + `item_scalar_type`-ra. vxlans[].ip
+    (sosem lett kibontva) `shape_type: opaque`-ra, tartalom nélkül.
+    vlans: `vlan_id` most `role: key, mandatory: true` (a lista
+    kulcsa, `ref`-es elemnél is kötelező), `allowed_vlans`
+    `set`+`item_scalar_type: integer`-re. vxlans: `vni` ugyanígy a
+    lista kulcsa. logical_interfaces: új `name` mező szintetikus lista-
+    kulcsként, mert sem `ref`, sem a `logical_type`+`vlan_ref` pár nem
+    mindig jelen lévő azonosító. MAJOR bump: valódi shape-mutáció.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -187,7 +201,10 @@ spec:
         optional: true
         description: >
           VLAN szegmensek ezen az interfészen (ietf-interfaces-vlan alapján).
-          Minden elem: ref (CIC address) VAGY inline VLAN definíció.
+          Minden elem: ref (CIC address) VAGY inline VLAN definíció, de a
+          vlan_id mindkét esetben kötelező — ez adja a lista kulcsát (#143,
+          C8: egy listának mindig kell legyen kulcsa; ref-only esetben is
+          meg kell adni azt a vlan_id-t, amire a ref mutat).
           applicable_when: type in [physical, logical, bond]
         item_fields:
           - name: ref
@@ -198,8 +215,9 @@ spec:
           - name: vlan_id
             shape_type: scalar
             scalar_type: integer
-            optional: true
-            description: VLAN azonosító (1-4094) — kötelező ha ref nincs megadva
+            role: key
+            mandatory: true
+            description: VLAN azonosító (1-4094) — a lista kulcsa, ref esetén is kötelező
           - name: vlan_mode
             shape_type: scalar
             scalar_type: string
@@ -210,7 +228,8 @@ spec:
                 expression: [access, trunk, hybrid]
           - name: allowed_vlans
             shape_type: collection
-            collection_variant: list
+            collection_variant: set
+            item_scalar_type: integer
             optional: true
             description: Engedélyezett VLAN ID-k trunk módban
           - name: dhcp_service
@@ -229,7 +248,17 @@ spec:
           Logikai subinterfészek / SVI-k (ietf-interfaces-logical + ietf-ip-v4/v6 alapján).
           Minden elem: ref VAGY inline logikai interfész definíció + opcionális IP konfig.
           applicable_when: type in [physical, logical, bond]
+          A `name` mező (#143, C8) szintetikus lista-kulcs — sem `ref`, sem
+          a `logical_type`+`vlan_ref` pár nem mindig jelen lévő, egyedi
+          azonosító, ugyanaz a minta, mint compute-resource
+          network_interfaces/node_pools saját `name` kulcsa.
         item_fields:
+          - name: name
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: Logikai subinterfész neve (pl. eth0.100, vlan100)
           - name: ref
             shape_type: scalar
             scalar_type: string
@@ -248,13 +277,14 @@ spec:
             optional: true
             description: VLAN ID amire ez a logikai interfész épül
           - name: ip
-            shape_type: object
+            shape_type: composite
             optional: true
             description: IP konfiguráció (ietf-ip-v4/v6 alapján, netplan-kompatibilis)
-            properties:
+            fields:
               - name: addresses
                 shape_type: collection
-                collection_variant: list
+                collection_variant: set
+                item_scalar_type: string
                 optional: true
                 description: Statikus IP cím(ek) CIDR formátumban (IPv4 és/vagy IPv6)
               - name: gateway4
@@ -268,16 +298,18 @@ spec:
                 optional: true
                 description: Default IPv6 gateway
               - name: nameservers
-                shape_type: object
+                shape_type: composite
                 optional: true
-                properties:
+                fields:
                   - name: addresses
                     shape_type: collection
-                    collection_variant: list
+                    collection_variant: set
+                    item_scalar_type: string
                     optional: true
                   - name: search
                     shape_type: collection
-                    collection_variant: list
+                    collection_variant: set
+                    item_scalar_type: string
                     optional: true
               - name: routes
                 shape_type: collection
@@ -323,6 +355,8 @@ spec:
         description: >
           VXLAN tunnel interfészek (ietf-interfaces-tunnel alapján).
           applicable_when: type in [logical, bridge]
+          A vni (#143, C8) mindkét esetben kötelező — ez a lista kulcsa,
+          ugyanaz a minta, mint a vlans.vlan_id-nél.
         item_fields:
           - name: ref
             shape_type: scalar
@@ -332,8 +366,9 @@ spec:
           - name: vni
             shape_type: scalar
             scalar_type: integer
-            optional: true
-            description: VXLAN Network Identifier (1-16777215)
+            role: key
+            mandatory: true
+            description: VXLAN Network Identifier (1-16777215) — a lista kulcsa, ref esetén is kötelező
           - name: local_endpoint
             shape_type: scalar
             scalar_type: string
@@ -351,19 +386,24 @@ spec:
             default: true
             description: MAC learning — false = BGP EVPN vezérelt
           - name: ip
-            shape_type: object
+            shape_type: opaque
             optional: true
-            description: IP konfiguráció a tunnel interfészen (netplan-kompatibilis)
+            description: >
+              IP konfiguráció a tunnel interfészen (netplan-kompatibilis) —
+              a logikai interfészek `ip` mezőjével (fentebb) azonos
+              fogalom, de itt sosem lett kibontva `fields`-ként; `opaque`
+              jelöli, hogy a séma szándékosan nem néz bele, nem hazudja
+              üresnek. Kibontása külön feladat, nem #143 hatóköre.
 
       # ── STP / Spanning Tree (capability: stp) ────────────────────────────────
       - name: stp
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: stp
         description: Spanning Tree Protocol konfiguráció (IEEE 802.1D/Q/w/s)
-        properties:
+        fields:
           - name: enabled
             shape_type: scalar
             scalar_type: boolean
@@ -409,12 +449,12 @@ spec:
       # ── PoE (capability: poe) ─────────────────────────────────────────────────
       - name: poe
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: poe
         description: Power over Ethernet konfiguráció (IEEE 802.3at/bt)
-        properties:
+        fields:
           - name: enabled
             shape_type: scalar
             scalar_type: boolean
@@ -444,12 +484,12 @@ spec:
       # ── Storm control (capability: storm_control) ─────────────────────────────
       - name: storm_control
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: storm_control
         description: Broadcast/multicast flood korlát
-        properties:
+        fields:
           - name: broadcast_threshold_pct
             shape_type: scalar
             scalar_type: integer
@@ -477,12 +517,12 @@ spec:
       # ── QinQ / 802.1ad (capability: qinq) ────────────────────────────────────
       - name: qinq
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: qinq
         description: "QinQ double tagging konfiguráció (IEEE 802.1ad)"
-        properties:
+        fields:
           - name: enabled
             shape_type: scalar
             scalar_type: boolean
@@ -506,12 +546,12 @@ spec:
       # ── LACP részletek (capability: lacp) ────────────────────────────────────
       - name: lacp
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: lacp
         description: LACP (Link Aggregation Control Protocol) részletes konfiguráció
-        properties:
+        fields:
           - name: interval
             shape_type: scalar
             scalar_type: string
@@ -544,12 +584,12 @@ spec:
       # ── LLDP (capability: lldp) ───────────────────────────────────────────────
       - name: lldp
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: lldp
         description: LLDP konfiguráció (RFC 8516, ietf-lldp cic-yang@v0.1.3)
-        properties:
+        fields:
           - name: enabled
             shape_type: scalar
             scalar_type: boolean
@@ -564,19 +604,20 @@ spec:
             default: true
           - name: tlvs
             shape_type: collection
-            collection_variant: list
+            collection_variant: set
+            item_scalar_type: string
             optional: true
             description: Hirdetett TLV-k (system-name, port-description, management-address stb.)
 
       # ── Port mirroring / SPAN (capability: port_mirror) ──────────────────────
       - name: port_mirror
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
         optional: true
         capability: port_mirror
         description: Port tükrözés / SPAN — forgalom másolása monitoring portra
-        properties:
+        fields:
           - name: enabled
             shape_type: scalar
             scalar_type: boolean
@@ -669,12 +710,12 @@ spec:
 
       - name: statistics
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: operational
         optional: true
         capability: statistics
         description: Forgalmi számlálók
-        properties:
+        fields:
           - name: in_pkts
             shape_type: scalar
             scalar_type: integer
@@ -697,12 +738,12 @@ spec:
       # capability: stp
       - name: stp_state
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: state
         optional: true
         capability: stp
         description: STP port állapot
-        properties:
+        fields:
           - name: port_state
             shape_type: scalar
             scalar_type: string
@@ -726,12 +767,12 @@ spec:
       # capability: poe
       - name: poe_state
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: state
         optional: true
         capability: poe
         description: PoE aktuális állapot
-        properties:
+        fields:
           - name: status
             shape_type: scalar
             scalar_type: string
@@ -778,25 +819,27 @@ spec:
             optional: true
           - name: capabilities
             shape_type: collection
-            collection_variant: list
+            collection_variant: set
+            item_scalar_type: string
             optional: true
           - name: ttl_seconds
             shape_type: scalar
             scalar_type: integer
           - name: management_addresses
             shape_type: collection
-            collection_variant: list
+            collection_variant: set
+            item_scalar_type: string
             optional: true
 
       # capability: lacp
       - name: lacp_state
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: state
         optional: true
         capability: lacp
         description: LACP aggregáció aktuális állapota
-        properties:
+        fields:
           - name: active_links
             shape_type: scalar
             scalar_type: integer
