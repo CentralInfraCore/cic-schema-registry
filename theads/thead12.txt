@@ -64,17 +64,80 @@ a helyes döntés volt NEM bevezetni egy félrevezető strukturális
 megoldást csak azért, mert a nyelv (még) nem tudja kifejezni a valódi
 mintát.
 
-3. Ami emiatt is nyitva maradt
+3. Ami emiatt is nyitva maradt (ELSŐ változat, 4. szakaszban helyesbítve)
 
-`adapter`/`adapter_capabilities` a #131 explicit scope-ján kívül esik --
-nem lett megismételve a specializációban. Ha valaha megismétlésre kerül,
-azzal együtt felmerül egy MÁSIK, eddig dokumentálatlan következetlenség:
-a bázis `adapter_capabilities.known_adapters` cloud-bejegyzésének
-`capabilities` listája tartalmazza a `filesystem`-et, holott a
-config_surface.filesystem mező OCI-n `access.conformance:
-not_implemented` -- ezt a szálat ez a thead nem oldja meg, csak rögzíti,
-hogy létezik.
+Az első változatban `adapter`/`adapter_capabilities` a #131 explicit
+scope-ján kívülre lett sorolva, nem lett megismételve a specializációban.
+Ez tévedés volt -- lásd 4. szakasz.
 
 `policy_surface`/`derivation_chain` továbbra is nyitva marad,
 cic-primitives#6 (derivation_chain besorolás) döntésétől függ -- ez a
 #131 másik, nem ez a szál által megoldott fele.
+
+4. Külső review: a részleges binding_surface saját magával ellentmondó
+
+Egy beillesztett külső AI-review helyesen mutatott rá, hogy a 3.
+szakaszban leírt döntés ("adapter/adapter_capabilities kívül esik a
+scope-on") saját magával ellentmondó volt: a fájl explicit idézi a
+coverage.py "explicit full restatement, nincs implicit öröklés" elvét,
+majd egy RÉSZLEGES binding_surface-t hoz létre (csak `addresses`,
+`adapter`/`adapter_capabilities` nélkül). Ez a review szavaival:
+
+  Ha a hiányzó tagok öröklődnek a bázisból -> implicit inheritance,
+  amit az idézett elv tilt.
+  Ha nem öröklődnek -> a specializációnak nincs adaptere/kapabilitása,
+  ami abszurd.
+  A kettő egyszerre nem lehet igaz.
+
+Ellenőrizve: a coverage.py `_NODE_LIST_KEYS`-e valóban nem tartalmazza a
+binding_surface-t (ahogy a 0. verzió is jelezte), tehát a "grammar: 0
+finding, coverage: 0 violation" ebben az esetben tényleg nem bizonyítja a
+specializáció binding-szemantikájának helyességét -- csak azt, hogy az
+ellenőrzés nem néz bele. Ez helyes és fontos észrevétel volt.
+
+A review három tiszta modellt vetett fel (full replacement / explicit
+inherit: true jelzés / structural overlay). Az utóbbi kettő új kernel-
+mechanizmust igényelne (formalizálatlan overlay-algebra), amit nem lehet
+egyoldalúan, egy schema-registry PR-ban bevezetni. A választott megoldás
+a FULL REPLACEMENT: a specializáció mostantól a teljes `binding_surface`-t
+kiadja, `adapter: storage-adapter` + `adapter_capabilities.known_adapters`
+is.
+
+Fontos különbségtétel, amit eközben ki kellett mondani: a binding_surface
+KÉT eltérő jellegű tartalmat kever.
+
+  addresses[].key_fields -- örökölt Shape-mező-lista, azonos jellegű a
+  config_surface/state_surface node-jaival. Itt a "teljes restatement"
+  ugyanazt jelenti, mint amazoknál: minden mező jelen van, vagy per-value
+  conformance-szal szűkítve (lásd 1-2. szakasz).
+
+  adapter/adapter_capabilities.known_adapters -- NEM örökölt Shape-mező
+  (check_grammar.py NODE_CONTAINERS sem kezeli node-ként), hanem statikus
+  tény-lista arról, milyen backend/provider kombinációt szolgál ki
+  ténylegesen az adapter-implementáció. Itt a "teljes restatement" NEM az
+  összes bázis-bejegyzés (hypervisor/san/cloud) megismétlését jelenti --
+  azok fizikailag sosem relevánsak egy OCI-specifikus adapterre --, hanem
+  a specializációra ténylegesen érvényes, önálló, teljes tényhalmaz
+  kiadását: itt egyetlen `backend: cloud, provider: oci` bejegyzés.
+
+Ez a megkülönböztetés MOST született meg, válaszul a reviewra -- korábban
+sehol nem volt kimondva, sem a coverage.py docstringjében, sem a #131-ben.
+Nem lett kernel-szinten formalizálva, csak erre a konkrét esetre lett
+alkalmazva. Ha a mintázat máshol is előkerül (más domain specializáción),
+ezt a megkülönböztetést explicit ki kell majd mondani cic-primitives
+szinten -- ez egy újabb nyitott kérdés, nem ezzel a szállal lezárt.
+
+Mellékesen javítva: a bázis cloud-bejegyzésének `capabilities` listája
+tartalmazta a `filesystem`-et, holott a config_surface.filesystem mező
+OCI-n `access.conformance: not_implemented` -- a specializáció
+`known_adapters` bejegyzésének `capabilities` listájából a `filesystem`
+most kimaradt. Ez az a következetlenség, amit az első verzió csak
+rögzített, nem oldott meg.
+
+A review egy további, nem-blokkoló észrevétele: a `backend`
+key_field per-value conformance szűkítése (1. szakasz) az Address
+identitás-komponensen történik, nem egy sima config-enumon -- felveti a
+kérdést, hogy a binding/address névtér típustér-e vagy tényleges routable
+identity space. Ha az utóbbi, a `not_implemented` itt erősebb jelentésű
+lehet, mint egy sima enumon. Nem blocker, nincs eldöntve -- lásd "nem
+nyitva" lista.
