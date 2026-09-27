@@ -93,7 +93,7 @@ spec:
   kind: DomainComposition
   base:
     aggregate: StorageResource
-    ref: "cic:storage:StorageResource@v1.0.0"
+    ref: "cic:storage:StorageResource@v1.2.0"
 
   provider_resources:
     - core.Volume
@@ -106,7 +106,7 @@ spec:
     kind: StorageResourceOracleCloud
     namespace: "cic:storage"
     version: v0.1.dev
-    base: "cic:storage:StorageResource@v1.0.0"
+    base: "cic:storage:StorageResource@v1.2.0"
     abstract: false
     description: Oracle Cloud Infrastructure altípusa a platform-agnosztikus block volume erőforrásnak
 
@@ -177,30 +177,33 @@ spec:
         scalar_type: string
         role: config
         optional: true
-        default: none
+        default: unspecified
         capability: encryption
         description: >
           At-rest titkosítás módja. OCI minden Block/Boot Volume-ot
           kötelezően AES-256-tal titkosít at-rest — "unencrypted"
           (none) és guest_managed állapot OCI-n gyakorlatban nem
-          fordul elő, a mező itt csak provider_managed/customer_managed
-          között mozog (lásd encryption_key_ref). A canonical
-          encryption_mode enumot a StorageResource v1.0.0 vezette be
-          (korábban `encryption: boolean` volt, ami OCI-n értelmezhetetlen
-          intent volt — lásd theads/thead04.txt). A contract enum
-          teljes listáját (nem csak az OCI-n releváns két értéket)
-          változatlanul átvesszük — a tools/registrylib/coverage.py
-          check_base_references() minden identity.base ellenőrzést
-          major_bump=False-szal fut (registry_validate.py:386), tehát
-          egy szűkebb Contract-enum itt "mutated" violationt adna;
+          fordul elő, a mező itt csak unspecified/provider_managed/
+          customer_managed között mozog ténylegesen (lásd
+          encryption_key_ref). A canonical encryption_mode enumot a
+          StorageResource v1.0.0 vezette be (korábban `encryption:
+          boolean` volt, ami OCI-n értelmezhetetlen intent volt — lásd
+          theads/thead04.txt), az `unspecified` értéket pedig v1.2.0
+          (lásd #140 — a korábbi `default: none` hazug állítás volt
+          OCI-n, mert a mező hiánya nem jelentett "titkosítatlan"-t).
+          A contract enum teljes listáját (nem csak az OCI-n releváns
+          három értéket) változatlanul átvesszük — a tools/registrylib/
+          coverage.py check_base_references() minden identity.base
+          ellenőrzést major_bump=False-szal fut (registry_validate.py:386),
+          tehát egy szűkebb Contract-enum itt "mutated" violationt adna;
           ma nincs primitívszintű módja annak, hogy egy specializáció
-          egy mező ÉRTÉKKÉSZLETÉT (nem a teljes mezőt) szűkítse — ez
-          ugyanaz a hiányzó mechanizmus, amit a cic-primitives#5 (Address
-          key_fields) is jelez, csak itt bármelyik enum mezőre igaz,
-          nem csak a binding_surface-re.
+          egy mező ÉRTÉKKÉSZLETÉT (nem a teljes mezőt) szűkítse — ezt a
+          #137 hivatott megoldani (per-value conformance, a
+          ietf-interfaces-vlan.yaml mintáját a DomainComposition
+          dialektusra portolva), nem eldöntve, nem implementálva itt.
         contract:
           - type: enum
-            expression: [none, provider_managed, customer_managed, guest_managed]
+            expression: [unspecified, none, provider_managed, customer_managed, guest_managed]
 
       - name: encryption_key_ref
         atomic_ref: "cic:core:Shape@v0.2.0"

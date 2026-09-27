@@ -102,10 +102,14 @@ spec:
         thead04.meta.yaml "nem nyitva" 2. tétele, azóta megoldva) — ez
         a bejegyzés a `mismatch: true`-t viselte korábban, most már
         rendes `derived`: ha Volume.kmsKeyId üres, customer_managed
-        helyett provider_managed a levezetett érték (OCI-n `none` és
-        `guest_managed` sosem fordul elő, de ezt a canonical Contract
-        enum listája nem tudja kifejezni — lásd a séma saját mezőjének
-        leírását a mismatch-mentesítés részleteiről).
+        helyett provider_managed a levezetett érték. Az `unspecified`
+        (v1.2.0, #140) csak akkor jelenik meg, ha az intent explicit nem
+        adott meg semmit — ez sosem "megfigyelt" érték, hanem az intent
+        hiányának jele, tehát ez a mapping nem is vonatkozik rá. `none`
+        és `guest_managed` sosem fordul elő OCI-n, de ezt a canonical
+        Contract enum listája nem tudja kifejezni — lásd a séma saját
+        mezőjének leírását (#137 hivatott megoldani, per-value
+        conformance-szal, nem eldöntve).
 
     - target: config_surface.encryption_key_ref
       kind: direct

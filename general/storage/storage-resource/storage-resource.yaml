@@ -17,7 +17,7 @@
 ---
 metadata:
   name: StorageResource
-  version: v1.1.0
+  version: v1.2.0
   description: >
     Egységes block volume erőforrás — hypervisor-managed disk, SAN/iSCSI LUN és cloud
     block storage egyaránt leírható. A paradigma (hypervisor/san/cloud) az adapter és
@@ -39,6 +39,9 @@ metadata:
     formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
     proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
     mutáció.
+    v1.2.0: encryption_mode felvette az `unspecified` értéket,
+    default: none → default: unspecified — lásd #140 és a mező saját
+    description-jét.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -126,7 +129,7 @@ spec:
         scalar_type: string
         role: config
         optional: true
-        default: none
+        default: unspecified
         capability: encryption
         description: >
           At-rest titkosítás módja. v1.0.0 előtt `encryption: boolean,
@@ -134,9 +137,18 @@ spec:
           "unencrypted" állapot, ott a mező gyakorlatban csak
           provider_managed/customer_managed között mozog, a none/
           guest_managed más backendekre (hypervisor/san) marad releváns.
+          v1.2.0: `unspecified` felvéve, `default: none`-ból `default:
+          unspecified`-re váltva — lásd #140. A "none" (explicit ne
+          titkosítsd) és a "nincs véleményem a kulcskezelésről, a backend
+          defaultja érvényes" két különböző intent; a korábbi `default:
+          none` a másodikat próbálta kifejezni az elsővel, ami OCI-szerű
+          backendeken hazug állítás volt (a mező hiánya nem jelent
+          "titkosítatlan"-t, mert az OCI-n nem is lehetséges). `none`
+          mostantól csak explicit kérésre jelenik meg, olyan backendeken,
+          ahol ez ténylegesen elérhető állapot (pl. hypervisor/san).
         contract:
           - type: enum
-            expression: [none, provider_managed, customer_managed, guest_managed]
+            expression: [unspecified, none, provider_managed, customer_managed, guest_managed]
 
       - name: encryption_key_ref
         atomic_ref: "cic:core:Shape@v0.2.0"
