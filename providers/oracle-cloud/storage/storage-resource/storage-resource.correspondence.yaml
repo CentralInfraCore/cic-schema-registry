@@ -79,9 +79,13 @@ metadata:
     - provider-correspondence
     - storage
     - oracle-cloud
-  validatedBy:
-    name: cic-primitives
-    version: v0.2.0
+  # Szándékosan NINCS `validatedBy` (külső review, PR #153): a mezőt a
+  # StorageResourceOracleCloud sémájáról másoltuk ide, de ott igaz (a
+  # check_grammar.py ténylegesen validálja), itt viszont hamis lenne --
+  # `kind: ProviderCorrespondence` nincs a grammar által ismert kind-ok
+  # között, semmi nem ellenőrzi ezt a fájlt. Ellentmondana a fájl saját,
+  # fent olvasható döntésének (#134/thead17: marad dokumentációs
+  # konvenció, nincs validáció).
 
 spec:
   kind: ProviderCorrespondence

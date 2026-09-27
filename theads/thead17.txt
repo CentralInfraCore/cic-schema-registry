@@ -74,3 +74,27 @@ már régóta a main-en van commitolva, csak a "review alatt, formátum
 nem eldöntött" állapot volt még függőben, ami most lezárult), és a
 metadata.description "NYITOTT" bekezdése lecserélve a fenti döntésre
 és indoklásra.
+
+Külső review (PR #153-on): talált egy konkrét, valódi ellentmondást,
+amit merge előtt javítani kellett. A fájl metadata.validatedBy mezője
+(`name: cic-primitives, version: v0.2.0`) — a StorageResourceOracleCloud
+sémájáról átvéve — hamis állítást tett a MOST meghozott döntés fényében:
+ott igaz (a check_grammar.py ténylegesen validálja azt a fájlt), itt
+viszont nem, mert `kind: ProviderCorrespondence` nincs a grammar által
+ismert kind-ok között, semmi nem ellenőrzi ezt a fájlt. Ez pontosan az
+ellenkezőjét sugallta annak, amit a #134/thead17 döntése kimond
+("structured documentation ≠ formal CIC schema contract").
+
+Javítva: a `validatedBy` blokk törölve, helyette egy komment magyarázza
+miért hiányzik szándékosan. NEM vezettünk be helyette új meta-mezőt
+(pl. `status: documentation-only`) — a review is óvatosságra intett,
+nehogy egy újabb meta-modellt találjunk ki pont abban a threadben, ami
+a formalizálás ELLEN döntött; a metadata.description már amúgy is
+részletesen leírja az állapotot prózában.
+
+A review egy kisebb, nem blokkoló pontosítást is javasolt: a PR
+leírásában "Cross-repo relationship to correspondence.go? None." túl
+erős állítás, mert FOGALMI kapcsolat (a leírás maga részletesen
+kifejti) VAN, csak GÉPI/kikényszerített/generált kapcsolat nincs.
+Pontosítva a PR leírásában "No enforced/generated/synchronized
+relationship"-re.
