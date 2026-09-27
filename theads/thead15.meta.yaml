@@ -1,0 +1,68 @@
+thread: thead15
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  #25 feloldása: KubernetesCluster/KubernetesNode binding_surface kapott
+  egy backend (self-managed/cloud-managed) key_fields mezőt, a
+  StorageResource/ComputeResource backend+provider mintáját követve.
+  A user rámutatott a storage-resource konkrét precedensére; emellett
+  kiderült, hogy a cloud-managed-adapter.yaml (AdapterContract) már
+  létezik, teljes known_implementations + conformance_matrix-szal, csak
+  a bekötés hiányzott. Most bekötve az adapter_capabilities.known_adapters
+  mátrixba.
+
+accepted:
+  - "general/storage/storage-resource/storage-resource.yaml
+    binding_surface backend+provider mintája KONKRÉT, MŰKÖDŐ precedens
+    ugyanerre a problémára (backend-függő provider-névtér) -- nem
+    elméleti analógia. backend feltétlen enum, provider feltételes
+    jelentésű (nincs feltétlen Contract), a KubernetesCluster erre a
+    mintára írható át változtatás nélkül a séma-elveken."
+  - "cloud-managed-adapter.yaml MÁR LÉTEZIK (AdapterContract,
+    conformance: partial), teljes known_implementations (gke/eks/aks/
+    oke/doks-adapter, provider: gcp/aws/azure/oci/digitalocean) és
+    conformance_matrix-szal (etcd/api_server.extra_args/
+    controller_manager/scheduler/rotate_certs unsupported, node
+    reset/network_ref degraded) -- ez konkrét, nem elméleti motiváció a
+    korábbi 'várjunk használati esetig' ajánlás felülbírálására."
+  - "A) irány (kétszintű backend+provider) választva B) helyett
+    (névtér-prefix egy mezőben) -- a storage precedens konzisztenciája
+    erősebb érv, mint a B) egyszerűbb megvalósítása."
+  - "kubernetes-node.yaml binding_surface-e is kapott backend-et, mert a
+    node address-e a cluster hierarchikus alcíme (schema_path is
+    tartalmazza a szülő kulcsait) -- cluster_ref (config_surface,
+    cic-reference) VÁLTOZATLAN marad, mert a reference_target
+    (namespace:Kind) nem függ a cím-formátumtól."
+  - "Nincs verzióbump egyik fájlon sem -- mindkettő (v1.2.0/v1.0.0)
+    sosem lett még -src<év> release-ként kivágva, ugyanannak a MAJOR
+    lépésnek (#143) a finomítása. Verifikálva: check_grammar.py 0
+    finding mindkét fájlon (70, 54 node)."
+
+rejected:
+  - "B) irány (provider névtér-prefix egy mezőben, pl. provider:
+    cloud:aws) -- felmerült mint kevésbé strukturális változás, de a
+    storage-nál MÁR MŰKÖDŐ, konzisztens A) mintát választottuk helyette."
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár):
+  - "A cloud-managed known_adapters bejegyzések capabilities: [] +
+    jegyzet formája nem tükrözi a cloud-managed-adapter.yaml teljes
+    conformance_matrix-át (target-specifikus unsupported/degraded) --
+    ha valaha szükség lesz rá, a teljes matrix -> known_adapters leképezés
+    formalizálása külön kérdés."
+
+kapcsolódó:
+  - "cic-schema-registry#25 (a szál, amit ez feloldott)"
+  - "cic-schema-registry#18 + PR #25 (az eredeti adapter_capabilities
+    mátrix, ami a cloud-managed-adapter kihagyását bevezette)"
+  - "theads/thead12.txt (a storage provider mező feltételes
+    Contract-jának eredeti indoklása, amire ez a szál épít)"
+  - "general/storage/storage-resource/storage-resource.yaml
+    binding_surface (a követett precedens)"
+  - "general/kubernetes/cloud-managed-adapter/cloud-managed-adapter.yaml
+    (a most bekötött AdapterContract)"
+  - "general/kubernetes/kubernetes-cluster/kubernetes-cluster.yaml +
+    general/kubernetes/kubernetes-node/kubernetes-node.yaml (az új
+    tartalom)"

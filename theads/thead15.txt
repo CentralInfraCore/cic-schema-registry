@@ -1,0 +1,81 @@
+Ez a szál a #25 ("KubernetesCluster binding_surface has no backend/provider
+split for cloud-managed clusters") feloldása.
+
+Előzmény: az issue-n már volt egy korábbi elemzés, ami két irányt
+vázolt fel (A: kétszintű backend+provider kulcs, a storage/compute
+mintájára, valószínűleg MAJOR verzióváltással; B: névtér-prefixált
+`provider` egy mezőben, kisebb változás, de strukturálisan nem
+kikényszerített) — és azt javasolta, hogy ne döntsük el, amíg a
+`cloud-managed-adapter` ténylegesen aktív használatba nem kerül, "ne
+találjunk ki egy sémát valós használati eset nélkül".
+
+Mi változott: a user rámutatott a `general/storage/storage-resource/
+storage-resource.yaml` `binding_surface.addresses[].key_fields`
+backend+provider mintájára mint KONKRÉT, MÁR MŰKÖDŐ precedensre —
+nem elméleti analógia, hanem a corpusban már élő, bevált megoldás
+UGYANERRE a problémára (backend-függő provider-névtér). A storage
+`backend` mezője feltétlen enumot visel (`[hypervisor, san, cloud]`),
+a `provider` mezője viszont FELTÉTELES jelentésű (hypervisor/san esetén
+szabad azonosító, csak cloud esetén valódi enum), ezért szándékosan
+nincs rajta feltétlen Contract-enum — pontosan ez a minta alkalmazható
+a KubernetesCluster-re is.
+
+Emellett kiderült, hogy a `general/kubernetes/cloud-managed-adapter/
+cloud-managed-adapter.yaml` (AdapterContract, `conformance: partial`)
+MÁR LÉTEZIK, teljes `known_implementations` listával (gke-adapter/
+provider:gcp, eks-adapter/provider:aws, aks-adapter/provider:azure,
+oke-adapter/provider:oci, doks-adapter/provider:digitalocean) és egy
+kidolgozott `conformance_matrix`-szal (mit nem támogat a cloud-managed
+réteg: etcd, api_server.extra_args, controller_manager, scheduler,
+rotate_certs mind unsupported; node reset/network_ref degraded). Ez a
+munka MÁR MEGVOLT, csak a KubernetesCluster oldali bekötés hiányzott —
+ez konkrét, nem elméleti motiváció a döntésre.
+
+A döntés: A) irány, a storage/compute mintáját követve.
+
+Módosítások:
+
+1. general/kubernetes/kubernetes-cluster/kubernetes-cluster.yaml
+   - binding_surface.addresses[].key_fields: új `backend` mező
+     (`role: key, mandatory: true`, `contract: enum [self-managed,
+     cloud-managed]`), a `provider` elé.
+   - `provider` leírása pontosítva: jelentése a `backend`-től függ,
+     szándékosan NINCS feltétlen Contract-enum rajta (ugyanaz a korlát,
+     mint a storage `provider` mezőjén, lásd thead12).
+   - schema_path/api_path/logical_id kiegészítve `{backend}`-del.
+   - adapter_capabilities.known_adapters: a meglévő 4 bejegyzés
+     (talos/kubespray/rke2/k3s-adapter) kapott `backend: self-managed`-et;
+     5 ÚJ bejegyzés köti be a cloud-managed-adapter-t (gke/eks/aks/oke/
+     doks-adapter, `backend: cloud-managed`, `capabilities: []`, jegyzet
+     a cloud-managed-adapter.yaml conformance_matrix-ára utalva — a
+     `capabilities: []` forma ugyanazt a mintát követi, mint a
+     részlegesen implementált k3s-adapter bejegyzése).
+
+2. general/kubernetes/kubernetes-node/kubernetes-node.yaml
+   - binding_surface.addresses[].key_fields: ugyanaz a `backend` mező
+     hozzáadva — a node address-e a cluster hierarchikus alcíme
+     (schema_path-ja is tartalmazza a szülő cluster kulcsait), ezért
+     ugyanazt a kulcsot kell hordoznia.
+   - schema_path/api_path/logical_id kiegészítve `{backend}`-del.
+   - `cluster_ref` (config_surface, cic-reference a szülő clusterre)
+     VÁLTOZATLAN: a `reference_target` ("cic:kubernetes:KubernetesCluster")
+     a céltípust adja meg C10 szerint ({namespace}:{Kind} alakban), nem
+     a cím-formátumot — a mező DEFINÍCIÓJA nem függ attól, hogyan néz ki
+     a cél tényleges logical_id-je.
+
+Verzió: NINCS bumpolva egyik fájlon sem. kubernetes-cluster.yaml
+metadata.version v1.2.0, kubernetes-node.yaml v1.0.0 — egyik sem lett
+még `-src<év>` release-ként kivágva (legutolsó valódi release-ek
+v0.1.4 és v0.1.6), tehát mindkét módosítás ugyanannak a még ki nem
+adott MAJOR lépésnek (#143) a finomítása.
+
+Verifikálva: check_grammar.py (cic-primitives devel) mindkét fájlon
+0 finding (70, illetve 54 node).
+
+Amit ez a szál NEM old meg: a `capabilities: []` cloud-managed
+bejegyzések nem tükrözik a cloud-managed-adapter.yaml teljes
+conformance_matrix-át (target-specifikus unsupported/degraded
+jelöléseket), csak egy összefoglaló, üres listát jegyzettel — ugyanaz a
+séma, amit a k3s-adapter részleges implementációja is használ. A
+teljes conformance_matrix -> known_adapters.capabilities leképezés
+formalizálása (ha egyáltalán szükséges) külön kérdés.
