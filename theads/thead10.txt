@@ -1,0 +1,83 @@
+Ez a szál egy beillesztett külső AI-review vizsgálatából nőtt ki, ami a
+#146-ot (thead09/#143 grammatika-konformitás javítása) nézte át, mielőtt
+mergeltük volna.
+
+A review talált egy valódi, mélyebb kérdést: a network-interface.yaml
+vlans/vxlans listáinak C8-fixje (vlan_id/vni role: key, mandatory: true)
+azt is kikényszeríti, hogy REF-es elemeknél is meg kelljen adni a
+vlan_id/vni-t, holott a mező eredeti szemantikája "ref VAGY inline
+definíció" volt — vagyis ref esetén korábban a vlan_id opcionális
+maradhatott.
+
+Ellenőriztem a kritikát közvetlenül a kódban, mielőtt elfogadtam volna:
+a check_collection() (C8) explicit megköveteli, hogy a kulcs-mező
+`mandatory: true` legyen ("a key cannot be optional") — tehát egy "a
+kulcs vagy A mező, vagy B mező, attól függően melyik van kitöltve" mintát
+a jelenlegi grammatika NEM tud kifejezni, még egy item-szintű `must`
+kontraktussal kombinálva sem, mert a kulcs-mezőnek akkor is feltétlenül
+jelen kellene lennie ahhoz, hogy `mandatory: true` lehessen.
+
+Két kör alatt tisztult le a pontos álláspont:
+
+1. A #146 tényleges hibát javít: a listaelemeknek korábban EGYÁLTALÁN nem
+   volt stabil identitásuk ref-es ág esetén (pozíció szerinti cím, ami a
+   C8 által pontosan kizárt hiba: "egy elem címe a pozíciója, és a
+   pozíció beszúráskor elmozdul"). A javítás ezt egy konkrét,
+   deklarált kulcsra cseréli — ez a jelenlegi grammatika mellett a
+   helyes, elérhető lépés, nem hibás irány.
+
+2. DE a javítás ezzel egyidejűleg egy új, kézzelfogható redundáns
+   állítást vezet be: `ref` + `vlan_id` együtt szerepelhet egy elemen,
+   és semmi nem mondja ki, hogy `dereference(ref).vlan_id ==
+   vlan_id`. Ez nem "nem old meg egy már meglévő problémát" — ez
+   konkrétan MOST válik látható, kikényszerített mintává. A corpus más
+   `semantic_type: cic-reference` mezőin ugyanez a konzisztencia-kérdés
+   már korábban is fennállt (soha semmi nem ellenőrizte, hogy egy
+   referencia célja konzisztens-e a hivatkozás helyén állítottakkal),
+   de a `vlans`/`vxlans` esetében ez most egy konkrét, dokumentált,
+   szándékos duplikációként jelenik meg, nem csak egy általános,
+   absztrakt hiányként.
+
+A valódi, kernel-szintű hiányosság, amit ez feltárt:
+
+  Jelenlegi workaround:
+    a referenciás collection-elemek megismétlik a hivatkozott identitás
+    egy részét, hogy kielégítsék a C8 feltétel nélküli, lokális
+    kulcs-követelményét.
+
+  Hiányzó nyelvi elem:
+    collection item discriminated union / feltételes kulcs-szemantika.
+
+A grammatika ma feltételezi, hogy egy collection MINDEN eleme ugyanazzal
+a kulcs-struktúrával rendelkezik. A "ref VAGY inline" minta ezt cáfolja:
+
+  VlanEntry =
+    referenced { ref: KEY }
+    OR
+    inline { vlan_id: KEY, vlan_mode, allowed_vlans, dhcp_service, ... }
+
+Fontos, amit a review explicit kimondott, és amivel egyetértek: a javítás
+NEM abban áll, hogy a kulcs-mező optional lehessen — az visszahozná a
+pozicionális identitás problémáját, amit a C8 pont kizár. A helyes irány
+valami olyasmi, ami kimondja: minden collection-elem PONTOSAN EGY stabil
+identitásra oldódik fel, de az identitás szabálya elem-variánsonként
+eltérhet. Nyers vázlat (nem végleges szintaxis):
+
+  item_cases:
+    - when: ref is present
+      key: [ref]
+    - when: ref is absent
+      key: [vlan_id]
+
+vagy egy rendes `choice` az egész item shape köré — ez általánosabb
+lenne, ugyanez a minta más "ref OR inline" esetekre is (pl.
+logical_interfaces, ami a #146-ban egy szintetikus `name` kulcsot kapott,
+enyhébb változata ugyanennek a jelenségnek — ott nincs duplikált
+identitás-állítás, csak egy, kizárólag a C8 kielégítésére bevezetett
+mező, ami szintén nem ideális, de nem hordoz konzisztencia-kockázatot).
+
+Nem ez a szál dönti el a megoldást — ez egy cic-primitives kernel-
+tervezési kérdés (a Shape/collection típusalgebra bővítése), nem
+cic-schema-registry corpus-hiba. A #146 emiatt mergelhető marad
+változatlanul: helyes lépés a jelenlegi nyelv mellett, a hiányzó
+nyelvi elem pedig külön probléma.
