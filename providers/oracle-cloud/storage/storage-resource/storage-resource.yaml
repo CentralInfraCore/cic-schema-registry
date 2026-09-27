@@ -52,18 +52,41 @@ metadata:
     kerül (-src<év>.yaml néven), a check_base_references() a fenti,
     valódi mechanizmuson fut majd le ellene.
 
-    policy_surface / binding_surface / derivation_chain szándékosan
-    NINCS itt megismételve — ezeket tools/registrylib/coverage.py
+    policy_surface / derivation_chain szándékosan NINCS itt
+    megismételve — ezeket tools/registrylib/coverage.py
     `_NODE_LIST_KEYS`-e nem ellenőrzi (csak config_surface/
     state_surface/operation_surface/notification_surface node-listáit),
     tehát a hiányuk nem okoz coverage violationt még release után sem.
     Ez viszont csak a tooling vakfoltja, nem architekturális döntés —
     az "explicit full restatement, nincs implicit öröklés"
     dokumentált elv (coverage.py check_coverage() docstring) szerint
-    ez a három surface is logikailag idetartozna. Nyitva hagyva, mert
-    OCI-specifikus tartalom nélkül puszta másolás lenne (a
-    binding_surface `cloud` backend address-kulcsa amúgy is
-    provider-paraméterezett, nem igényel OCI-specifikus szűkítést).
+    ez a két surface is logikailag idetartozna. Nyitva hagyva:
+    derivation_chain restate-je cic-primitives#6 (domain-object
+    szemantika vs. schema-provenance) eldöntésétől függ — lásd
+    cic-schema-registry#131.
+
+    binding_surface.addresses[].key_fields VISZONT most már meg van
+    ismételve, RÉSZLEGESEN (#131, thead12): a `backend` mező a bázison
+    már feltétel nélküli Contract-enumot visel
+    (`[hypervisor, san, cloud]`), ez most cic-primitives#5 (Address
+    key_fields formalizálás) óta biztonságosan szűkíthető per-érték
+    conformance-szal (#137 mintája, nem Contract-szűkítés — LSP-t
+    megtartva ugyanúgy, ahogy thead11 pontosítja: TYPE/VOCABULARY
+    szinten a teljes vokabulárium megmarad, csak IMPLEMENTATION
+    CAPABILITY szinten szűkül). A `provider` mező SZÁNDÉKOSAN nem kapott
+    hasonló Contract-narrowing-ot: a bázison a `provider` mező
+    jelentése a `backend` értékétől függ (hypervisor/san esetén szabad
+    azonosító, csak cloud esetén valódi enum) — emiatt a bázison sincs
+    feltétlen Contract-enum rajta, csak próza, és ide Contract-ot tenni
+    tévesen a hypervisor/san eseteket is a cloud-enumra korlátozná. Ez a
+    "mező kontraktusa feltételes egy szomszédos mező értékétől" hiány
+    ugyanaz a kifejezőerő-rés, mint amit cic-primitives#8 collection-
+    elemekre már dokumentál (thead10) — itt egy scalar key_field
+    szintjén jelenik meg. `adapter`/`adapter_capabilities` sincs itt
+    megismételve — ez a #131 explicit scope-ján kívül esik, külön
+    kérdés (az OCI-n nem támogatott `filesystem` capability
+    következetlensége az `adapter_capabilities.known_adapters`
+    cloud-bejegyzésével továbbra is fennáll, dokumentálatlanul).
 
     A filesystem mezőnél talált, MÉG NYITOTT ellentmondás a
     general/storage/storage-adapter/ generikus cloud-backend
@@ -562,3 +585,72 @@ spec:
           - name: current_health
             shape_type: scalar
             scalar_type: string
+
+  # ── BindingSurface (részleges restatement, #131/thead12) ───────────────────────
+  # Csak addresses.key_fields -- adapter/adapter_capabilities NINCS itt
+  # megismételve, lásd a fájl description-jét.
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-storage:volumes/volume={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:storage:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:storage"
+        key_fields:
+          - name: backend
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression:
+                  - value: hypervisor
+                    conformance: not_implemented
+                  - value: san
+                    conformance: not_implemented
+                  - cloud
+            description: >
+              Ezen a specializáción ténylegesen csak `cloud` fordul elő
+              (OCI maga egy cloud provider) -- a `hypervisor`/`san`
+              értékek a bázis teljes vokabuláriumának RÉSZEI maradnak
+              (TYPE/VOCABULARY szinten, #137/thead11), csak ezen a
+              specializáción nem implementáltak (IMPLEMENTATION
+              CAPABILITY szinten, D-012).
+          - name: provider
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              Ezen a specializáción gyakorlatilag mindig `oci` -- de ez
+              NEM `default`-tal jelölve, mert egy `role: key` mező
+              azonosítóját a hívónak kell megadnia, sosem lehet
+              implicit (C13, proposals/atom-grammar). Szándékosan
+              NINCS Contract-enummal sem szűkítve (lásd a fájl
+              description-jét, thead12): a bázison a `provider` mező
+              jelentése a `backend` értékétől függő, ezért ott sincs
+              feltétlen Contract-enum rajta, csak próza -- Contract-ot
+              ide tenni tévesen a hypervisor/san eseteket is a
+              cloud-enumra korlátozná a bázison.
+          - name: location
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              OCI region (pl. eu-frankfurt-1) -- a bázis "cloud:
+              provider region" leírásának OCI-specifikus pontosítása.
+          - name: id
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              OCI Volume OCID (pl.
+              ocid1.volume.oc1.eu-frankfurt-1.abc...) -- a bázis "cloud:
+              cloud volume ID" leírásának OCI-specifikus pontosítása.

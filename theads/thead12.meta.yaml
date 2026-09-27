@@ -1,0 +1,76 @@
+thread: thead12
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  A #131 (StorageResourceOracleCloud binding_surface/derivation_chain
+  restatement) RÉSZLEGES feloldása, miután cic-primitives#5 (Address
+  key_fields formalizálás) lezárult 2026-09-26-án. A `backend` key_field
+  biztonságosan szűkíthető volt per-érték conformance-szal (#137/thead11
+  mintája). A `provider` key_field NEM -- a bázison feltétel-függő
+  jelentésű mező (backend értékétől függ), ami ugyanazt a kifejezőerő-
+  hiányt hozza felszínre, amit cic-primitives#8/thead10 collection-
+  elemekre már dokumentál, csak most egy scalar key_field szintjén.
+
+accepted:
+  - "cic-primitives#5 lezárása után a StorageResourceOracleCloud
+    binding_surface.addresses[].key_fields.backend mezője biztonságosan
+    szűkíthető per-érték conformance-szal (hypervisor/san ->
+    not_implemented, cloud marad implemented) -- a bázison már létező,
+    feltétlen Contract-enumra építve. Verifikálva: check_grammar.py 0
+    finding, coverage.py check_coverage(major_bump=False) 0 violation."
+  - "Egy role: key mezőn `default` beállítása grammar-hibát dob (C13:
+    'a key identifies a list entry and is supplied by the requester;
+    identity is never defaulted') -- CONFIRMED közvetlen futtatással.
+    Helyesen: egy kulcs-azonosító sosem lehet implicit."
+  - "A `provider` key_field NEM szűkíthető ugyanígy: a bázison a mező
+    jelentése feltételes a szomszédos `backend` értékétől (hypervisor/san
+    esetén szabad azonosító, csak cloud esetén valódi enum), ezért a
+    bázison sincs feltétlen Contract-enum rajta. Erre a specializációra
+    Contract-ot tenni tévesen a hypervisor/san eseteket is a cloud-enumra
+    korlátozná a bázison -- ez nem workaround-dal megoldandó hiány, hanem
+    egy UGYANAZON kifejezőerő-rés újabb megjelenése, amit
+    cic-primitives#8/thead10 collection-elemekre már dokumentál, csak
+    most egy `key_fields` alatti scalar Shape node szintjén."
+  - "A helyes döntés emiatt: NEM bevezetni egy félrevezető strukturális
+    szűkítést csak azért, mert a nyelv még nem tudja kifejezni a valódi
+    'kontraktus feltételes egy szomszédos mező értékétől' mintát --
+    ugyanaz az elv, mint a #146/thead10 döntésben."
+
+rejected:
+  - "default: oci a provider key_field-en, mint dokumentációs jelzés --
+    elutasítva a grammar (C13) által: egy kulcs-mező azonosítóját sosem
+    lehet defaultolni."
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár):
+  - "policy_surface/derivation_chain restatement a StorageResourceOracleCloud-on
+    -- cic-primitives#6 (derivation_chain besorolás) döntésétől függ,
+    ez a #131 másik, ez a szál által NEM megoldott fele."
+  - "adapter/adapter_capabilities restatement a #131 explicit scope-ján
+    kívül esik -- ha valaha megismétlésre kerül, azzal együtt felmerül a
+    bázis adapter_capabilities.known_adapters cloud-bejegyzésének
+    `filesystem` capability-je és a config_surface.filesystem
+    not_implemented jelölése közti, eddig dokumentálatlan
+    következetlenség is."
+  - "A 'mező kontraktusa feltételes egy szomszédos mező értékétől'
+    kifejezőerő-hiány konkrét szintaxisa -- nincs eldöntve, ugyanaz a
+    nyitott kérdés, mint cic-primitives#8/thead10-ben, csak most egy
+    második, konkrét reprodukáló esettel (key_fields.provider) alátámasztva."
+
+kapcsolódó:
+  - "cic-schema-registry#131 (a szál, amit ez részlegesen feloldott --
+    NEM zárva, csak komment)"
+  - "cic-primitives#5 (Address key_fields formalizálás, lezárva
+    2026-09-26, ez tette megoldhatóvá a backend mező szűkítését)"
+  - "cic-primitives#8 + theads/thead10.txt (collection item discriminated
+    union / feltételes kulcs -- ugyanaz a kifejezőerő-hiány, most egy
+    második konkrét eset)"
+  - "theads/thead11.txt + thead11.meta.yaml (#137, TYPE/VOCABULARY vs.
+    IMPLEMENTATION CAPABILITY -- a backend mező szűkítése ezt a mintát
+    követi)"
+  - "providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+    binding_surface.addresses[].key_fields (az új tartalom)"
+  - "proposals/atom-grammar/check_grammar.py C13 (role: key mező nem
+    kaphat default-ot)"

@@ -1,0 +1,80 @@
+Ez a szál a #131 (StorageResourceOracleCloud binding_surface/derivation_chain
+restatement) RÉSZLEGES feloldásából nőtt ki, miután cic-primitives#5 (Address
+`key_fields` formalizálás Shape+Role objektumokká) 2026-09-26-án lezárult.
+
+A #131 explicit ezt írta le mint a most már megtehető lépést: "binding_surface.
+addresses[].key_fields -- exactly where this specialization should
+structurally state backend = cloud, provider = oci". Ez most tényleg
+megtehető volt, de a végrehajtás közben két korlátozó tényező derült ki, ami
+miatt a feloldás RÉSZLEGES maradt, nem teljes.
+
+1. A `backend` mező: rendes eset, biztonságosan megoldva
+
+A bázison (general/storage/storage-resource/storage-resource.yaml)
+`backend`-nek már van feltétel nélküli Contract-enumja
+(`[hypervisor, san, cloud]`). Ez pontosan a #137/thead11 mintájával
+szűkíthető: per-érték `conformance: not_implemented` a `hypervisor`/`san`
+értékeken, a teljes vokabulárium megtartásával (TYPE/VOCABULARY szinten
+azonos marad a bázissal, csak IMPLEMENTATION CAPABILITY szinten szűkül,
+D-012). Ez most be van vezetve a StorageResourceOracleCloud
+binding_surface.addresses[].key_fields.backend mezőjén.
+
+check_grammar.py --self-test után közvetlenül lefuttatva a fájlon: 0
+finding. tools/registrylib/coverage.py check_coverage(base, spec,
+major_bump=False) közvetlenül meghívva: 0 violation (a binding_surface
+egyébként sincs bevonva _NODE_LIST_KEYS-be, tehát ez a teszt csak azt
+igazolja, hogy a config/state/operation/notification surface-ök restate-je
+nem sérült).
+
+2. A `provider` mező: NEM ugyanaz a minta, felszínre hozott egy új
+   kifejezőerő-hiányt
+
+Első próbálkozás: `default: oci` a provider key_field-en, hogy dokumentálja
+"ezen a specializáción mindig oci". A check_grammar.py ezt elutasította
+(C13: "a key identifies a list entry and is supplied by the requester;
+identity is never defaulted") -- helyesen: egy `role: key` mező
+azonosítóját sosem lehet implicitté tenni, mert a kulcs a hívó felelőssége.
+Eltávolítva.
+
+Második, mélyebb probléma: a `provider` mezőnek a bázison NINCS feltétel
+nélküli Contract-enumja -- csak próza ("cloud: enum
+[aws, gcp, azure, hcloud, do, ovh, oci]"). Ennek oka: a `provider` mező
+JELENTÉSE a szomszédos `backend` mező értékétől függ --
+  backend=hypervisor  -> provider = hypervisor azonosítója (szabad string)
+  backend=san         -> provider = storage rendszer azonosítója (szabad string)
+  backend=cloud       -> provider = enum [aws, gcp, azure, hcloud, do, ovh, oci]
+Ha erre a specializációra Contract-enumot tennénk (akár csak `[oci]`-ra
+szűkítve, akár a teljes cloud-listával), az a BÁZISON is azt sugallná,
+hogy `provider`-nek van egy feltétlen enumja -- ami hibás modellezés lenne,
+mert a hypervisor/san eseteket is ráerőltetné a cloud-specifikus
+enumra.
+
+Ez UGYANAZ a kifejezőerő-hiány, amit cic-primitives#8/thead10 már
+dokumentál collection-elemekre (a vlans/vxlans "ref VAGY inline" mintája):
+egy mező (itt: `provider`, ott: egy collection-item kulcsa) kontraktusa
+FELTÉTELES egy másik mező értékétől, és a jelenlegi grammatika ezt nem
+tudja natívan kifejezni -- csak most nem egy collection-elem szintjén,
+hanem egy `key_fields` alatti scalar Shape node szintjén jelenik meg.
+
+A helyes, becsületes megoldás emiatt: a `provider` mezőt SZÁNDÉKOSAN nem
+szűkítettük Contract-tal, csak leíró prózával jelöltük ("ezen a
+specializáción gyakorlatilag mindig oci"). Ez nem workaround, hanem a
+tudott hiány elismerése -- pontosan úgy, ahogy a #146/thead10 esetében is
+a helyes döntés volt NEM bevezetni egy félrevezető strukturális
+megoldást csak azért, mert a nyelv (még) nem tudja kifejezni a valódi
+mintát.
+
+3. Ami emiatt is nyitva maradt
+
+`adapter`/`adapter_capabilities` a #131 explicit scope-ján kívül esik --
+nem lett megismételve a specializációban. Ha valaha megismétlésre kerül,
+azzal együtt felmerül egy MÁSIK, eddig dokumentálatlan következetlenség:
+a bázis `adapter_capabilities.known_adapters` cloud-bejegyzésének
+`capabilities` listája tartalmazza a `filesystem`-et, holott a
+config_surface.filesystem mező OCI-n `access.conformance:
+not_implemented` -- ezt a szálat ez a thead nem oldja meg, csak rögzíti,
+hogy létezik.
+
+`policy_surface`/`derivation_chain` továbbra is nyitva marad,
+cic-primitives#6 (derivation_chain besorolás) döntésétől függ -- ez a
+#131 másik, nem ez a szál által megoldott fele.
