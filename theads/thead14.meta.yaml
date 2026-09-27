@@ -30,6 +30,16 @@ accepted:
     szinten) -- MEGFIGYELÉS, nem döntés: nincs konkrét tervezett
     egyesített forma, és nincs második provider-specializáció, ami a
     döntést ténylegesen indokolná."
+  - "Külső review (PR #151-en) helyesen kapta el: az eredeti komment
+    egy mondatba írta a derivation_chain-t (most eldöntött, szándékos
+    kizárás) a binding_surface/policy_surface mellé (nyitott, nem
+    eldöntött) -- ez tévesen sugallta, hogy mindhárom ugyanolyan alapon
+    van kizárva a coverage.py-ból. Konkrétan a binding_surface esetében
+    thead12/PR #149 pár nappal korábban kimutatta, hogy a kizárása ISMERT
+    TOOLING GAP, nem szándékos döntés: ez tette lehetővé, hogy egy
+    önmagával ellentmondó részleges restatement '0 violation'-t
+    mutasson, amit csak egy külső review kapott el kézzel. Javítva: a
+    komment most explicit szétválasztja a hármat."
 
 rejected: []
 

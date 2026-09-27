@@ -50,3 +50,24 @@ nincs egyesítve. Ezt szándékosan nem oldjuk meg most: nincs konkrét
 tervezett forma, és nincs második provider-specializáció, ami a
 döntést ténylegesen indokolná. Jelezve közvetlenül a mező mellett
 (storage-resource.yaml, providers/oracle-cloud) kommentként.
+
+Külső review (PR #151-en): az eredeti coverage.py komment
+("`binding_surface`/`policy_surface`/`derivation_chain` are deliberately
+NOT here") túl általánosan fogalmazott, és ELLENTMONDOTT annak, amit a
+thead12/PR #149 pár nappal korábban ugyanebben a sessionben konkrétan
+megállapított: a `binding_surface` `_NODE_LIST_KEYS`-ből való hiánya NEM
+szándékos architekturális döntés volt, hanem egy ISMERT TOOLING GAP, ami
+lehetővé tette hogy egy önmagával ellentmondó részleges restatement
+(StorageResourceOracleCloud, első verzió) "0 violation"-t mutasson,
+holott a coverage.py azt a surface-t egyáltalán nem is vizsgálta -- ezt
+csak egy külső review kapta el kézzel. A `policy_surface` állapota pedig
+sosem lett külön megvizsgálva, sem eldöntve.
+
+Javítva: a komment most explicit szétválasztja a hármat --
+`derivation_chain` (most eldöntött, szándékos kizárás, ez a szál), és
+`binding_surface`/`policy_surface` (nyitott, nem eldöntött, a
+`binding_surface` esetében konkrétan ISMERT hiányosság, nem szabad
+"szándékos"-nak olvasni). A hiba abban állt, hogy egy MOST meghozott,
+jól indokolt döntést (derivation_chain) egy MÁSIK, MÉG NYITOTT kérdés
+(binding_surface/policy_surface) mellé írtam ugyanabba a mondatba,
+amivel tévesen sugallta, hogy mindhárom ugyanolyan alapon van kizárva.

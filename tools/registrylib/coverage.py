@@ -36,8 +36,7 @@ from typing import Any
 # Extend this as new surfaces gain node lists (e.g. notification_surface
 # already uses `events`, not `nodes` — included below).
 #
-# `binding_surface`/`policy_surface`/`derivation_chain` are deliberately
-# NOT here. For derivation_chain specifically (cic-primitives#6, thead14):
+# `derivation_chain` is deliberately NOT here (cic-primitives#6, thead14):
 # it's schema-provenance (how a schema is realized in YANG/RESTCONF/
 # runtime terms), not domain-object semantics — nothing a client sets, and
 # not even present on every domain object (only the three YANG-derived
@@ -45,6 +44,18 @@ from typing import Any
 # explicit-full-restatement rule this module enforces is for surfaces a
 # specialization inherits and may narrow; derivation_chain isn't one of
 # those, so its absence from this dict is a decision, not a gap.
+#
+# `binding_surface` and `policy_surface` are ALSO currently absent, but
+# do NOT read that as the same kind of decision. `binding_surface`
+# specifically is a KNOWN, undecided gap: thead12/PR #149 found that its
+# exclusion let a self-contradicting partial restatement on
+# StorageResourceOracleCloud pass with "0 violations" that proved
+# nothing, because this dict never looked at that surface at all — a
+# real defect a review had to catch by hand, not evidence the exclusion
+# is correct. `policy_surface` has never been examined either way. Adding
+# either here (or deciding they should stay out, on their own merits) is
+# unresolved future work — do not extend that finding to them silently
+# just because they sit next to derivation_chain in this comment.
 _NODE_LIST_KEYS: dict[str, str] = {
     "config_surface": "nodes",
     "state_surface": "nodes",
