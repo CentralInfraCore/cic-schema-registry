@@ -37,7 +37,9 @@ canonical mezők fordíthatók át közvetlenül, és melyek nem.
                                                     helyesen tükrözi az OCI
                                                     valóságot: regionális
                                                     subnet-eken nincs)
-  public_access -> prohibitPublicIpOnVnic        T, INVERTÁLT -- LEGSÚLYOSABB TALÁLAT
+  public_access -> prohibitPublicIpOnVnic        T (invertált, NORMÁLIS provider-
+                                                    correspondence eset --
+                                                    HELYESBÍTVE, lásd lent)
   tags -> freeformTags + definedTags             T (két OCI tag-mechanizmus egy
                                                     listává normalizálva, ua.
                                                     minta mint storage tags)
@@ -74,18 +76,32 @@ canonical mezők fordíthatók át közvetlenül, és melyek nem.
                                                     canonical-okra hivatkozva
                                                     (dhcp-service/dhcp-options)
 
-  A LEGSÚLYOSABB TALÁLAT RÉSZLETESEN: subnet.yaml `public_access`
-  leírása "A subneten létrehozott erőforrások alapból kapnak-e publikus
-  IP-t" -- azaz `true` = KAPHATNAK. Az OCI `prohibitPublicIpOnVnic`
-  leírása "Whether VNICs... can have public IP addresses", DE `prohibit`
-  polaritással: `true` = NEM kaphatnak (TILTVA). Vagyis
-  `public_access: true` <=> `prohibitPublicIpOnVnic: false` --
-  FORDÍTOTT logika. Ez UGYANAZ a hibaosztály, mint a storage
-  `encryption`->`encryption_mode` (thead04): egy nem-invertált direkt
-  átvitel a KELLETT INTENT ELLENKEZŐJÉT állítaná be. Ellenőrizve: a
-  `module/correspondence/` mappában KIZÁRÓLAG `vcn.json` létezik --
-  `correspondence/subnet.json` NEM LÉTEZIK, tehát ez az inverzió
-  SEHOL nincs dokumentálva a cic-module-oracle-cloud oldalán sem.
+  A `public_access` INVERZIÓ HELYESBÍTVE (külső review után, lásd a
+  szál végén): subnet.yaml `public_access` leírása "A subneten
+  létrehozott erőforrások alapból kapnak-e publikus IP-t" -- azaz
+  `true` = KAPHATNAK. Az OCI `prohibitPublicIpOnVnic` leírása "Whether
+  VNICs... can have public IP addresses", DE `prohibit` polaritással:
+  `true` = NEM kaphatnak (TILTVA). Vagyis `public_access: true` <=>
+  `prohibitPublicIpOnVnic: false` -- az inverzió TÉNYLEG fennáll,
+  CONFIRMED. DE ez ÖNMAGÁBAN NEM canonical hiba (az EREDETI besorolás,
+  "LEGSÚLYOSABB TALÁLAT", TÉVES volt) -- ez egy NORMÁLIS
+  provider-correspondence eset (pozitív canonical szemantika ->
+  invertált provider szemantika, `T`/transform, `bool-invert`
+  szabállyal), pontosan amire a mapping réteg (ProviderCorrespondence)
+  való. A `module/correspondence/vcn.json` saját doksi-ja MÁR
+  DEKLARÁLJA a `bool-invert` szabályt mint létező mechanizmust (a
+  háromból az egyik) -- csak épp NINCS ALKALMAZVA a Subnet-re, mert
+  `correspondence/subnet.json` nem létezik. A VALÓS canonical hiányosság
+  emiatt NEM az inverzió, hanem KETTŐ MÁS DOLOG: (1) hiányzik a
+  `correspondence/subnet.json`, ami ezt a `bool-invert` mapping-et
+  dokumentálná; (2) a `public_access` description TÚLTERHELT/
+  ALULSPECIFIKÁLT -- egy "/" jellel összemos két külön OCI-fogalmat
+  (public IP kiosztás a VNIC-en, ill. routing az internet gateway
+  felé), miközben OCI-n ez HÁROM külön mechanizmus: `prohibitPublicIpOnVnic`
+  (public IP tiltása), `prohibitInternetIngress` (internet ingress
+  tiltása) és a route table/internet gateway (routing, külön
+  canonical-ra tartozik). A helyes finding tehát "public_access
+  fogalmilag túlterhelt", NEM "public_access hibás boolean".
 
 == Findings — NetworkSpace ==
 
@@ -97,22 +113,16 @@ canonical mezők fordíthatók át közvetlenül, és melyek nem.
                                                     `cidrBlocks` tömb; a
                                                     canonical a RÉGI alakot
                                                     modellezi
-  secondary_cidr_blocks + add_secondary_cidr op   T, ELLENTMONDÁS -- a
-                                                    canonical leírása
-                                                    ("További, utólag
-                                                    hozzáadott CIDR blokkok")
-                                                    és a saját
-                                                    `add_secondary_cidr`
-                                                    operation-je azt sugallja,
-                                                    hogy ez UTÓLAG bővíthető --
-                                                    de az OCI `cidrBlocks` mező
-                                                    `x-cic-policy: create-only`,
-                                                    azaz VALÓJÁBAN NEM adható
-                                                    hozzá létrehozás után. Az
-                                                    `add_secondary_cidr`
-                                                    operation OCI-n MA NEM
-                                                    IMPLEMENTÁLHATÓ a
-                                                    specifikáció szerint.
+  secondary_cidr_blocks + add_secondary_cidr op   HELYESBÍTVE (külső review
+                                                    után) -- lásd a szál
+                                                    végén: NEM ellentmondás,
+                                                    a canonical `action`
+                                                    JÓL LEKÉPEZHETŐ egy
+                                                    valós OCI action-re
+                                                    (`AddVcnCidr`), csak a
+                                                    cic-module-oracle-cloud
+                                                    MODUL nem generálta le
+                                                    még.
   ipv6_enabled -> isIpv6Enabled                   T, HELYESEN DOKUMENTÁLVA --
                                                     a canonical saját
                                                     megjegyzése explicit
@@ -183,21 +193,82 @@ StorageResource már ismert mintájával (thead12) -- nincs itt új
 felismerés, csak megerősítés, hogy a minta a network doménre is
 érvényes.
 
+== Helyesbítés külső review után (két legsúlyosabb finding téves volt) ==
+
+Egy beillesztett külső AI-review mindkét "legsúlyosabb" findinget
+megkérdőjelezte, és mindkettőt ELLENŐRIZTEM, mielőtt elfogadtam vagy
+elutasítottam volna -- nem vettem készpénznek egyiket sem.
+
+1. **secondary_cidr_blocks/add_secondary_cidr — TÉVES eredeti
+   következtetés.** Az eredeti finding ("OCI-n MA NEM IMPLEMENTÁLHATÓ")
+   HIBÁS volt. A review Oracle hivatalos dokumentációra hivatkozva
+   mutatott rá, hogy az OCI API-nak van egy KÜLÖN action-je erre:
+   `AddVcnCidr` (OCI CLI: `add-vcn-cidr`), aminek EXPLICIT célja egy
+   meglévő VCN CIDR-készletének utólagos bővítése. Ellenőriztem: a
+   `cic-module-oracle-cloud` teljes repóban SEHOL nincs `AddVcnCidr`
+   (sem a generált sémákban, sem a Go kódban) -- tehát a modul MA
+   TÉNYLEG nem támogatja, DE ez a MODUL jelenlegi, még nem teljes
+   lefedettségű extrakciójának hiányossága (a P3.5 "todo" resource-
+   listájának egy eleme lehetne), NEM egy OCI API-korlát és NEM egy
+   KANONIKUS SÉMA-HIBA. A `cidrBlocks` mező `create-only` mutability
+   policy-ja a Create/Update MODELLEN vonatkozik -- ez NEM zárja ki,
+   hogy egy KÜLÖN ACTION (mint az `AddVcnCidr`) más úton érje el
+   ugyanazt a célt. Megőrzendő általánosítás, amit a review adott:
+   **egy mező mutability policy-ja nem azonos az objektum teljes
+   behavior surface-ével** -- egy "create-only" mező mellett is
+   lehet az erőforrásnak olyan action-je, ami módosítja azt, amit a
+   mező önmagában statikusnak mutat.
+
+2. **public_access — helytelen besorolás, nem hibás tartalom.** Az
+   inverzió (public_access igaz <=> prohibitPublicIpOnVnic hamis)
+   TÉNYLEG fennáll, ezt a review is megerősítette -- DE ebből NEM
+   következik, hogy a canonical mező HIBÁS. Ez egy NORMÁLIS
+   provider-correspondence eset (transform/bool-invert), aminek
+   PONT a hiányzó `correspondence/subnet.json` volna a helye -- nem
+   a `public_access` KANONIKUS DEFINÍCIÓJÁT kellene megváltoztatni.
+   A review rámutatott a VALÓS canonical hiányosságra: a mező
+   description-je ("kapnak-e publikus IP-t / útvonalat internet
+   gateway felé") egy "/" jellel összemos KÉT külön OCI-fogalmat
+   (`prohibitPublicIpOnVnic`: public IP tiltása a VNIC-en, és
+   `prohibitInternetIngress`/routing: internet ingress és útvonal-
+   kérdés, más mechanizmus). A helyes finding tehát "public_access
+   fogalmilag túlterhelt/alulspecifikált description", NEM "hibás
+   invertált boolean".
+
+Mindkét eredeti "LEGSÚLYOSABB TALÁLAT" jelölés törölve/átminősítve a
+fenti táblázatokban. A helyesbítés nem változtatja meg a szál többi
+findingjét (IPv6 kardinalitás, AWS-eredetű DNS mezők, dnsLabel hiánya,
+derived state mezők dokumentálatlansága) -- azokat a review nem
+vitatta.
+
 == Ami ebből következik ==
 
-A KANONIKUS séma (nem csak egy jövőbeli OCI-specializáció) tartalmaz
-VALÓS, JAVÍTANDÓ hibákat -- pontosan ugyanaz a mintázat, mint a thead04
-találta a storage-nál (cpu_cores/control_plane_endpoint stb., amiket a
-#133 később javított). A legsúlyosabb (public_access inverzió,
-secondary_cidr_blocks/create-only ellentmondás) NEM OCI-specifikus
-szűkítés kérdése, hanem a CANONICAL modell saját hibája, ami BÁRMELYIK
-jövőbeli cloud-provider specializációnál (nem csak OCI-nál) problémát
-okozna.
+A helyesbítés után a KANONIKUS sémában maradó, VALÓBAN javítandó
+hiányosságok szűkebb körűek, mint az eredeti elemzés állította:
+
+  - `correspondence/subnet.json` hiánya (a public_access bool-invert
+    és minden más subnet-mezős mapping dokumentálatlan)
+  - `public_access` description pontosítása (a public IP / internet
+    ingress / routing fogalmak szétválasztása)
+  - `dnsLabel` felvétele VAGY explicit kizárása (ma egyik sem történt
+    meg, ellentétben route/security/dhcp-vel)
+  - `ipv6_cidr_block` (NetworkSpace state) kardinalitás-javítása
+    skalárról listára
+  - `dns_support_enabled`/`dns_hostnames_enabled` sorsa (AWS-fogalom,
+    nincs OCI megfelelője -- eldöntendő, hogy maradjon-e a canonicalban
+    mint más-provider-eknek szánt mező, vagy kerüljön OCI-specifikus
+    `not_implemented` jelölés alá egy jövőbeli specializáción)
+  - `available_ip_count`/`subnet_count` derived mezők levezetési
+    szabályának dokumentálása vagy eltávolítása
+
+A `cidrBlocks`/`add_secondary_cidr` és a `public_access` inverzió NEM
+tartozik ide -- azok rendben vannak a canonical oldalon, csak a
+cic-module-oracle-cloud modul lefedettsége (AddVcnCidr) és a
+correspondence-dokumentáció (subnet.json) hiányos.
 
 Ez a szál NEM dönt semmiről -- tisztán feltáró elemzés, a thead04
-mintáját követve. Nyitva marad: kell-e MOST javítani a canonical
-Subnet/NetworkSpace sémát (a public_access inverzió és a
-secondary_cidr_blocks ellentmondás a legsürgetőbb), és/vagy kell-e
-megépíteni egy SubnetOracleCloud/NetworkSpaceOracleCloud provider-
-specializációt (a StorageResourceOracleCloud mintájára). Külön
-GitHub issue nyitva a döntésre.
+mintáját követve, most már a review-val helyesbítve. Nyitva marad:
+kell-e MOST javítani a fenti, szűkebb kanonikus hiányosságokat, és/vagy
+kell-e megépíteni egy SubnetOracleCloud/NetworkSpaceOracleCloud
+provider-specializációt (a StorageResourceOracleCloud mintájára).
+Külön GitHub issue nyitva a döntésre.
