@@ -45,6 +45,15 @@ metadata:
     `role: reference` (nincs rövid alakja) → `role: config`-ra, a
     corpus más cic-reference mezőivel (pl. Subnet.network_space_ref)
     konzisztensen. MAJOR bump: valódi shape-mutáció.
+    v1.0.0 finomítás (még ugyanez a MAJOR lépés, mielőtt release-be
+    kerülne — a v1.0.0 még sosem lett `-src<év>` kiadásként kivágva):
+    #25 feloldva (thead15, lásd kubernetes-cluster.yaml ugyanezen
+    indoklása). binding_surface.addresses[].key_fields kapott egy
+    `backend` mezőt — a node address-e a szülő cluster hierarchikus
+    alcíme, ezért ugyanazt a kulcsot hordozza. schema_path/api_path/
+    logical_id kiegészítve `{backend}`-del. `cluster_ref`
+    (config_surface) VÁLTOZATLAN: a `reference_target` cím-formátumtól
+    független.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -474,17 +483,37 @@ spec:
   binding_surface:
     addresses:
       - atomic_ref: "cic:core:Address@v0.2.0"
-        schema_path: "/cic-kubernetes:clusters/cluster={provider}, {location}, {cluster_id}/nodes/node={id}"
-        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={provider}, {location}, {cluster_id}/nodes/node={id}"
-        logical_id: "cic:kubernetes:{provider}:{location}:{cluster_id}:node:{id}"
+        schema_path: "/cic-kubernetes:clusters/cluster={backend}, {provider}, {location}, {cluster_id}/nodes/node={id}"
+        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={backend}, {provider}, {location}, {cluster_id}/nodes/node={id}"
+        logical_id: "cic:kubernetes:{backend}:{provider}:{location}:{cluster_id}:node:{id}"
         namespace: "cic:kubernetes"
         key_fields:
+          - name: backend
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [self-managed, cloud-managed]
+            description: >
+              A szülő KubernetesCluster backend-je (#25 feloldva, thead15)
+              — a node address-e a cluster hierarchikus alcíme, ezért
+              ugyanazt a kulcsot hordozza. Lásd
+              KubernetesCluster.binding_surface.addresses[].key_fields.backend.
           - name: provider
             atomic_ref: "cic:core:Shape@v0.2.0"
             shape_type: scalar
             scalar_type: string
             role: key
             mandatory: true
+            description: >
+              A szülő KubernetesCluster provider-je — jelentése a `backend`
+              értékétől függ, szándékosan nincs feltétlen Contract-enum
+              rajta, ugyanazon okból, mint a szülőn (lásd
+              KubernetesCluster.binding_surface.addresses[].key_fields.provider,
+              thead12/thead15).
           - name: location
             atomic_ref: "cic:core:Shape@v0.2.0"
             shape_type: scalar

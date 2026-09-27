@@ -66,6 +66,20 @@ metadata:
     repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
     cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
     elkerülése végett ez a fájl egyenesen v0.1.4-ként indul.
+    v1.2.0 finomítás (még ugyanez a MAJOR lépés, mielőtt release-be
+    kerülne — a v1.2.0 még sosem lett `-src<év>` kiadásként kivágva):
+    #25 feloldva (thead15). binding_surface.addresses[].key_fields kapott
+    egy `backend` mezőt (self-managed/cloud-managed enum), a
+    StorageResource/ComputeResource backend+provider mintáját követve —
+    a `provider` mező jelentése ezután a `backend`-től függ (self-managed
+    esetén disztribúció-név, cloud-managed esetén cloud szolgáltató neve),
+    ezért szándékosan nincs rajta feltétlen Contract-enum (thead12 ugyanezt
+    a korlátot dokumentálja a storage `provider` mezőjén). schema_path/
+    api_path/logical_id kiegészítve `{backend}`-del. adapter_capabilities.
+    known_adapters meglévő 4 bejegyzése `backend: self-managed`-et kapott;
+    5 új bejegyzés köti be végre a cloud-managed-adapter-t (gke/eks/aks/
+    oke/doks-adapter, backend: cloud-managed), ami #18 óta szándékosan
+    hiányzott a listából, pontosan emiatt a korlát miatt.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -599,11 +613,28 @@ spec:
   binding_surface:
     addresses:
       - atomic_ref: "cic:core:Address@v0.2.0"
-        schema_path: "/cic-kubernetes:clusters/cluster={provider}, {location}, {id}"
-        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={provider}, {location}, {id}"
-        logical_id: "cic:kubernetes:{provider}:{location}:{id}"
+        schema_path: "/cic-kubernetes:clusters/cluster={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-kubernetes:clusters/cluster={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:kubernetes:{backend}:{provider}:{location}:{id}"
         namespace: "cic:kubernetes"
         key_fields:
+          - name: backend
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [self-managed, cloud-managed]
+            description: >
+              Ki felügyeli a control plane-t (#25 feloldása) — ugyanaz a
+              kétszintű backend+provider minta, mint StorageResource/
+              ComputeResource-nál (general/storage/storage-resource,
+              general/compute/compute-resource). self-managed: a
+              disztribúciót maga a felhasználó telepíti/üzemelteti (Talos/
+              kubespray/k3s/rke2). cloud-managed: a cloud szolgáltató
+              felügyeli a control plane-t (GKE/EKS/AKS/OKE/DOKS).
           - name: provider
             atomic_ref: "cic:core:Shape@v0.2.0"
             shape_type: scalar
@@ -611,18 +642,16 @@ spec:
             role: key
             mandatory: true
             description: >
-              Cluster provider azonosítója — az adapter routing kulcsa.
-              talos: Talos Linux alapú cluster
-              kubespray: kubespray managed cluster
-              k3s: k3s lightweight cluster
-              rke2: RKE2 (Rancher Kubernetes Engine 2) cluster
-              KORLÁT (issue #25): cloud-managed cluster (GKE/EKS/AKS/OKE/DOKS)
-              nem fér bele tisztán ebbe az egy mezőbe — a `provider` itt vagy
-              az önkezelt disztribúciót azonosítja (talos/kubespray/k3s/rke2),
-              vagy a cloud szolgáltatót (aws/gcp/azure/oci) azonosítaná, a
-              kettő ütközik. A storage/compute mintája (`backend`+`provider`
-              két mező) itt hiányzik — nem ez a fájl a helye ennek a
-              strukturális döntésnek, lásd #25.
+              Routing kulcs az adapter kiválasztásához — jelentése a
+              `backend` értékétől függ, ugyanúgy, mint StorageResource
+              `provider` mezőjéé (lásd thead12): self-managed esetén a
+              disztribúció neve (talos/kubespray/k3s/rke2), cloud-managed
+              esetén a cloud szolgáltató neve (aws/gcp/azure/oci/
+              digitalocean, lásd cloud-managed-adapter.yaml
+              known_implementations). Emiatt itt SZÁNDÉKOSAN nincs
+              feltétlen Contract-enum: az a `self-managed` ágon is a
+              cloud-managed névteret erőltetné rá (thead12 ugyanezt a
+              korlátot dokumentálja a storage `provider` mezőjén).
           - name: location
             atomic_ref: "cic:core:Shape@v0.2.0"
             shape_type: scalar
@@ -644,32 +673,68 @@ spec:
     # itt viszont igen). A kubernetes domain architektúrája ráadásul eleve
     # nem egyetlen generikus adapterrel dolgozik (mint storage/compute egy
     # AdapterContract-tal + backend enummal) — minden provider saját, önálló
-    # adapter-fájl (talos-adapter/kubespray-adapter/k3s-adapter/rke2-adapter).
-    # Egyetlen flat `adapter:` mezőnek itt sosem volt értelme — a
-    # `adapter_capabilities.known_adapters` az egyetlen helyes forrás.
+    # adapter-fájl (talos-adapter/kubespray-adapter/k3s-adapter/rke2-adapter/
+    # cloud-managed-adapter). Egyetlen flat `adapter:` mezőnek itt sosem volt
+    # értelme — a `adapter_capabilities.known_adapters` az egyetlen helyes
+    # forrás.
     adapter_capabilities:
       description: >
-        A `provider` kulcs alapján az adaptert a known_adapters lista
-        azonosítja — nincs egyetlen generikus "kubernetes-adapter".
-        cloud-managed-adapter szándékosan NINCS ebben a listában, mert a
-        `provider` mező jelenlegi modellje nem tudja azonosítani (lásd #25).
+        A `backend`+`provider` pár alapján az adaptert a known_adapters
+        lista azonosítja — nincs egyetlen generikus "kubernetes-adapter".
+        #25 feloldva (thead15): a `backend` mező bevezetése óta
+        cloud-managed-adapter is bekötve, a saját öt implementációjának
+        (cloud-managed-adapter.yaml known_implementations) megfelelő öt
+        bejegyzésként.
       known_adapters:
         - name: talos-adapter
+          backend: self-managed
           provider: talos
           capabilities: [control_plane_tuning]
         - name: kubespray-adapter
+          backend: self-managed
           provider: kubespray
           capabilities: [control_plane_tuning]
         - name: rke2-adapter
+          backend: self-managed
           provider: rke2
           capabilities: [control_plane_tuning]
         - name: k3s-adapter
+          backend: self-managed
           provider: k3s
           capabilities: []
           note: >
             Részleges implementáció (lásd az adapter saját leírását) —
             control_plane_tuning támogatása nincs megerősítve, ezért itt
             nem hirdetjük.
+        - name: gke-adapter
+          backend: cloud-managed
+          provider: gcp
+          capabilities: []
+          note: >
+            Control plane teljes egészében provider-managed — lásd
+            cloud-managed-adapter.yaml conformance_matrix
+            (etcd/api_server.extra_args/controller_manager/scheduler
+            mind unsupported ezen az adapteren).
+        - name: eks-adapter
+          backend: cloud-managed
+          provider: aws
+          capabilities: []
+          note: Ugyanaz a korlát, mint gke-adapter — lásd cloud-managed-adapter.yaml.
+        - name: aks-adapter
+          backend: cloud-managed
+          provider: azure
+          capabilities: []
+          note: Ugyanaz a korlát, mint gke-adapter — lásd cloud-managed-adapter.yaml.
+        - name: oke-adapter
+          backend: cloud-managed
+          provider: oci
+          capabilities: []
+          note: Ugyanaz a korlát, mint gke-adapter — lásd cloud-managed-adapter.yaml.
+        - name: doks-adapter
+          backend: cloud-managed
+          provider: digitalocean
+          capabilities: []
+          note: Ugyanaz a korlát, mint gke-adapter — lásd cloud-managed-adapter.yaml.
 
 # ── Relationships ─────────────────────────────────────────────────────────────
 relationships:
