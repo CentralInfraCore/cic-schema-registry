@@ -1,0 +1,62 @@
+Ez a szál a cic-primitives#8 (collection item discriminated union,
+thead10) kernel-oldali megoldásának (cic-primitives PR #9, `item_choice`)
+alkalmazása a motiváló esetre: `general/network/network-interface/
+network-interface.yaml` `vlans`/`vxlans` listái.
+
+Előzmény: a #143-as grammatika-konformitás javítás (thead09, PR #146) a
+C8-at (minden listának van kulcsa) úgy elégítette ki, hogy `vlan_id`-t
+(illetve `vxlans`-nál `vni`-t) `role: key, mandatory: true`-vá tette. Ez
+helyes lépés volt a KORÁBBI grammatika mellett, de bevezetett egy
+redundáns identitás-állítást: egy `ref`-fel hivatkozó elemen is jelen
+kellett lennie a `vlan_id`-nek, `dereference(ref).vlan_id == vlan_id`
+garancia nélkül. Rögzítve `thead10.txt`-ben, tovább vive
+`cic-primitives#8`-ként.
+
+A cic-primitives PR #9 (`item_choice`) ezt a kernel-szinten megoldotta:
+egy collection listája mostantól diszkriminált unióként is deklarálható,
+ahol minden variánsnak (case) saját, önálló mezőhalmaza és kulcsa van.
+
+Alkalmazás:
+
+  vlans:
+    - `referenced` case: csak `ref` (role: key)
+    - `inline` case: `vlan_id` (role: key) + `vlan_mode`/`allowed_vlans`/
+      `dhcp_service`
+
+  vxlans:
+    - `referenced` case: csak `ref` (role: key)
+    - `inline` case: `vni` (role: key) + `local_endpoint`/
+      `remote_endpoint`/`learning`/`ip`
+
+A `referenced` case-en NINCS `vlan_id`/`vni` mező, az `inline` case-en
+NINCS `ref` mező — a redundáns kettős állítás strukturálisan
+megszűnt, nem csak dokumentációs szinten van jelezve.
+
+Verifikálva: `check_grammar.py` (cic-primitives devel, PR #9 után) a
+teljes fájlon 0 finding (127 node). `yamllint` 0 hiba.
+
+`logical_interfaces` SZÁNDÉKOSAN VÁLTOZATLAN maradt -- ez NEM felejtés,
+hanem tudatos döntés. A `#143` review (thead10) már jelezte, hogy ez a
+mező a jelenség ENYHÉBB esete: a `name` szintetikus kulcs EGYSÉGES minden
+elemen (nem `ref` VAGY `logical_type`+`vlan_ref` szerint variál), csak a
+NEM-kulcs mezők opcionálisak variánsonként. Ha ide is `item_choice`-ot
+vezettem volna be `key: [name]`-mel mindkét case-en, azt a cic-primitives
+PR #9-cel EGYIDEJŰLEG bevezetett C17 szabály (két case nem oldódhat fel
+ugyanarra a kulcs-mezőhalmazra -- lásd cic-primitives külső review-ja,
+PR #9 review round 2) MOST már el is utasítaná, helyesen: itt nincs is
+valódi diszkriminált unió, csak egy egységes kulcs melletti opcionális
+mezőkombináció, aminek nincs is redundáns identitás-problémája (a `name`
+nem ismétel meg semmit, amit `ref` már hordoz).
+
+Verzió: NINCS bumpolva. A `network-interface.yaml` metadata.version
+v1.0.0, de ez a verzió SOSEM lett még `-src<év>` release-ként kivágva
+(a legutolsó valódi release v0.4.4-src2026.yaml) -- tehát ez a
+módosítás ugyanannak a még ki nem adott v1.0.0/#143 MAJOR lépésnek a
+finomítása, nem egy új verzió-esemény. `tools/registrylib/coverage.py`
+`_shape_signature()` amúgy sem venné észre az `item_fields`→
+`item_choice` váltást (egyik sincs a sekély `_SHAPE_KEYS`
+összehasonlításban) -- csak a `deep=True`-val futó
+`check_schema_evolution` (registry_validate.py) venné észre, ha valaha
+két RELEASE-ELT verzió között futna erre a mezőre; ma a fájl working
+copy, láthatatlan a tooling számára, ugyanaz a minta, mint a korábbi
+threadekben (thead05, thead11) leírt vakfolt.

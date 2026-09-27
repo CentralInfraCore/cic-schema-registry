@@ -1,0 +1,50 @@
+thread: thead13
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  A cic-primitives PR #9 (item_choice, cic-primitives#8/thead10)
+  alkalmazása a motiváló esetre: network-interface.yaml vlans/vxlans
+  listáinak átírása item_fields-ről item_choice-ra, megszüntetve a #146
+  által bevezetett redundáns ref+vlan_id/ref+vni együttállást.
+  logical_interfaces szándékosan változatlan marad -- ott a kulcs
+  (name) egységes, nincs valódi diszkriminált unió.
+
+accepted:
+  - "vlans/vxlans mindkét listája átírható item_choice-ra a #143 által
+    bevezetett redundáns identitás-állítás elvesztése nélkül: a
+    `referenced` case-en nincs vlan_id/vni, az `inline` case-en nincs
+    ref -- a két mező sosem szerepel egyazon elemen. Verifikálva:
+    check_grammar.py 0 finding (127 node), yamllint 0 hiba."
+  - "logical_interfaces NEM item_choice kandidátus: a kulcs (name)
+    egységes minden elemen, nem case-enként eltérő -- csak a nem-kulcs
+    mezők (ref vs. logical_type+vlan_ref) opcionálisak. Ha mindkét
+    case-nek key: [name] lenne, azt a cic-primitives PR #9 C17 szabálya
+    (két case nem oldódhat fel ugyanarra a kulcsra) most már elutasítaná
+    -- helyesen, mert itt nincs is redundáns identitás-probléma."
+  - "Nincs verzióbump: a network-interface.yaml v1.0.0-ja sosem lett még
+    -src<év> release-ként kivágva (legutolsó valódi release v0.4.4), így
+    ez a módosítás ugyanannak a még ki nem adott MAJOR lépésnek (#143) a
+    finomítása. tools/registrylib/coverage.py _shape_signature() amúgy
+    sem érzékeny az item_fields/item_choice váltásra (egyik sincs a
+    sekély _SHAPE_KEYS összehasonlításban) -- csak deep=True (
+    check_schema_evolution) venné észre, ha valaha két RELEASE-ELT
+    verzió között futna erre a mezőre; ma working copy, láthatatlan a
+    tooling számára."
+
+rejected: []
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár): []
+
+kapcsolódó:
+  - "cic-primitives#8 (lezárva) + cic-primitives PR #9 (item_choice,
+    C17) -- a kernel-mechanizmus, amit ez a szál alkalmaz"
+  - "cic-schema-registry theads/thead10.txt (az eredeti redundáns
+    identitás-felismerés, #146-ból)"
+  - "cic-schema-registry PR #146 (a #143-as C8-fix, amiből a redundáns
+    minta jött -- változatlan marad, ez a szál egy utólagos finomítás)"
+  - "general/network/network-interface/network-interface.yaml
+    vlans/vxlans (az új tartalom), logical_interfaces (változatlan,
+    dokumentálva miért)"

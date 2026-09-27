@@ -59,6 +59,22 @@ metadata:
     lista kulcsa. logical_interfaces: új `name` mező szintetikus lista-
     kulcsként, mert sem `ref`, sem a `logical_type`+`vlan_ref` pár nem
     mindig jelen lévő azonosító. MAJOR bump: valódi shape-mutáció.
+
+    v1.0.0 finomítás (még ugyanez a MAJOR lépés, mielőtt release-be
+    kerülne — a v1.0.0 még sosem lett `-src<év>` kiadásként kivágva):
+    vlans/vxlans `item_fields` → `item_choice`-ra (cic-primitives#8,
+    PR #9, lásd thead13.txt). A fenti `vlan_id`/`vni` mindkét ág alatti
+    kötelezővé tétele megoldotta a C8-at, de emellett egy redundáns
+    identitás-állítást vezetett be (`dereference(ref).vlan_id ==
+    vlan_id`, semmi nem garantálta) — ezt jelezte a #146 review, rögzítve
+    thead10.txt-ben. Az `item_choice` ezt megszünteti: a `referenced`
+    case-nek csak `ref`, az `inline` case-nek csak `vlan_id`/`vni` (+
+    egyéb inline mezők) a mezője, a két mező sosem szerepel egyazon
+    elemen. `logical_interfaces` SZÁNDÉKOSAN VÁLTOZATLAN marad — ott a
+    kulcs (`name`) egységes, nem case-enként eltérő, tehát nincs
+    item_choice-ra alkalmazható diszkriminált unió, csak opcionális
+    mezőkombináció egy közös kulcs mellett (lásd a mező saját
+    description-jét).
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -201,42 +217,59 @@ spec:
         optional: true
         description: >
           VLAN szegmensek ezen az interfészen (ietf-interfaces-vlan alapján).
-          Minden elem: ref (CIC address) VAGY inline VLAN definíció, de a
-          vlan_id mindkét esetben kötelező — ez adja a lista kulcsát (#143,
-          C8: egy listának mindig kell legyen kulcsa; ref-only esetben is
-          meg kell adni azt a vlan_id-t, amire a ref mutat).
+          Minden elem VAGY egy megosztott VLAN-definícióra mutató ref, VAGY
+          egy inline definíció — a kettő alternatíva, nem együtt kötelező.
           applicable_when: type in [physical, logical, bond]
-        item_fields:
-          - name: ref
-            shape_type: scalar
-            scalar_type: string
-            optional: true
-            description: CIC address pointer — ha meg van adva, az inline mezők opcionálisak
-          - name: vlan_id
-            shape_type: scalar
-            scalar_type: integer
-            role: key
-            mandatory: true
-            description: VLAN azonosító (1-4094) — a lista kulcsa, ref esetén is kötelező
-          - name: vlan_mode
-            shape_type: scalar
-            scalar_type: string
-            optional: true
-            default: access
-            contract:
-              - type: enum
-                expression: [access, trunk, hybrid]
-          - name: allowed_vlans
-            shape_type: collection
-            collection_variant: set
-            item_scalar_type: integer
-            optional: true
-            description: Engedélyezett VLAN ID-k trunk módban
-          - name: dhcp_service
-            shape_type: scalar
-            scalar_type: string
-            optional: true
-            description: DHCP service CIC address referencia (service réteg)
+
+          cic-primitives#8/item_choice (a #143-as C8-fix utólagos
+          pontosítása, lásd thead10.txt + thead13.txt): korábban ez a mező
+          `item_fields`-et használt, `vlan_id`-t `role: key, mandatory: true`
+          téve — ami C8-kompatibilis volt, de emellett megkövetelte, hogy
+          `vlan_id` `ref` esetén is jelen legyen, egy redundáns identitás-
+          állítást bevezetve (`dereference(ref).vlan_id == vlan_id`, semmi
+          nem garantálta). Az `item_choice` (cic-primitives PR #9) ezt
+          megszünteti: a `referenced` case-nek CSAK `ref` a mezője, az
+          `inline` case-nek CSAK `vlan_id` (+ a többi inline mező) — a két
+          mező sosem szerepel egyazon elemen.
+        item_choice:
+          cases:
+            - name: referenced
+              key: [ref]
+              fields:
+                - name: ref
+                  shape_type: scalar
+                  scalar_type: string
+                  role: key
+                  mandatory: true
+                  description: CIC address pointer megosztott VLAN-definícióra
+            - name: inline
+              key: [vlan_id]
+              fields:
+                - name: vlan_id
+                  shape_type: scalar
+                  scalar_type: integer
+                  role: key
+                  mandatory: true
+                  description: VLAN azonosító (1-4094) — ennek a variánsnak a kulcsa
+                - name: vlan_mode
+                  shape_type: scalar
+                  scalar_type: string
+                  optional: true
+                  default: access
+                  contract:
+                    - type: enum
+                      expression: [access, trunk, hybrid]
+                - name: allowed_vlans
+                  shape_type: collection
+                  collection_variant: set
+                  item_scalar_type: integer
+                  optional: true
+                  description: Engedélyezett VLAN ID-k trunk módban
+                - name: dhcp_service
+                  shape_type: scalar
+                  scalar_type: string
+                  optional: true
+                  description: DHCP service CIC address referencia (service réteg)
 
       - name: logical_interfaces
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -252,6 +285,18 @@ spec:
           a `logical_type`+`vlan_ref` pár nem mindig jelen lévő, egyedi
           azonosító, ugyanaz a minta, mint compute-resource
           network_interfaces/node_pools saját `name` kulcsa.
+
+          SZÁNDÉKOSAN NEM migrálva `item_choice`-ra (cic-primitives#8,
+          lásd thead13.txt), a `vlans`/`vxlans`-tól eltérően: itt a kulcs
+          (`name`) EGYSÉGES marad minden elemen, nem case-enként eltérő —
+          csak a NEM-kulcs mezők (`ref` vs. `logical_type`+`vlan_ref`)
+          opcionálisak. Ha mindkét case-nek `key: [name]` lenne, azt a
+          cic-primitives#9 C17 szabálya (két case nem oldódhat fel
+          ugyanarra a kulcsra) most már el is utasítaná — helyesen, mert
+          itt nincs is valódi diszkriminált unió, csak egy egységes kulcs
+          melletti opcionális mezőkombináció. Nincs is redundáns identitás-
+          állítás itt (a `name` nem ismétel meg semmit, amit `ref` már
+          hordoz), tehát nincs mit megszüntetni.
         item_fields:
           - name: name
             shape_type: scalar
@@ -355,45 +400,54 @@ spec:
         description: >
           VXLAN tunnel interfészek (ietf-interfaces-tunnel alapján).
           applicable_when: type in [logical, bridge]
-          A vni (#143, C8) mindkét esetben kötelező — ez a lista kulcsa,
-          ugyanaz a minta, mint a vlans.vlan_id-nél.
-        item_fields:
-          - name: ref
-            shape_type: scalar
-            scalar_type: string
-            optional: true
-            description: CIC address pointer megosztott tunnel definícióra
-          - name: vni
-            shape_type: scalar
-            scalar_type: integer
-            role: key
-            mandatory: true
-            description: VXLAN Network Identifier (1-16777215) — a lista kulcsa, ref esetén is kötelező
-          - name: local_endpoint
-            shape_type: scalar
-            scalar_type: string
-            optional: true
-            description: Helyi tunnel végpont IP cím (IPv4 vagy IPv6)
-          - name: remote_endpoint
-            shape_type: scalar
-            scalar_type: string
-            optional: true
-            description: Távoli tunnel végpont — point-to-point vagy multicast
-          - name: learning
-            shape_type: scalar
-            scalar_type: boolean
-            optional: true
-            default: true
-            description: MAC learning — false = BGP EVPN vezérelt
-          - name: ip
-            shape_type: opaque
-            optional: true
-            description: >
-              IP konfiguráció a tunnel interfészen (netplan-kompatibilis) —
-              a logikai interfészek `ip` mezőjével (fentebb) azonos
-              fogalom, de itt sosem lett kibontva `fields`-ként; `opaque`
-              jelöli, hogy a séma szándékosan nem néz bele, nem hazudja
-              üresnek. Kibontása külön feladat, nem #143 hatóköre.
+          Minden elem VAGY ref, VAGY inline definíció — ua. item_choice
+          minta, mint a vlans-nál (lásd ott a #8/item_choice/thead13
+          jegyzetet a korábbi redundáns ref+vni állítás megszüntetéséről).
+        item_choice:
+          cases:
+            - name: referenced
+              key: [ref]
+              fields:
+                - name: ref
+                  shape_type: scalar
+                  scalar_type: string
+                  role: key
+                  mandatory: true
+                  description: CIC address pointer megosztott tunnel definícióra
+            - name: inline
+              key: [vni]
+              fields:
+                - name: vni
+                  shape_type: scalar
+                  scalar_type: integer
+                  role: key
+                  mandatory: true
+                  description: VXLAN Network Identifier (1-16777215) — ennek a variánsnak a kulcsa
+                - name: local_endpoint
+                  shape_type: scalar
+                  scalar_type: string
+                  optional: true
+                  description: Helyi tunnel végpont IP cím (IPv4 vagy IPv6)
+                - name: remote_endpoint
+                  shape_type: scalar
+                  scalar_type: string
+                  optional: true
+                  description: Távoli tunnel végpont — point-to-point vagy multicast
+                - name: learning
+                  shape_type: scalar
+                  scalar_type: boolean
+                  optional: true
+                  default: true
+                  description: MAC learning — false = BGP EVPN vezérelt
+                - name: ip
+                  shape_type: opaque
+                  optional: true
+                  description: >
+                    IP konfiguráció a tunnel interfészen (netplan-kompatibilis) —
+                    a logikai interfészek `ip` mezőjével azonos fogalom, de
+                    itt sosem lett kibontva `fields`-ként; `opaque` jelöli,
+                    hogy a séma szándékosan nem néz bele, nem hazudja
+                    üresnek. Kibontása külön feladat.
 
       # ── STP / Spanning Tree (capability: stp) ────────────────────────────────
       - name: stp
