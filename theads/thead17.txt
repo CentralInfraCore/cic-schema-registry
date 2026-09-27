@@ -1,0 +1,76 @@
+Ez a szál a #134 ("Decide: formalize a ProviderCorrespondence kind, or
+keep it documentation-only?") megválaszolása — a thead04.meta.yaml utolsó
+nyitva maradt tétele, amit a thead06 dolgozott ki worked example-lel
+(providers/oracle-cloud/storage/storage-resource/storage-resource.
+correspondence.yaml), de nem döntött el.
+
+Az issue öt konkrét kérdést tett fel, egymásra épülve az elsőn (formalizáljunk-e):
+
+1. Formalizáljuk-e (meta-séma + registry_validate/coverage.py
+   támogatás), vagy maradjon dokumentációs konvenció?
+2. Hova kerüljön a fájl éles esetben?
+3. Van-e cross-repo kapcsolat a cic-module-oracle-cloud valódi
+   correspondence.go-jához?
+4. Ha formalizáljuk, a `mismatch: true` hogyan viselkedjen egy
+   validátorban?
+5. Kiterjesztés a másik öt canonical objektumra?
+
+Válasz az 1. kérdésre: NEM formalizáljuk. Marad dokumentációs konvenció.
+
+Ez ugyanaz a döntési minta, mint a derivation_chain besorolása
+(cic-primitives#6, thead14), és a válasz KONZISZTENS azzal:
+
+  - A ProviderCorrespondence azt dokumentálja, HOGYAN kell egy kanonikus
+    mezőt kiszámolni/leképezni a valós provider API-ra — ez séma-
+    realizáció dokumentálása, NEM domain-object szemantika (nem valami
+    amit egy kliens beállít). Ugyanaz a kategória, mint a
+    derivation_chain yang/restconf/runtime hármasa.
+
+  - A derivation_chain-nek HÁROM élő előfordulása volt a corpuson
+    (storage-resource, compute-resource, network-interface), amikor
+    eldöntöttük, hogy nem kell primitívvé/formálisan validálttá tenni.
+    A ProviderCorrespondence-nek MA EGYETLEN worked example-e van
+    (StorageResourceOracleCloud) — gyengébb alap a formalizálásra, mint
+    ami a derivation_chain esetében is elég volt a "ne formalizáljuk"
+    döntéshez.
+
+  - A thead06 már kimutatta, hogy a valódi, FUTÓ precedens
+    (cic-module-oracle-cloud/module/correspondence.go) jóval szűkebb
+    (3 szabály: bool-from-nonempty, bool-invert, rename, mind ugyanazon
+    objektum saját read-state-jéből számolva) mint amit ez a YAML-fájl
+    gazdag szókészlete (direct/transform/derived/composition/
+    external-observer/unsupported/action, plusz mismatch jelző) leír.
+    Egy meta-séma bevezetése MOST egy még nem bizonyítottan helyes/
+    általánosítható absztrakciót fagyasztana be validációval, mielőtt
+    akár egyetlen MÁSIK provider vagy MÁSIK canonical objektum
+    tesztelte volna a formátum általánosíthatóságát.
+
+Válaszok a további négy kérdésre, az 1. döntés következményeként:
+
+2. A fájl MARAD a séma mellett (ahogy a draft is teszi ma) — konzisztens
+   azzal, ahogy a derivation_chain is a séma saját fájljában él, nem
+   külön mappában. Nincs indok külön `correspondence/` alkönyvtárat
+   bevezetni egyetlen fájlhoz.
+
+3. NINCS cross-repo generálás/szinkron a cic-module-oracle-cloud
+   correspondence.go-ja felé. A thead06 explicit kimondta, hogy a kettő
+   NEM ugyanaz a réteg — ez marad így, amíg nincs konkrét igény.
+
+4. Okafogyottá válik: validátor nélkül a `mismatch: true` egyszerű
+   dokumentációs jelző marad, ahogy eddig is volt.
+
+5. NEM terjesztjük ki a másik öt canonical objektumra (ComputeResource,
+   NetworkInterface, DHCPService/DHCPOptions, KubernetesCluster/
+   KubernetesNode) most. Csak akkor érdemes, ha egy konkrét, motiváló
+   eset (pl. egy újabb provider-specializáció, ahol a mapping-
+   dokumentáció ténylegesen szükséges) ezt ténylegesen indokolja —
+   ugyanaz az elv, mint a provider_resources/derivation_chain
+   egyesítésénél (thead14): nem tervezünk sémát valós használati eset
+   nélkül.
+
+Módosítás: a storage-resource.correspondence.yaml fejléc-kommentje
+frissítve (az elavult "DRAFT — nem commitolt" szöveg javítva — a fájl
+már régóta a main-en van commitolva, csak a "review alatt, formátum
+nem eldöntött" állapot volt még függőben, ami most lezárult), és a
+metadata.description "NYITOTT" bekezdése lecserélve a fenti döntésre
+és indoklásra.

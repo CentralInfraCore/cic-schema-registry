@@ -1,8 +1,13 @@
-# DRAFT — nem commitolt, review alatt. Kind: ProviderCorrespondence még
-# sehol nincs formálisan bevezetve a corpuson: nincs meta-séma, nincs
-# registry_validate/coverage.py támogatás, egyetlen adapter sem olvassa.
-# Ez a fájl egy konkrét, teljes worked example, hogy a formátum
-# eldönthető legyen, mielőtt bármi más provider/domain ezt követné.
+# #134 eldöntve (thead17): kind: ProviderCorrespondence marad
+# DOKUMENTÁCIÓS KONVENCIÓ, szándékosan nincs meta-séma, nincs
+# registry_validate/coverage.py támogatás, egyetlen adapter sem olvassa —
+# ugyanaz a döntés, mint a canonical sémák derivation_chain
+# "specification-only" blokkjaira (cic-primitives#6, thead14): ez is
+# séma-realizáció dokumentálása ("hogyan kell egy mezőt kiszámolni a
+# valós API-ra"), nem domain-object szemantika. Ez a fájl az egyetlen
+# worked example a corpuson (StorageResourceOracleCloud) — nincs
+# kiterjesztve a többi öt canonical objektumra, amíg nincs konkrét,
+# motiváló használati eset rá.
 ---
 metadata:
   name: StorageResourceOracleCloudCorrespondence
@@ -50,12 +55,25 @@ metadata:
     (`composition`, `external-observer`) ma sehol nem hajtódik végre,
     emberi/adapter-fejlesztői referencia marad.
 
-    NYITOTT, EZ A FÁJL NEM DÖNTI EL: kell-e formális `kind:
-    ProviderCorrespondence` meta-séma + registry_validate támogatás,
-    vagy marad dokumentációs konvenció; hova kerüljön a fájl éles
-    esetben (ugyanide, a séma mellé, mint most, vagy külön
-    `correspondence/` alkönyvtárba); szükséges-e cross-repo generálás
-    a `cic-module-oracle-cloud` felé.
+    #134 ELDÖNTVE (thead17): NEM formalizáljuk — marad dokumentációs
+    konvenció, nincs meta-séma/registry_validate/coverage.py támogatás.
+    Indoklás: (1) séma-realizáció dokumentálása, nem domain-object
+    szemantika — ugyanaz a besorolás, mint a derivation_chain
+    (cic-primitives#6); (2) ennek a fájlnak MA egyetlen worked example-e
+    van a corpuson, gyengébb alap egy meta-séma bevezetésére, mint amivel
+    a derivation_chain rendelkezett (3 élő előfordulás), amikor arról
+    ugyanígy döntöttünk; (3) a valódi, futó precedens
+    (`cic-module-oracle-cloud/module/correspondence.go`) jóval szűkebb
+    (3 szabály), mint amit ez a fájl gazdag szókészlete (D/T/R/C/X/U/
+    action) leír — egy meta-séma most egy még nem bizonyítottan
+    általánosítható absztrakciót fagyasztana be.
+    Következmények: (a) a fájl marad a séma mellett, nem külön
+    `correspondence/` alkönyvtárban; (b) nincs cross-repo generálás a
+    `cic-module-oracle-cloud` felé; (c) a `mismatch: true` validátor
+    nélküli, egyszerű dokumentációs jelző marad; (d) NEM terjesztjük ki
+    a másik öt canonical objektumra (ComputeResource, NetworkInterface,
+    DHCPService/DHCPOptions, KubernetesCluster/KubernetesNode), amíg
+    nincs konkrét, motiváló használati eset.
   owner: Gabor Zoltan Sinko
   tags:
     - provider-correspondence
