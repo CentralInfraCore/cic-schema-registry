@@ -1,0 +1,64 @@
+Ez a szál egy beillesztett külső AI-review vizsgálata a #152-ről (KubernetesCluster/
+Node backend key_field bevezetése, #25 feloldása), mielőtt mergeltük volna.
+
+A review jóváhagyta a #152 fő döntését (backend+provider kétszintű kulcs, a
+storage/compute mintáját követve, a cloud-managed-adapter valódi bekötésével) és
+NEM blokkolta vele — de talált egy valódi, harmadik megjelenését ugyanannak a
+mintaosztálynak, amit a ref+vlan_id (thead10/#146) és a key_fields.provider
+feltételes Contract (thead12) esetében már láttunk: "mezők önálló validálása
+nem elég, relációs invariáns is kell."
+
+A megfigyelés: a KubernetesNode két FÜGGETLEN helyen fejezi ki a szülő
+KubernetesCluster azonosítóját.
+
+  1. binding_surface.addresses[].key_fields: backend/provider/location/
+     cluster_id — a node address-e HIERARCHIKUSAN ágyazódik a cluster
+     address alá (RESTCONF path: /clusters/cluster={backend},{provider},
+     {location},{cluster_id}/nodes/node={id}). A #152 ezt a beágyazott
+     kulcsot TELJESSÉ tette: korábban csak provider/location/cluster_id
+     volt benne, most a teljes backend/provider/location/cluster_id.
+
+  2. config_surface.cluster_ref: cic-reference mező, aminek az ÉRTÉKE
+     (amit egy kliens beír) a szülő cluster TELJES logical_id-je
+     (cic:kubernetes:{backend}:{provider}:{location}:{id}).
+
+A két adat FÜGGETLENÜL validált. Nincs Contract, nincs semmilyen mechanizmus,
+ami kikényszerítené:
+
+  dereference(cluster_ref).logical_id
+      ==
+  compose(backend, provider, location, cluster_id)   [a node saját key_fields-jéből]
+
+Ez elméletileg lehetővé teszi, hogy egy node address-e egy klaszterre utaljon
+(pl. backend=cloud-managed, provider=oci, location=eu-frankfurt-1,
+cluster_id=prod), miközben a cluster_ref egy MÁSIK clusterre mutat
+(pl. backend=cloud-managed, provider=aws, location=eu-west-1,
+cluster_id=cluster-B) — mindkét adat önmagában séma-valid, a kettő együtt
+mégis ellentmondó.
+
+FONTOS, amit a review is explicit leszögezett, és ellenőriztem: EZT NEM a
+#152 vezeti be. A cluster_id + cluster_ref kettősség már azelőtt is létezett
+(a node binding_surface-e mindig is tartalmazott egy cluster_id key_field-et
+a hierarchikus address-hez, a cluster_ref pedig mindig is a teljes szülő
+logical_id-re mutatott). A #152 csak LÁTHATÓBBÁ tette, mert most a TELJES
+parent routing identity (backend+provider is, nem csak location+cluster_id)
+duplikálódik a gyerek address-ben.
+
+Ellenőrizve: a corpuson MÁS hasonló hierarchikus szülő-gyerek pár (pl.
+Subnet -> NetworkSpace) NEM mutatja ezt a mintát -- a Subnet binding_surface
+key_fields-je (backend/provider/location/id) nem ágyazza be a
+network_space_ref célját, a kapcsolat KIZÁRÓLAG a network_space_ref
+cic-reference mezőn keresztül él, nincs beágyazott/duplikált forma. A
+KubernetesNode/Cluster pár emiatt (eddig) az EGYETLEN ismert eset a
+corpuson, ahol egy gyerek address HIERARCHIKUSAN ágyazza be a szülő teljes
+kulcsát ÉS emellett van egy külön cic-reference is ugyanarra a szülőre —
+ez a KOMBINÁCIÓ hozza létre a redundanciát, nem önmagában a hierarchikus
+címzés vagy önmagában a cic-reference.
+
+Döntés: NEM blokkoljuk vele a #152-t (a review is így javasolta, egyetértek
+-- ez egy előzetesen létező, nem a #152 által bevezetett hiányosság, aminek
+a javítása egy kernel-tervezési kérdés, nem egy corpus-fix). Külön,
+cic-primitives-oldali issue nyitva a kérdés rögzítésére: milyen mechanizmus
+(ha van ilyen) garantálhatná, hogy egy hierarchikus gyerek beágyazott
+szülő-kulcsa és a saját cic-reference mezője ugyanarra a szülőre oldódjon
+fel.

@@ -1,0 +1,68 @@
+thread: thead16
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  Külső AI-review a #152-ről (KubernetesCluster/Node backend key_field,
+  #25 feloldása) — jóváhagyta a fő döntést, nem blokkolta, de talált egy
+  harmadik megjelenését a "mezők önálló validálása nem elég" mintaosztálynak:
+  KubernetesNode binding_surface (beágyazott szülő-kulcs) és
+  config_surface.cluster_ref (cic-reference ugyanarra a szülőre) között
+  nincs konzisztencia-invariáns. Nem a #152 vezette be, csak láthatóbbá
+  tette. Rögzítve cic-primitives#11-ként.
+
+accepted:
+  - "KubernetesNode.binding_surface.addresses[].key_fields
+    (backend/provider/location/cluster_id) és
+    KubernetesNode.config_surface.cluster_ref (cic-reference, teljes
+    szülő logical_id) függetlenül validált -- nincs mechanizmus, ami
+    kikényszerítené dereference(cluster_ref).logical_id ==
+    compose(backend, provider, location, cluster_id). CONFIRMED
+    közvetlen kódolvasással."
+  - "Ez NEM a #152 által bevezetett hiba -- a cluster_id + cluster_ref
+    kettősség már azelőtt is létezett, a #152 csak a teljes parent
+    routing identity-t (backend+provider is) tette bekerülővé a gyerek
+    address-be, ami láthatóbbá tette a mintát."
+  - "Ellenőrizve: a Subnet/NetworkSpace pár NEM mutatja ezt a mintát --
+    a Subnet binding_surface key_fields-je nem ágyazza be a
+    network_space_ref célját, a kapcsolat kizárólag a cic-reference
+    mezőn keresztül él. A KubernetesNode/Cluster pár (eddig) az EGYETLEN
+    ismert eset, ahol egy gyerek address hierarchikusan ágyazza be a
+    szülő teljes kulcsát ÉS emellett van külön cic-reference is
+    ugyanarra a szülőre."
+  - "Ez a harmadik megjelenése ugyanannak a mintaosztálynak, mint
+    cic-primitives#8 (ref+vlan_id, megoldva item_choice-szal) és
+    thead12 (key_fields.provider feltételes Contract, dokumentált,
+    megoldatlan nyelvi hiány) -- 'mezők önálló validálása nem elég,
+    relációs invariáns is kell', most két KÜLÖNBÖZŐ SURFACE (binding_surface
+    vs config_surface) közötti kapcsolatra."
+  - "Nem blokkoljuk vele a #152-t -- a review is így javasolta, egyetértek:
+    előzetesen létező, nem e PR által bevezetett hiányosság, kernel-
+    tervezési kérdés, nem corpus-fix."
+
+rejected: []
+
+opened:
+  - "cic-primitives#11 (Embedded parent identity vs. parent reference:
+    no consistency invariant) -- scoping issue, mint #6 volt a
+    derivation_chain-re: még nem javaslat, csak a kérdés rögzítése és
+    a lehetséges rétegek felvázolása (új Contract-típus ami surface-eken
+    átível, dedikált 'parent consistency' annotáció, vagy elfogadva mint
+    dokumentált, nem kikényszerített invariáns)."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "A cic-primitives#11 tényleges megoldása -- ez egy külön, saját
+    tervezést igénylő kernel-kérdés, nem ez a szál dönti el."
+
+kapcsolódó:
+  - "cic-schema-registry PR #152 (a szál, amit ez a review átnézett --
+    mergelhető, változatlan, a felfedezés nem blokkolja)"
+  - "cic-primitives#8 + theads/thead10.txt (ref+vlan_id, ugyanaz a
+    mintaosztály, első megjelenés)"
+  - "theads/thead12.txt (key_fields.provider feltételes Contract,
+    ugyanaz a mintaosztály, második megjelenés)"
+  - "cic-primitives#11 (ez a szál, harmadik megjelenés, most nyitva)"
+  - "general/kubernetes/kubernetes-node/kubernetes-node.yaml
+    binding_surface + config_surface.cluster_ref (a konkrét eset)"
+  - "general/network/subnet/subnet.yaml binding_surface (az ELLENPÉLDA
+    -- ugyanolyan szülő-gyerek kapcsolat, de NEM mutatja a mintát)"
