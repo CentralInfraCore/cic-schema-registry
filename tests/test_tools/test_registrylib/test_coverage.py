@@ -121,6 +121,187 @@ def test_description_only_change_is_not_a_mutation():
     assert result.ok
 
 
+# ── DomainComposition per-value enum conformance (#137, thead07/thead08) ────
+# Ports the YANG dialect's not-implemented-value tolerance (below) to the
+# DomainComposition dialect's `contract: type: enum` -- exercised through
+# check_coverage() with major_bump=False, the exact check_base_references()
+# path an identity.base specialization goes through, since this dialect has
+# no direct-signature tests the way yang_shape_signature() does.
+
+
+def test_contract_enum_short_and_long_form_are_the_same_shape():
+    """"none" and {value: none, conformance: implemented} are the same
+    value, per the Access atom's own documented short/long-form
+    equivalence (mirrors the YANG-side version of this test)."""
+    short_form = _doc(
+        [
+            {
+                "name": "encryption_mode",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["none", "provider_managed"]}],
+            }
+        ]
+    )
+    long_form = _doc(
+        [
+            {
+                "name": "encryption_mode",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            {"value": "none", "conformance": "implemented"},
+                            "provider_managed",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    result = check_coverage(short_form, long_form, major_bump=False)
+    assert result.ok
+
+
+def test_contract_enum_value_order_does_not_matter():
+    a = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b", "c"]}],
+            }
+        ]
+    )
+    b = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["c", "a", "b"]}],
+            }
+        ]
+    )
+    result = check_coverage(a, b, major_bump=False)
+    assert result.ok
+
+
+def test_contract_enum_not_implemented_value_still_counts_in_vocabulary():
+    """The actual #137 fix, reproducing StorageResourceOracleCloud.
+    encryption_mode: a specialization marking a value conformance:
+    not_implemented instead of removing it from the Contract's
+    `expression` must NOT read as narrowing the field's shape -- this is
+    what lets check_base_references() (always major_bump=False) accept
+    the narrowing without demanding a MAJOR bump the base never took."""
+    base = _doc(
+        [
+            {
+                "name": "encryption_mode",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "unspecified",
+                            "none",
+                            "provider_managed",
+                            "customer_managed",
+                            "guest_managed",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    specialization = _doc(
+        [
+            {
+                "name": "encryption_mode",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "unspecified",
+                            {"value": "none", "conformance": "not_implemented"},
+                            "provider_managed",
+                            "customer_managed",
+                            {"value": "guest_managed", "conformance": "not_implemented"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    result = check_coverage(base, specialization, major_bump=False)
+    assert result.ok
+
+
+def test_contract_enum_differs_when_a_value_is_genuinely_missing():
+    """Actually shrinking the Contract's value set (not just marking one
+    not_implemented) must still be caught -- that would be a Liskov
+    substitution violation for a base-typed caller, not a conformance
+    narrowing."""
+    full = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b", "c"]}],
+            }
+        ]
+    )
+    silently_narrowed = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b"]}],
+            }
+        ]
+    )
+    result = check_coverage(full, silently_narrowed, major_bump=False)
+    assert not result.ok
+    assert result.violations[0].kind == "mutated"
+
+
+def test_non_enum_contract_types_are_unaffected_by_enum_normalization():
+    """A range/must/pattern contract must still compare as a real
+    mutation when changed -- the enum-specific normalization must not
+    accidentally blind the check to other contract types."""
+    old = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "integer",
+                "contract": [{"type": "range", "expression": "1..10"}],
+            }
+        ]
+    )
+    new = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "integer",
+                "contract": [{"type": "range", "expression": "1..99"}],
+            }
+        ]
+    )
+    result = check_coverage(old, new, major_bump=False)
+    assert not result.ok
+    assert result.violations[0].kind == "mutated"
+
+
 # ── YANGBlock dialect (#28, #45) ────────────────────────────────────────────
 
 

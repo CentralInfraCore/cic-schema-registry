@@ -189,21 +189,32 @@ spec:
           StorageResource v1.0.0 vezette be (korábban `encryption:
           boolean` volt, ami OCI-n értelmezhetetlen intent volt — lásd
           theads/thead04.txt), az `unspecified` értéket pedig v1.2.0
-          (lásd #140 — a korábbi `default: none` hazug állítás volt
-          OCI-n, mert a mező hiánya nem jelentett "titkosítatlan"-t).
-          A contract enum teljes listáját (nem csak az OCI-n releváns
-          három értéket) változatlanul átvesszük — a tools/registrylib/
-          coverage.py check_base_references() minden identity.base
-          ellenőrzést major_bump=False-szal fut (registry_validate.py:386),
-          tehát egy szűkebb Contract-enum itt "mutated" violationt adna;
-          ma nincs primitívszintű módja annak, hogy egy specializáció
-          egy mező ÉRTÉKKÉSZLETÉT (nem a teljes mezőt) szűkítse — ezt a
-          #137 hivatott megoldani (per-value conformance, a
-          ietf-interfaces-vlan.yaml mintáját a DomainComposition
-          dialektusra portolva), nem eldöntve, nem implementálva itt.
+          (lásd #140).
+
+          #137 (thead07/thead08) megoldva: a `none`/`guest_managed`
+          most `conformance: not_implemented`-tel jelölt EGYEDI ÉRTÉKEK
+          a Contract enumon belül (a YANG-dialektus {value, conformance}
+          hosszú alakja, portolva a DomainComposition oldalra) — a teljes
+          vokabulárium
+          (unspecified/none/provider_managed/customer_managed/
+          guest_managed) megmarad, tehát egy általános StorageResource-
+          kliens által legálisan beállított `encryption_mode: none`
+          NEM válik illegálissá ezen a specializáción (Liskov
+          substitution megtartva, lásd thead08 kritikája a korábbi
+          Contract-szűkítési kísérletről). A tools/registrylib/
+          coverage.py check_base_references() ezt már conformance-
+          blind módon hasonlítja (a vokabulárium NÉV-halmaza számít, a
+          per-érték conformance nem) — 0 violation, verifikálva.
         contract:
           - type: enum
-            expression: [unspecified, none, provider_managed, customer_managed, guest_managed]
+            expression:
+              - unspecified
+              - value: none
+                conformance: not_implemented
+              - provider_managed
+              - customer_managed
+              - value: guest_managed
+                conformance: not_implemented
 
       - name: encryption_key_ref
         atomic_ref: "cic:core:Shape@v0.2.0"
