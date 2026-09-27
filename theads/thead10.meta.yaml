@@ -1,0 +1,77 @@
+thread: thead10
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  Egy beillesztett külső AI-review vizsgálata a #146-ról (thead09/#143
+  grammatika-konformitás javítás), mielőtt mergeltük volna. A review
+  talált egy valódi kernel-szintű expressiveness-hiányt: a
+  network-interface.yaml vlans/vxlans listáinak "ref VAGY inline
+  definíció" mintáját a jelenlegi atom-grammar collection típusalgebrája
+  nem tudja natívan kifejezni, mert a C8 szabály feltétel nélkül
+  megköveteli, hogy legyen egy mandatory, deklarált kulcs-mező minden
+  elemen -- ami "ref esetén A mező a kulcs, egyébként B mező" mintára nem
+  alkalmazható anélkül, hogy a kulcsot feltétel nélkül kötelezővé
+  tennénk.
+
+  Két kör alatt tisztult le: a #146 helyes, mergelhető javítás a
+  jelenlegi nyelv mellett (a korábbi állapot -- nincs semmilyen kulcs
+  ref esetén -- rosszabb volt, pontosan a C8 által kizárt pozicionális
+  identitás hibája). De a javítás konkrétan bevezet egy redundáns
+  identitás-állítást (ref + vlan_id együtt, konzisztencia-garancia
+  nélkül), ami a hiányzó nyelvi elem (collection item discriminated
+  union / feltételes kulcs) konkrét, dokumentált reprodukáló esete.
+
+accepted:
+  - "check_collection() (C8) explicit megköveteli, hogy a kulcs-mező
+    mandatory: true legyen ('a key cannot be optional') -- CONFIRMED
+    forráskódból (check_grammar.py). Egy 'A vagy B a kulcs, attól függően
+    melyik van kitöltve' minta emiatt nem fejezhető ki ma, még egy
+    item-szintű must-kontraktussal kombinálva sem."
+  - "A #146 előtti állapot (vlan_id/vni optional volt ref esetén)
+    rosszabb volt a jelenlegi javításnál: a listaelemnek ref esetén
+    EGYÁLTALÁN nem volt deklarált, stabil kulcsa -- pontosan a C8 által
+    kizárt pozicionális identitás hiba. A #146 ezt egy konkrét kulcsra
+    cseréli, ami a mai grammatika mellett helyes lépés."
+  - "A #146 ezzel együtt egy új, kézzelfogható redundáns állítást vezet
+    be: ref + vlan_id (illetve ref + vni) együtt szerepelhet egy elemen,
+    dereference(ref).vlan_id == vlan_id konzisztencia-garancia nélkül.
+    Ez nem 'nem old meg egy már meglévő problémát' -- ez most válik
+    konkrét, dokumentált mintává, még ha a mögöttes 'referencia célja
+    konzisztens-e' kérdés a corpus minden cic-reference mezőjénél már
+    korábban is fennállt, ellenőrizetlenül."
+  - "A helyes jövőbeli irány NEM a kulcs-mező optionallá tétele lenne --
+    az visszahozná a pozicionális identitás problémáját, amit a C8 pont
+    kizár. Egy 'minden elem pontosan egy stabil identitásra oldódik fel,
+    de a szabály elem-variánsonként eltérhet' mechanizmus (item-szintű
+    discriminated union/choice, vagy feltételes kulcs-deklaráció)
+    kellene, ami más 'ref OR inline' mintákra (pl. logical_interfaces)
+    is általánosan alkalmazható lenne."
+  - "logical_interfaces szintetikus `name` kulcsa enyhébb esete ugyanennek
+    a jelenségnek -- ott nincs duplikált identitás-állítás (a `name` nem
+    ismétel meg semmit, amit a `ref` már hordoz), csak egy, kizárólag a
+    C8 kielégítésére bevezetett mező. Kevésbé súlyos, mint a vlans/vxlans
+    eset."
+
+rejected: []
+
+opened:
+  - "Collection item discriminated union / feltételes kulcs-szemantika
+    hiányzik az atom-grammar típusalgebrájából -- a `vlans`/`vxlans`
+    'ref VAGY inline' mintája a konkrét, reprodukáló teszteset. Ez
+    cic-primitives kernel-tervezési kérdés (Shape/collection típusalgebra
+    bővítése), nem cic-schema-registry corpus-hiba."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "A konkrét szintaxis a feltételes kulcshoz (item_cases: [{when, key}]
+    stílusú vázlat, vagy egy choice az egész item shape köré, vagy más
+    mechanizmus) -- nincs eldöntve, csak a hiány maga van rögzítve."
+  - "A #146-ban bevezetett ref+vlan_id/ref+vni redundancia visszamenőleges
+    javítása, ha/amikor a feltételes kulcs-mechanizmus megszületik --
+    külön follow-up, nem ez a szál dönti el."
+
+kapcsolódó:
+  - "cic-schema-registry PR #146 (a javítás, ami ezt felszínre hozta -- mergelhető, változatlan)"
+  - "theads/thead09.txt + thead09.meta.yaml (az eredeti 109 finding, ahonnan a vlans/vxlans fix jött)"
+  - "cic-primitives proposals/atom-grammar/README.md §2.3 (collection típusalgebra, item_key)"
+  - "tools/registrylib nincs érintve -- ez tisztán cic-primitives kernel kérdés"
