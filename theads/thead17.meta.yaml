@@ -1,0 +1,75 @@
+thread: thead17
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  #134 megválaszolása: kind: ProviderCorrespondence NEM lesz formalizálva
+  -- marad dokumentációs konvenció, nincs meta-séma/registry_validate/
+  coverage.py támogatás. Ugyanaz a döntési minta, mint a derivation_chain
+  besorolása (cic-primitives#6, thead14): séma-realizáció dokumentálása,
+  nem domain-object szemantika, és MÉG GYENGÉBB az alap a formalizálásra
+  (1 worked example a derivation_chain 3 élő előfordulásához képest).
+
+accepted:
+  - "ProviderCorrespondence (HOGYAN kell egy kanonikus mezőt kiszámolni
+    a valós provider API-ra) ugyanaz a kategória, mint a derivation_chain
+    (yang/restconf/runtime hármas) -- séma-realizáció dokumentálása, nem
+    domain-object szemantika, nem valami amit egy kliens beállít."
+  - "A ProviderCorrespondence-nek MA egyetlen worked example-e van a
+    corpuson (StorageResourceOracleCloud) -- gyengébb alap a
+    formalizálásra, mint a derivation_chain 3 élő előfordulása volt,
+    amikor arról ugyanígy döntöttünk (nem formalizáljuk)."
+  - "A valódi, FUTÓ precedens (cic-module-oracle-cloud/module/
+    correspondence.go, thead06 által ellenőrizve) jóval szűkebb (3
+    szabály, egy objektumon belüli mezők) mint amit ez a YAML-fájl
+    gazdag szókészlete (direct/transform/derived/composition/
+    external-observer/unsupported/action) leír -- egy meta-séma most
+    egy még nem bizonyítottan általánosítható absztrakciót fagyasztana
+    be."
+  - "Következmények: a fájl marad a séma mellett (nincs külön
+    correspondence/ alkönyvtár); nincs cross-repo generálás a
+    cic-module-oracle-cloud felé; a mismatch: true validátor nélküli
+    dokumentációs jelző marad; nincs kiterjesztés a másik öt canonical
+    objektumra, amíg nincs konkrét motiváló használati eset."
+  - "storage-resource.correspondence.yaml fejléce javítva: az elavult
+    'DRAFT -- nem commitolt' szöveg lecserélve, mivel a fájl már régóta
+    a main-en van commitolva -- csak a formátum-döntés volt függőben,
+    ami most lezárult."
+  - "Külső review (PR #153-on) helyesen kapta el: a fájl metadata.
+    validatedBy mezője (cic-primitives v0.2.0), a StorageResourceOracleCloud
+    sémájáról átvéve, hamis állítást tett a MOST meghozott döntés
+    fényében -- ott igaz (check_grammar.py ténylegesen validálja), itt
+    nem (kind: ProviderCorrespondence nincs a grammar ismert kind-jai
+    közt). Ellentmondott a döntés saját kimondásának ('structured
+    documentation != formal CIC schema contract'). Javítva: validatedBy
+    törölve, komment magyarázza miért -- ÚJ meta-mező (pl. status:
+    documentation-only) bevezetése NÉLKÜL, mert az egy újabb meta-modell
+    kitalálása lenne pont abban a threadben, ami a formalizálás ellen
+    döntött."
+  - "Review kisebb pontosítása: a PR leírás 'Cross-repo relationship?
+    None.' állítása túl erős -- FOGALMI kapcsolat van (a fájl leírása
+    részletesen kifejti), csak GÉPI/generált/kikényszerített nincs.
+    Pontosítva a PR leírásában."
+
+rejected:
+  - "kind: ProviderCorrespondence formalizálása meta-sémával és
+    registry_validate/coverage.py támogatással -- elutasítva, egyetlen
+    worked example és egy jóval szűkebb élő precedens alapján korainak
+    ítélve."
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár): []
+
+kapcsolódó:
+  - "cic-schema-registry#134 (a szál, amit ez megválaszolt)"
+  - "theads/thead04.meta.yaml (eredeti 'nem nyitva' tétel, ahonnan ez
+    indult) + theads/thead06.txt (a worked example + a correspondence.go
+    precedens-ellenőrzés)"
+  - "cic-primitives#6 + theads/thead14.txt (derivation_chain besorolás,
+    a konzisztens előzmény, amire ez a döntés épít)"
+  - "providers/oracle-cloud/storage/storage-resource/
+    storage-resource.correspondence.yaml (az egyetlen worked example,
+    fejléce frissítve)"
+  - "cic-module-oracle-cloud/module/correspondence.go +
+    module/correspondence/vcn.json (a szűkebb, futó precedens)"
