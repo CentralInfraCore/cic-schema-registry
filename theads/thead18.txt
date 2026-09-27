@@ -243,17 +243,32 @@ vitatta.
 
 == Ami ebből következik ==
 
-A helyesbítés után a KANONIKUS sémában maradó, VALÓBAN javítandó
-hiányosságok szűkebb körűek, mint az eredeti elemzés állította:
+A helyesbítés után a maradó hiányosságok szűkebb körűek, mint az
+eredeti elemzés állította, ÉS -- egy második review-kör pontosítása
+után -- KÉT KÜLÖN KATEGÓRIÁRA bomlanak, amiket az első helyesbítés
+still összemosott ("a KANONIKUS sémában maradó hiányosságok" cím alá
+véve olyat is, ami valójában nem canonical-oldali hiba). Az első helyesbítés a "KANONIKUS sémában maradó hiányosságok" cím alá
+vett olyat is, ami valójában nem canonical-oldali hiba -- ezt egy
+második review-kör kapta el. A megkülönböztetés maga is tanulság:
+"canonical modell hiánya" != "provider/modul oldali dokumentációs
+lefedettség hiánya" -- ugyanaz a fajta kategória-tisztítás, mint amit
+a #131/thead12 során az addresses.key_fields TYPE/VOCABULARY vs.
+IMPLEMENTATION CAPABILITY szétválasztásánál is meg kellett tenni.
 
-  - `correspondence/subnet.json` hiánya (a public_access bool-invert
-    és minden más subnet-mezős mapping dokumentálatlan)
+CANONICAL GAPS (a séma saját, cloud-providertől független hiányosságai):
+
   - `public_access` description pontosítása (a public IP / internet
-    ingress / routing fogalmak szétválasztása)
+    ingress / routing fogalmak szétválasztása egy "/" mögül)
+  - `ipv6_cidr_block` (NetworkSpace state) kardinalitás-javítása
+    skalárról listára -- MEGERŐSÍTVE, ÁLTALÁNOSABB, MINT EREDETILEG
+    GONDOLTUK: nem csak OCI ad vissza több IPv6 prefixet egy VCN-en --
+    az AWS VPC is több (dokumentáció szerint akár öt) IPv6 CIDR blokkot
+    enged, az Azure virtuális hálózat address-space modellje is listás
+    (`AddressPrefixes`). A scalar `ipv6_cidr_block` tehát NEM egy
+    OCI-specifikus mapping-kérdés, hanem ÁLTALÁNOSAN túl szűk a
+    canonical modell, minden cloud-providerre nézve.
   - `dnsLabel` felvétele VAGY explicit kizárása (ma egyik sem történt
     meg, ellentétben route/security/dhcp-vel)
-  - `ipv6_cidr_block` (NetworkSpace state) kardinalitás-javítása
-    skalárról listára
   - `dns_support_enabled`/`dns_hostnames_enabled` sorsa (AWS-fogalom,
     nincs OCI megfelelője -- eldöntendő, hogy maradjon-e a canonicalban
     mint más-provider-eknek szánt mező, vagy kerüljön OCI-specifikus
@@ -261,14 +276,23 @@ hiányosságok szűkebb körűek, mint az eredeti elemzés állította:
   - `available_ip_count`/`subnet_count` derived mezők levezetési
     szabályának dokumentálása vagy eltávolítása
 
+PROVIDER/MODUL GAPS (a cic-module-oracle-cloud oldali lefedettség/
+dokumentáció hiányosságai, NEM a canonical séma hibái):
+
+  - `correspondence/subnet.json` hiánya (a public_access bool-invert
+    és minden más subnet-mezős mapping dokumentálatlan a modul oldalán)
+  - `AddVcnCidr` modul-lefedettség hiánya (a cic-module-oracle-cloud
+    extraktorja még nem generálta le ezt az OCI action-t)
+
 A `cidrBlocks`/`add_secondary_cidr` és a `public_access` inverzió NEM
-tartozik ide -- azok rendben vannak a canonical oldalon, csak a
-cic-module-oracle-cloud modul lefedettsége (AddVcnCidr) és a
-correspondence-dokumentáció (subnet.json) hiányos.
+canonical hiba -- azok rendben vannak a canonical oldalon, a fenti
+Provider/modul gaps kategóriába tartoznak.
 
 Ez a szál NEM dönt semmiről -- tisztán feltáró elemzés, a thead04
-mintáját követve, most már a review-val helyesbítve. Nyitva marad:
-kell-e MOST javítani a fenti, szűkebb kanonikus hiányosságokat, és/vagy
-kell-e megépíteni egy SubnetOracleCloud/NetworkSpaceOracleCloud
-provider-specializációt (a StorageResourceOracleCloud mintájára).
+mintáját követve, két review-körrel helyesbítve. Nyitva marad: kell-e
+MOST javítani a fenti canonical hiányosságokat, kell-e a
+cic-module-oracle-cloud oldalon pótolni a lefedettségi/dokumentációs
+hiányokat, és/vagy kell-e megépíteni egy SubnetOracleCloud/
+NetworkSpaceOracleCloud provider-specializációt (a
+StorageResourceOracleCloud mintájára).
 Külön GitHub issue nyitva a döntésre.
