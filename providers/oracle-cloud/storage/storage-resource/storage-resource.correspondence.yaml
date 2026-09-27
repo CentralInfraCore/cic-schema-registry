@@ -106,10 +106,11 @@ spec:
         (v1.2.0, #140) csak akkor jelenik meg, ha az intent explicit nem
         adott meg semmit — ez sosem "megfigyelt" érték, hanem az intent
         hiányának jele, tehát ez a mapping nem is vonatkozik rá. `none`
-        és `guest_managed` sosem fordul elő OCI-n, de ezt a canonical
-        Contract enum listája nem tudja kifejezni — lásd a séma saját
-        mezőjének leírását (#137 hivatott megoldani, per-value
-        conformance-szal, nem eldöntve).
+        és `guest_managed` sosem fordul elő OCI-n — ezt a
+        StorageResourceOracleCloud sémája most már strukturálisan is
+        kifejezi (#137 megoldva): a két érték `conformance:
+        not_implemented`-tel jelölt a Contract enumon belül, a teljes
+        vokabulárium megtartásával.
 
     - target: config_surface.encryption_key_ref
       kind: direct
