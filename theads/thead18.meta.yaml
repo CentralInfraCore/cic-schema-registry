@@ -1,0 +1,79 @@
+thread: thead18
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  Field-szintű összehasonlító elemzés (thead04 módszertana) a kanonikus
+  Subnet/NetworkSpace sémák és a valós OCI Vcn/Subnet API között, a
+  cic-module-oracle-cloud generált sémáin (module/schemas/core/
+  {vcn,subnet}.json) és a module/correspondence/vcn.json-on keresztül.
+  A cic-module-oracle-cloud Go-kódja itt kizárólag "mi a valós OCI API
+  alakja" forrásként szolgált, nem a kódminőség vizsgálata. Legsúlyosabb
+  találat: public_access vs. prohibitPublicIpOnVnic invertált boolean,
+  sehol nem dokumentálva -- ugyanaz a hibaosztály, mint a storage
+  encryption/encryption_mode (thead04).
+
+accepted:
+  - "public_access (Subnet) leírása 'kapnak-e publikus IP-t' (true =
+    kaphatnak), az OCI prohibitPublicIpOnVnic leírása 'can have public
+    IP addresses' de prohibit-polaritással (true = NEM kaphatnak) --
+    FORDÍTOTT logika, CONFIRMED mindkét fájl közvetlen olvasásával.
+    correspondence/subnet.json NEM LÉTEZIK (csak vcn.json), tehát ez az
+    inverzió sehol nincs dokumentálva a cic-module-oracle-cloud
+    oldalán sem."
+  - "secondary_cidr_blocks (NetworkSpace) leírása és a saját
+    add_secondary_cidr operation-je azt sugallja, hogy utólag bővíthető
+    -- de OCI cidrBlocks mezője x-cic-policy: create-only, CONFIRMED a
+    subnet.json/vcn.json olvasásával. add_secondary_cidr OCI-n MA NEM
+    IMPLEMENTÁLHATÓ a jelenlegi specifikáció szerint."
+  - "ipv6_cidr_block (NetworkSpace state) skalárként modellezve, OCI
+    ipv6CidrBlocks ténylegesen lista -- kardinalitás-hiba, nem csak
+    névbeli eltérés."
+  - "dns_support_enabled/dns_hostnames_enabled AWS VPC fogalmak
+    (enableDnsSupport/enableDnsHostnames), nincs OCI megfelelőjük --
+    OCI-nak dnsLabel stringje van, más mechanizmus."
+  - "dnsLabel (mind Vcn, mind Subnet) hiányzik a canonicalból, DE
+    nincs is explicit kizárva -- ellentétben route-table/security-
+    list/dhcp-vel, amik a fejléc-megjegyzésben szándékosan ki vannak
+    zárva. Ez nem kiszándékolt hiány."
+  - "binding_surface/key_fields (backend/provider/location/id) minta
+    konzisztens a StorageResource-szal -- OCI oldalon nincs bontás,
+    a teljes szerkezet CIC-oldali konstrukció, amit egy adapternek
+    szintetizálnia kellene. Nincs új felismerés, megerősíti a thead12
+    mintát a network doménre is."
+  - "A legsúlyosabb két találat (public_access inverzió,
+    secondary_cidr_blocks/create-only ellentmondás) NEM OCI-specifikus
+    szűkítés kérdése, hanem a KANONIKUS modell saját hibája -- bármelyik
+    jövőbeli cloud-provider specializációnál problémát okozna, nem csak
+    OCI-nál. Ugyanaz a mintázat, mint amit thead04 talált a storage-nál
+    (cpu_cores/control_plane_endpoint), amit a #133 később javított."
+
+rejected: []
+
+opened:
+  - "cic-schema-registry issue: döntés kell arról, hogy (a) most
+    javítsuk-e a canonical Subnet/NetworkSpace sémát (legsürgetőbb:
+    public_access inverzió, secondary_cidr_blocks/create-only
+    ellentmondás), és/vagy (b) építsünk-e SubnetOracleCloud/
+    NetworkSpaceOracleCloud provider-specializációt a
+    StorageResourceOracleCloud mintájára. Ez a szál nem dönt, csak
+    feltár."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "Minden konkrét javítás (public_access, secondary_cidr_blocks,
+    ipv6_cidr_block kardinalitás, dns_support_enabled/
+    dns_hostnames_enabled sorsa, dnsLabel felvétele vagy kizárása) --
+    ez a szál csak feltárja, nem dönti el, melyiket és milyen
+    sorrendben érdemes megoldani."
+
+kapcsolódó:
+  - "theads/thead04.txt + thead04.meta.yaml (a módszertan eredete,
+    StorageResource vs. valós OCI Volume API)"
+  - "theads/thead17.txt (#134, ProviderCorrespondence döntés -- ebből a
+    mellékkérdésből indult ez a szál)"
+  - "theads/thead12.txt (a backend/provider feltételes Contract minta,
+    amit ez a szál megerősít a network doménre is)"
+  - "general/network/subnet/subnet.yaml + general/network/network-space/
+    network-space.yaml (a vizsgált kanonikus sémák)"
+  - "cic-module-oracle-cloud module/schemas/core/{vcn,subnet}.json +
+    module/correspondence/vcn.json (a valós OCI API forrás)"
