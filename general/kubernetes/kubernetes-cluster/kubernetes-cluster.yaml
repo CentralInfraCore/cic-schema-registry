@@ -17,7 +17,7 @@
 ---
 metadata:
   name: KubernetesCluster
-  version: v1.1.0
+  version: v1.2.0
   description: >
     Kubernetes cluster mint infrastrukturális egység — lifecycle, control plane
     konfiguráció, cluster networking, cert management.
@@ -46,6 +46,22 @@ metadata:
     formalizált Shape+Role primitívekre — lásd cic-primitives#5 és
     proposals/atom-grammar/README.md §2.7. MINOR bump, nem coverage-
     mutáció (lásd ComputeResource v1.1.0 ugyanezen indoklása).
+    v1.2.0 (#143): a teljes config_surface `required_on_create: true/
+    false`-ja `mandatory`/`optional`-ra írva (a kernel Shape atom
+    dokumentált jelenlét-tengelye, nem `required_on_create` — ez utóbbi
+    a cic-primitives atom-grammar szerint fel sem ismert property).
+    control_plane_endpoint_policy/cluster_network/api_server/etcd/
+    controller_manager/scheduler/coredns/node_pools[].compute_requirements/
+    discovery: `shape_type: object` → `composite` + `properties:` →
+    `fields:` (az `object` nincs a kernel zárt típuskészletében:
+    scalar/composite/collection/choice/opaque). A bennük lévő
+    kulcs-érték map mezők (extra_args × 4, compute_tags, registries)
+    `collection: list` + key/value `item_fields`-re váltva. `api_server.
+    cert_sans` `collection_variant: set` + `item_scalar_type: string`-re
+    (sima SAN-string lista, nem kulcs-érték pár). `control_plane_count`
+    kontraktusa `type: minimum`/`type: policy`-ról (nem létező Contract
+    típusok) `range`+`must`-ra. Ez mind valódi coverage.py-észlelhető
+    shape-mutáció, ezért MAJOR bump.
     Megjegyzés: v0.1.3-at szándékosan kihagytuk — a forrás cic-kubernetes
     repóban a @v0.1.3 tartalmilag azonos @v0.1.2-vel, de hiányzik belőle a
     cic_countersign (ismert regresszió, cic-kubernetes#3) — a számütközés
@@ -98,14 +114,14 @@ spec:
         shape_type: scalar
         scalar_type: string
         role: config
-        required_on_create: true
+        mandatory: true
         description: Kubernetes verzió (pl. v1.32.0)
 
       - name: control_plane_endpoint_policy
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         description: >
           Control plane endpoint hálózati policy-ja. Managed (OKE-szerű)
           providernél a tényleges endpoint URL-t a provider generálja (lásd
@@ -113,13 +129,13 @@ spec:
           elhelyezést és elérhetőséget lehet konfigurálni. Self-managed
           (Talos/Kubespray/RKE2) esetén az adapter az explicit_endpoint
           mezőn keresztül explicit URL-t is elfogadhat.
-        properties:
+        fields:
           - name: network_ref
             shape_type: scalar
             scalar_type: string
             semantic_type: cic-reference
             reference_target: "cic:network:Subnet"
-            required_on_create: false
+            optional: true
             description: >
               Melyik Subnet-ben helyezkedjen el az endpoint (OCI-n pl. a
               control plane subnetId-je). general/network/subnet/
@@ -128,13 +144,13 @@ spec:
           - name: public_access
             shape_type: scalar
             scalar_type: boolean
-            required_on_create: false
+            optional: true
             default: false
             description: Publikus (internet-elérhető) endpoint engedélyezve-e
           - name: explicit_endpoint
             shape_type: scalar
             scalar_type: string
-            required_on_create: false
+            optional: true
             description: >
               Self-managed provider esetén explicit endpoint URL. Managed
               (OKE-szerű) esetén nem használt — ott a provider generálja,
@@ -145,126 +161,168 @@ spec:
         shape_type: scalar
         scalar_type: integer
         role: config
-        required_on_create: false
+        optional: true
         default: 1
-        description: Control plane node-ok száma — 1 (single) vagy páratlan (HA)
+        description: >
+          Control plane node-ok száma — 1 (single) vagy páratlan (HA,
+          ajánlott: 1, 3, 5). A korábbi `type: minimum`/`type: policy`
+          kontraktus-típusok nem léteznek a Contract atom típuskészletében
+          (range/pattern/must/when/enum/mandatory/unique) — lásd #143.
         contract:
-          - type: minimum
-            expression: "1"
-          - type: policy
-            expression: odd_or_one
-            recommended: [1, 3, 5]
-            note: HA cluster split-brain elkerüléséhez páratlan szám szükséges
+          - type: range
+            expression: "1..99"
+          - type: must
+            expression: "control_plane_count mod 2 = 1"
+            error_message: >
+              A control plane node-ok száma páratlan kell legyen (1 is az)
+              — HA cluster split-brain elkerüléséhez.
 
       # ── Cluster networking (Talos cluster.network) ────────────────────────────
       - name: cluster_network
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: true
+        mandatory: true
         description: Cluster hálózati konfiguráció
-        properties:
+        fields:
           - name: pod_cidr
             shape_type: scalar
             scalar_type: string
-            required_on_create: true
+            mandatory: true
             description: Pod hálózati CIDR (pl. 10.244.0.0/16)
           - name: service_cidr
             shape_type: scalar
             scalar_type: string
-            required_on_create: true
+            mandatory: true
             description: Service hálózati CIDR (pl. 10.96.0.0/12)
           - name: dns_domain
             shape_type: scalar
             scalar_type: string
-            required_on_create: false
+            optional: true
             default: cluster.local
             description: Cluster DNS domain
 
       # ── Control plane komponensek (Talos cluster.apiServer stb.) ─────────────
       - name: api_server
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         capability: control_plane_tuning
         description: >
           API server konfiguráció. capability: control_plane_tuning —
           managed clusternél a szolgáltató kezeli, nem közvetlenül
           állítható (issue #18).
-        properties:
+        fields:
           - name: extra_args
-            shape_type: object
-            required_on_create: false
-            description: Extra API server argumentumok (key-value map)
-          - name: cert_sans
             shape_type: collection
             collection_variant: list
-            required_on_create: false
+            optional: true
+            description: Extra API server argumentumok (key-value map)
+            item_fields:
+              - name: key
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: value
+                shape_type: scalar
+                scalar_type: string
+          - name: cert_sans
+            shape_type: collection
+            collection_variant: set
+            item_scalar_type: string
+            optional: true
             description: Extra TLS SAN-ek az API server certifikáthoz
           - name: audit_policy
             shape_type: scalar
             scalar_type: string
-            required_on_create: false
+            optional: true
             description: Audit policy YAML (inline)
 
       - name: etcd
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         capability: control_plane_tuning
         description: >
           etcd konfiguráció. capability: control_plane_tuning — managed
           clusternél a szolgáltató kezeli, nem közvetlenül állítható
           (issue #18).
-        properties:
+        fields:
           - name: extra_args
-            shape_type: object
-            required_on_create: false
+            shape_type: collection
+            collection_variant: list
+            optional: true
+            item_fields:
+              - name: key
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: value
+                shape_type: scalar
+                scalar_type: string
           - name: subnet
             shape_type: scalar
             scalar_type: string
-            required_on_create: false
+            optional: true
             description: etcd peer kommunikáció subnet (pl. 192.168.0.0/24)
 
       - name: controller_manager
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         capability: control_plane_tuning
         description: >
           Controller manager konfiguráció. capability:
           control_plane_tuning — managed clusternél a szolgáltató kezeli
           (issue #18).
-        properties:
+        fields:
           - name: extra_args
-            shape_type: object
-            required_on_create: false
+            shape_type: collection
+            collection_variant: list
+            optional: true
+            item_fields:
+              - name: key
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: value
+                shape_type: scalar
+                scalar_type: string
 
       - name: scheduler
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         capability: control_plane_tuning
         description: >
           Scheduler konfiguráció. capability: control_plane_tuning —
           managed clusternél a szolgáltató kezeli (issue #18).
-        properties:
+        fields:
           - name: extra_args
-            shape_type: object
-            required_on_create: false
+            shape_type: collection
+            collection_variant: list
+            optional: true
+            item_fields:
+              - name: key
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: value
+                shape_type: scalar
+                scalar_type: string
 
       # ── CoreDNS (Talos cluster.coreDNS) ──────────────────────────────────────
       - name: coredns
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         description: CoreDNS konfiguráció
-        properties:
+        fields:
           - name: disabled
             shape_type: scalar
             scalar_type: boolean
@@ -272,7 +330,7 @@ spec:
           - name: image
             shape_type: scalar
             scalar_type: string
-            required_on_create: false
+            optional: true
             description: "CoreDNS container image (default: Talos-bundled)"
 
       # ── Node pools — compute követelmények (D-005) ───────────────────────────
@@ -281,7 +339,7 @@ spec:
         shape_type: collection
         collection_variant: list
         role: config
-        required_on_create: true
+        mandatory: true
         description: >
           Node pool definíciók — compute követelmények, nem konkrét gép referenciák.
           A konkrét ComputeResource hozzárendelés az adapter feladata (D-005).
@@ -295,55 +353,74 @@ spec:
           - name: machine_type
             shape_type: scalar
             scalar_type: string
-            required_on_create: true
+            mandatory: true
             contract:
               - type: enum
                 expression: [controlplane, worker]
           - name: count
             shape_type: scalar
             scalar_type: integer
-            required_on_create: true
+            mandatory: true
             description: Kívánt node szám ebben a pool-ban
           - name: compute_requirements
-            shape_type: object
-            required_on_create: false
+            shape_type: composite
+            optional: true
             description: Compute erőforrás követelmények — az adapter ezek alapján választ ComputeResource-t
-            properties:
+            fields:
               - name: min_cpu
                 shape_type: scalar
                 scalar_type: integer
-                required_on_create: false
+                optional: true
                 description: Minimum CPU magok száma
               - name: min_memory_gb
                 shape_type: scalar
                 scalar_type: integer
-                required_on_create: false
+                optional: true
                 description: Minimum memória GB-ban
               - name: min_disk_gb
                 shape_type: scalar
                 scalar_type: integer
-                required_on_create: false
+                optional: true
                 description: Minimum boot disk GB-ban
               - name: compute_tags
-                shape_type: object
-                required_on_create: false
+                shape_type: collection
+                collection_variant: list
+                optional: true
                 description: Label/tag szűrők a ComputeResource kiválasztáshoz
+                item_fields:
+                  - name: key
+                    shape_type: scalar
+                    scalar_type: string
+                    role: key
+                  - name: value
+                    shape_type: scalar
+                    scalar_type: string
 
       # ── Discovery (Talos cluster.discovery) ───────────────────────────────────
       - name: discovery
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: object
+        shape_type: composite
         role: config
-        required_on_create: false
+        optional: true
         description: Node discovery konfiguráció
-        properties:
+        fields:
           - name: enabled
             shape_type: scalar
             scalar_type: boolean
             default: true
           - name: registries
-            shape_type: object
-            required_on_create: false
+            shape_type: collection
+            collection_variant: list
+            optional: true
+            description: Registry mirror konfigurációk (hostname -> mirror-config)
+            item_fields:
+              - name: hostname
+                shape_type: scalar
+                scalar_type: string
+                role: key
+              - name: mirror_endpoint
+                shape_type: scalar
+                scalar_type: string
 
   # ── StateSurface ──────────────────────────────────────────────────────────────
   state_surface:
@@ -359,7 +436,7 @@ spec:
         shape_type: scalar
         scalar_type: string
         role: state
-        required_on_create: false
+        optional: true
         description: >
           Tényleges API server endpoint URL (pl. https://k8s.example.com:6443).
           v1.0.0 előtt config_surface alatt élt, required_on_create: true-val
@@ -373,7 +450,7 @@ spec:
         shape_type: scalar
         scalar_type: string
         role: state
-        required_on_create: true
+        mandatory: true
         description: Cluster összesített egészségi állapota
         contract:
           - type: enum
@@ -384,7 +461,7 @@ spec:
         shape_type: scalar
         scalar_type: string
         role: state
-        required_on_create: true
+        mandatory: true
         contract:
           - type: enum
             expression: [up, down, unknown]
@@ -394,7 +471,7 @@ spec:
         shape_type: scalar
         scalar_type: string
         role: state
-        required_on_create: true
+        mandatory: true
         contract:
           - type: enum
             expression: [healthy, degraded, unavailable, unknown]
@@ -404,7 +481,7 @@ spec:
         shape_type: scalar
         scalar_type: string
         role: state
-        required_on_create: false
+        optional: true
         description: Tényleges futó Kubernetes verzió
 
       - name: node_count
@@ -412,7 +489,7 @@ spec:
         shape_type: scalar
         scalar_type: integer
         role: operational
-        required_on_create: false
+        optional: true
         description: Összes node szám
 
       - name: control_plane_node_count
@@ -420,14 +497,14 @@ spec:
         shape_type: scalar
         scalar_type: integer
         role: operational
-        required_on_create: false
+        optional: true
 
       - name: cert_expiry
         atomic_ref: "cic:core:Shape@v0.2.0"
         shape_type: scalar
         scalar_type: string
         role: state
-        required_on_create: false
+        optional: true
         description: Legkorábbi lejáró cert időbélyege (ISO 8601)
 
   # ── OperationSurface ──────────────────────────────────────────────────────────
@@ -445,7 +522,7 @@ spec:
           - name: target_version
             shape_type: scalar
             scalar_type: string
-            required_on_create: true
+            mandatory: true
         output:
           - name: kubernetes_version_actual
             shape_type: scalar
