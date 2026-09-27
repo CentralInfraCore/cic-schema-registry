@@ -1,0 +1,62 @@
+thread: thead14
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  cic-primitives#6 megválaszolása: a derivation_chain (storage-resource/
+  compute-resource/network-interface, mindhárom yang/restconf/runtime
+  hármas struktúrával) séma-provenance, nem domain-object szemantika --
+  kívül marad a Shape/Access primitíveken. tools/registrylib/coverage.py
+  meglévő kihagyása (nincs a _NODE_LIST_KEYS-ben) emiatt szándékos, most
+  explicit megjegyzésben rögzítve. A provider_resources rokonsága
+  megfigyelésként rögzítve, nem egyesítve.
+
+accepted:
+  - "derivation_chain mindhárom élő előfordulása arról szól, HOGYAN
+    realizálódik a séma más technológiai rétegekben (YANG-modul,
+    RESTCONF, futásidejű reconcile-loop) -- egyik sem kliens által
+    beállítható mező, ellentétben a config_surface tartalmával."
+  - "derivation_chain NEM univerzális minta: a session során létrehozott
+    kubernetes-cluster/dhcp-service/network-space/subnet/dhcp-options
+    egyike sem hordozza -- csak a három YANG-eredetű sémán él, opcionális
+    dokumentációs blokkként."
+  - "tools/registrylib/coverage.py _NODE_LIST_KEYS-ének kihagyása
+    (config_surface/state_surface/operation_surface/notification_surface
+    -re korlátozva) a fenti indoklás mellett HELYES viselkedés, nem
+    vakfolt -- csak eddig nem volt kimondva, hogy szándékos. Most explicit
+    megjegyzésben rögzítve."
+  - "StorageResourceOracleCloud provider_resources fogalmilag rokon a
+    derivation_chain.restconf-fal (ugyanaz a kérdés, provider-specifikus
+    szinten) -- MEGFIGYELÉS, nem döntés: nincs konkrét tervezett
+    egyesített forma, és nincs második provider-specializáció, ami a
+    döntést ténylegesen indokolná."
+  - "Külső review (PR #151-en) helyesen kapta el: az eredeti komment
+    egy mondatba írta a derivation_chain-t (most eldöntött, szándékos
+    kizárás) a binding_surface/policy_surface mellé (nyitott, nem
+    eldöntött) -- ez tévesen sugallta, hogy mindhárom ugyanolyan alapon
+    van kizárva a coverage.py-ból. Konkrétan a binding_surface esetében
+    thead12/PR #149 pár nappal korábban kimutatta, hogy a kizárása ISMERT
+    TOOLING GAP, nem szándékos döntés: ez tette lehetővé, hogy egy
+    önmagával ellentmondó részleges restatement '0 violation'-t
+    mutasson, amit csak egy külső review kapott el kézzel. Javítva: a
+    komment most explicit szétválasztja a hármat."
+
+rejected: []
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár):
+  - "provider_resources és derivation_chain egyesített formája (közös
+    struktúra, elnevezés, hova kerüljön egy specializáción) -- külön
+    tervezést igényelne, ha egy második provider-specializáció ezt
+    ténylegesen indokolja. Nem ez a szál dönti el."
+
+kapcsolódó:
+  - "cic-primitives#6 (megválaszolva) + cic-primitives PR #10 (a README
+    §-bővítés, ami rögzíti a döntést)"
+  - "cic-schema-registry theads/thead05.txt (a mellékkérdésként felmerülő
+    eredeti kontextus, StorageResourceOracleCloud első specializáció)"
+  - "tools/registrylib/coverage.py _NODE_LIST_KEYS (az új magyarázó
+    komment)"
+  - "providers/oracle-cloud/storage/storage-resource/storage-resource.yaml
+    spec.provider_resources (az új megjegyzés)"
