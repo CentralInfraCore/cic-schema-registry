@@ -130,7 +130,7 @@ def test_description_only_change_is_not_a_mutation():
 
 
 def test_contract_enum_short_and_long_form_are_the_same_shape():
-    """"none" and {value: none, conformance: implemented} are the same
+    """ "none" and {value: none, conformance: implemented} are the same
     value, per the Access atom's own documented short/long-form
     equivalence (mirrors the YANG-side version of this test)."""
     short_form = _doc(
@@ -139,7 +139,9 @@ def test_contract_enum_short_and_long_form_are_the_same_shape():
                 "name": "encryption_mode",
                 "shape_type": "scalar",
                 "scalar_type": "string",
-                "contract": [{"type": "enum", "expression": ["none", "provider_managed"]}],
+                "contract": [
+                    {"type": "enum", "expression": ["none", "provider_managed"]}
+                ],
             }
         ]
     )
@@ -232,7 +234,10 @@ def test_contract_enum_not_implemented_value_still_counts_in_vocabulary():
                             {"value": "none", "conformance": "not_implemented"},
                             "provider_managed",
                             "customer_managed",
-                            {"value": "guest_managed", "conformance": "not_implemented"},
+                            {
+                                "value": "guest_managed",
+                                "conformance": "not_implemented",
+                            },
                         ],
                     }
                 ],
