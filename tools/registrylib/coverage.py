@@ -35,6 +35,16 @@ from typing import Any
 # schema `spec` that lists individually-named, individually-shaped members.
 # Extend this as new surfaces gain node lists (e.g. notification_surface
 # already uses `events`, not `nodes` — included below).
+#
+# `binding_surface`/`policy_surface`/`derivation_chain` are deliberately
+# NOT here. For derivation_chain specifically (cic-primitives#6, thead14):
+# it's schema-provenance (how a schema is realized in YANG/RESTCONF/
+# runtime terms), not domain-object semantics — nothing a client sets, and
+# not even present on every domain object (only the three YANG-derived
+# ones: storage-resource, compute-resource, network-interface). The
+# explicit-full-restatement rule this module enforces is for surfaces a
+# specialization inherits and may narrow; derivation_chain isn't one of
+# those, so its absence from this dict is a decision, not a gap.
 _NODE_LIST_KEYS: dict[str, str] = {
     "config_surface": "nodes",
     "state_surface": "nodes",

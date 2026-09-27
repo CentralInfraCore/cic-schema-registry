@@ -146,6 +146,13 @@ spec:
     aggregate: StorageResource
     ref: "cic:storage:StorageResource@v1.2.0"
 
+  # Megfigyelés, nem lezárt döntés (cic-primitives#6, thead14): ez a mező
+  # ugyanazt a kérdést válaszolja meg ("milyen valós rendszer-objektumok
+  # ellen realizálódik ez"), mint a StorageResource canonical sémájának
+  # derivation_chain.restconf-ja — csak provider-specifikus szinten, a
+  # kanonikus szint helyett. A két fogalom rokon, de ma nincs egyesítve;
+  # a pontos forma külön tervezést igényelne, ha egy második provider-
+  # specializáció ezt ténylegesen indokolja.
   provider_resources:
     - core.Volume
     - core.VolumeAttachment
