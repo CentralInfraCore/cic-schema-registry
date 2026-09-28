@@ -1,0 +1,352 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth. When ready, a new
+# subnet.vX.Y.Z-src<year>.yaml is cut FROM this file's current content
+# and signed (cic-schema-registry#125).
+---
+metadata:
+  name: SubnetOracleCloud
+  version: v0.1.dev
+  description: >
+    Oracle Cloud Infrastructure altípusa a canonical Subnet-nek
+    (general/network/subnet/), az OCI Subnet API ellen verifikálva
+    (cic-module-oracle-cloud module/schemas/core/subnet.json, valós
+    OCI-tenancy ellen igazolva, docs/design/manual-verification.md).
+    cic-schema-registry#154 utolsó nyitott tétele: a Subnet/NetworkSpace
+    OCI provider-specializáció megépítése, a StorageResourceOracleCloud
+    mintáját követve.
+
+    A canonical Subnet v0.1.0 volt az ELSŐ release-e (cic-schema-registry
+    ebben a körben vágta ki és írta alá) — a base.ref emiatt egy valós,
+    tooling által resolválható pin, nem a storage-precedens
+    "working-copy verzióra pinnelve" kompromisszuma. Ez az első eset,
+    hogy egy domain-to-domain identity.base pin ténylegesen élesen
+    validálódik tools/registrylib/identity.py resolve_pin()-jén és
+    tools/registry_validate.py check_base_references()-jén keresztül —
+    nem csak bypass-olt, közvetlen coverage.py hívással ellenőrizve,
+    mint a storage esetében.
+
+    Minden canonical config_surface/state_surface/operation_surface/
+    notification_surface mező teljes restatement-tel jelen van (explicit
+    full restatement — coverage.py check_coverage() docstring), egyik
+    sem access.conformance: not_implemented — az OCI Subnet API a teljes
+    canonical vokabuláriumot lefedi, semmit nem kell narrow-olni.
+    binding_surface szintén teljes restatement (#131/thead12 mintája).
+
+    Mezőnkénti OCI-megfelelés (module/schemas/core/subnet.json ellen
+    ellenőrizve):
+
+      - network_space_ref: OCI Subnet.vcnId (create-only) — direkt.
+      - cidr_block: OCI Subnet.cidrBlock — direkt, DE FONTOS: ez
+        MUTABLE OCI-n (nem create-only, mint a Vcn szintű
+        cidrBlocks), tehát a canonical config_surface policy-jától
+        (mandatory, nincs explicit policy-korlát rajta a canonicalban)
+        nem tér el semmilyen módon.
+      - availability_zone: OCI Subnet.availabilityDomain (create-only,
+        optional) — direkt megfelelés, és a canonical saját indoklása
+        ("nem minden provider AZ-hoz köti a subnetet") pontosan igaz
+        OCI-ra is: egy Subnet lehet "regionális" (nincs AD megadva).
+      - public_access: OCI Subnet.prohibitPublicIpOnVnic (create-only)
+        — INVERTÁLT polaritással. public_access: true == "VNIC-ek
+        kaphatnak publikus IP-t" == prohibitPublicIpOnVnic: false.
+        Ez a leképezés transzformációt igényel (bool-invert), nem
+        direkt pass-through — a canonical mező saját leírása is
+        explicit kimondja, hogy ez KIZÁRÓLAG a public-IP-kiosztást
+        fedi le, nem a tényleges internet-elérést (ami OCI-n
+        prohibitInternetIngress + route table, ma nem modellezve
+        canonical szinten sem).
+      - dns_label: OCI Subnet.dnsLabel (create-only) — direkt.
+      - tags: OCI freeformTags + definedTags — normalizálható
+        egységes listává, ugyanaz a minta, mint a storage tags mezőjén.
+      - lifecycle_state: OCI Subnet.lifecycleState — direkt.
+      - available_ip_count: nincs direkt OCI Subnet mező. DERIVED/
+        COMPOSITION — az adapter felelőssége (ugyanaz a korlát, amit a
+        canonical mező saját leírása is dokumentál, thead18/thead19).
+      - provision: OCI CreateSubnet — direkt.
+      - delete: OCI DeleteSubnet — direkt.
+
+    Amit ez a fájl NEM fed le (a canonical saját scope-ja is kizárja):
+    route-tábla-hozzárendelés (OCI routeTableId), security
+    group-hozzárendelés (OCI securityListIds), DHCP-vel szétosztott
+    DNS/search-domain opciók (OCI dhcpOptionsId) — ezek OCI Subnet
+    mezők, de a canonical Subnet scope-ja explicit kizárja őket
+    (general/network/subnet/subnet.yaml saját fejléce).
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+    - oracle-cloud
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: Subnet
+    ref: "cic:network:Subnet@v0.1.0"
+
+  provider_resources:
+    - core.Subnet
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: SubnetOracleCloud
+    namespace: "cic:network"
+    version: v0.1.dev
+    base: "cic:network:Subnet@v0.1.0"
+    abstract: false
+    description: Oracle Cloud Infrastructure altípusa a platform-agnosztikus subnetnek
+
+  # ── ConfigSurface (teljes restatement) ───────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      - name: network_space_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:network:NetworkSpace"
+        role: config
+        mandatory: true
+        description: A szülő NetworkSpace (VCN) address-e. OCI Subnet.vcnId — közvetlen.
+
+      - name: cidr_block
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: >
+          A subnet CIDR blokkja. OCI Subnet.cidrBlock — közvetlen. Megjegyzés:
+          OCI-n ez a mező MUTABLE (a VCN szintű cidrBlocks-szal ellentétben,
+          ami create-only) — a canonicalon nincs policy-korlát rajta, tehát
+          ez a szélesebb OCI-viselkedés nem mond ellent a bázisnak.
+        contract:
+          - type: pattern
+            expression: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+
+      - name: availability_zone
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: >
+          OCI Subnet.availabilityDomain (create-only) — közvetlen. A
+          canonical mező saját indoklása ("nem minden provider AZ-hoz köti a
+          subnetet") OCI-ra konkrétan igaz: egy Subnet lehet regionális
+          (nincs AD megadva), ezért optional itt is, narrowing nélkül.
+
+      - name: public_access
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: false
+        description: >
+          A subneten létrehozott VNIC-ek alapból kapnak-e publikus IP-t. OCI
+          Subnet.prohibitPublicIpOnVnic (create-only) — INVERTÁLT polaritással:
+          public_access: true == prohibitPublicIpOnVnic: false. A leképezés
+          transzformációt igényel (bool-invert), nem direkt pass-through.
+          Ugyanaz a mintaosztály, mint a storage encryption_mode-nál
+          (thead04) — a canonical mező saját leírása is explicit kimondja,
+          hogy ez KIZÁRÓLAG a public-IP-kiosztást fedi le, nem a tényleges
+          internet-elérést (OCI-n prohibitInternetIngress + route table, ma
+          nem modellezve canonical szinten).
+
+      - name: dns_label
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: dns_label
+        description: OCI Subnet.dnsLabel (create-only) — közvetlen.
+
+      - name: tags
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: >
+          OCI freeformTags + definedTags — normalizálható egységes listává,
+          ugyanaz a minta, mint a StorageResourceOracleCloud tags mezőjén.
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface (teljes restatement) ────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: cic-module-oracle-cloud
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: lifecycle_state
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: OCI Subnet.lifecycleState — közvetlen.
+        contract:
+          - type: enum
+            expression: [pending, available, deleting, deleted, unknown]
+
+      - name: available_ip_count
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        description: >
+          Nincs direkt OCI Subnet mező. DERIVED/COMPOSITION — az adapter
+          felelőssége a tényleges IP-allokációs nyilvántartásból
+          összeállítani (thead18/thead19, cic-schema-registry#154). Ugyanaz
+          a korlát, amit a canonical mező saját leírása is dokumentál —
+          ez a specializáció nem old meg semmit ezen a ponton, csak
+          megerősíti, hogy OCI-n sincs jobb forrás.
+
+  # ── OperationSurface (teljes restatement) ────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: provision
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Új subnet létrehozása egy VCN-en belül. OCI CreateSubnet — közvetlen.
+        input:
+          - name: network_space_ref
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+          - name: cidr_block
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: lifecycle_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: delete
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: "Subnet végleges törlése — MANUAL ONLY (confirm: mandatory). OCI DeleteSubnet — közvetlen."
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre.
+        output: null
+
+  # ── NotificationSurface (teljes restatement) ─────────────────────────────────
+  notification_surface:
+    events:
+      - name: lifecycle-state-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: info
+        description: >
+          A subnet életciklus-állapota megváltozott. OCI-n a lifecycleState
+          mező adapter-oldali figyeléséből származtatott.
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface (teljes restatement, #131/thead12 mintája) ────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-network:subnets/subnet={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:subnets/subnet={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network"
+        key_fields:
+          - name: backend
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [cloud]
+            description: >
+              A bázison már ma is kizárólag `cloud` az egyetlen érték (nem
+              olyan multi-value enum, mint a StorageResource backend
+              mezője) — nincs itt narrowing-teendő, egyszerű restatement.
+          - name: provider
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              Ezen a specializáción gyakorlatilag mindig `oci` -- de ez
+              NEM `default`-tal jelölve (C13, proposals/atom-grammar: egy
+              `role: key` mező azonosítóját a hívónak kell megadnia).
+              Szándékosan NINCS Contract-enummal sem szűkítve, ugyanazon
+              konzisztencia-okból, mint a StorageResourceOracleCloud
+              provider mezőjén (lásd ott a fájl description-jét) — a
+              bázison a `provider` prózaként van dokumentálva, nem
+              feltétlen Contract-enumként.
+          - name: location
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: "OCI region (pl. eu-frankfurt-1) — a bázis prózájának OCI-specifikus pontosítása."
+          - name: id
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              OCI Subnet OCID (pl. ocid1.subnet.oc1.eu-frankfurt-1.abc...) —
+              a bázis "cloud: cloud Subnet ID" leírásának OCI-specifikus
+              pontosítása.
+    adapter_capabilities:
+      known_adapters: []
+      note: >
+        Üres szándékosan — a canonical Subnet fejléce is kimondja, hogy
+        MÉG NINCS execution-layer network-adapter absztrakció (a
+        storage-adapter-hez hasonló koncepció itt még nincs megírva).
+        A cic-module-oracle-cloud modul (module/schemas/core/subnet.json)
+        valós, verifikált OCI-lefedettséget ad, de ma nem a
+        `binding_surface.adapter`/`adapter_capabilities` mechanizmuson
+        keresztül van bekötve — az egy WASM provider-modul, nem ez a
+        registry-oldali adapter-absztrakció. Ez a mező akkor tölthető ki,
+        ha/amikor a network domain kap egy formális adapter-réteget.
