@@ -41,6 +41,21 @@ metadata:
     `collection_variant: set` + `item_scalar_type: string`-re (sima
     cím-lista, nem kulcs-érték pár). Mivel ez a fájl sosem lett
     release-elve (v0.1.dev), nincs verzióbump-teendő.
+
+    thead18/#154 "Canonical gaps" javítása (nincs verzióbump, sosem
+    release-elt fájl): `ipv6_cidr_block` -> `ipv6_cidr_blocks`,
+    skalárról `collection_variant: set`-re (kardinalitás-hiba — AWS
+    és Azure is listás IPv6-modellt használ, nem csak OCI);
+    `dns_support_enabled`/`dns_hostnames_enabled` description
+    pontosítva (AWS-VPC-eredet, OCI-n nincs megfelelőjük,
+    `capability: dns_toggles` jelölve); új `dns_label` mező (OCI
+    `dnsLabel`-stílusú belső DNS-névkomponens, `capability: dns_label`);
+    `subnet_count` description kiegészítve a derived/composition
+    jelleg dokumentálásával. Megjegyzés: `secondary_cidr_blocks` +
+    `add_secondary_cidr` (fentebb, #143) NEM lett hiba (thead18
+    helyesbítése) — az OCI-nak van rá valódi action-je (`AddVcnCidr`),
+    csak a cic-module-oracle-cloud modul nem generálta le még
+    (provider/modul gap, nem canonical).
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -116,13 +131,21 @@ spec:
         scalar_type: boolean
         role: config
         optional: true
-        default: false
         capability: ipv6
         description: >
           IPv6 CIDR blokk hozzárendelve-e. A tényleges blokkot a provider
-          osztja ki (lásd state_surface.ipv6_cidr_block) — ez csak az
+          osztja ki (lásd state_surface.ipv6_cidr_blocks) — ez csak az
           engedélyezést jelöli, ahogy a cic-module-oracle-cloud
           isIpv6Enabled <- ipv6CidrBlocks derivációja is mutatja.
+          SZÁNDÉKOSAN NINCS `default` (külső review után, thead19,
+          ugyanaz az indoklás, mint dns_support_enabled/
+          dns_hostnames_enabled-nél): `optional` + nem-univerzális
+          `capability` + `default` ugyanaz a kockázatos kombináció --
+          egy `default: false` is hamis intentet injektálna egy olyan
+          providerre, ahol az `ipv6` capability nem támogatott (a
+          `false` itt nem "no-op", hanem egy MEGKÜLÖNBÖZTETHETETLEN
+          harmadik szemantikát venne fel a "nincs intent" és a "mező
+          nem alkalmazható" mellett). Hiányzás = nincs róla intent.
 
       - name: dns_support_enabled
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -130,8 +153,24 @@ spec:
         scalar_type: boolean
         role: config
         optional: true
-        default: true
-        description: Belső DNS feloldás engedélyezve-e a hálózati térben
+        capability: dns_toggles
+        description: >
+          Belső DNS feloldás engedélyezve-e a hálózati térben. AWS
+          VPC-stílusú fogalom (`enableDnsSupport`) -- OCI-n nincs
+          hasonló, önálló be/ki kapcsoló, ott a `dns_label` mező
+          jelenléte/hiánya és a belső DNS-zóna implicit módon együtt
+          jár a hálózati tér létezésével. `capability: dns_toggles`
+          jelöli, hogy ez a mező-pár nem minden providernél
+          alkalmazható (thead18, #154). SZÁNDÉKOSAN NINCS `default`
+          (külső review után, thead19): a `capability` mechanizmus ma
+          nem formalizált (proposals/atom-grammar/README.md "Amit
+          szándékosan NEM zárok le") és nem tudja kikényszeríteni,
+          hogy egy nem-univerzális capability-jű mező default-ja csak
+          a capability-t ténylegesen támogató provider-eken
+          injektálódjon -- egy `default` itt egy OCI-alapú intent-be
+          hamisan beledeklarálna egy AWS-fogalmat, amit a provider nem
+          is ismer. `optional`, `default` nélkül: hiányzás = nincs róla
+          intent, nem egy kitalált érték.
 
       - name: dns_hostnames_enabled
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -139,8 +178,27 @@ spec:
         scalar_type: boolean
         role: config
         optional: true
-        default: false
-        description: Automatikus DNS hostname kiosztás engedélyezve-e
+        capability: dns_toggles
+        description: >
+          Automatikus DNS hostname kiosztás engedélyezve-e. AWS
+          VPC-stílusú fogalom (`enableDnsHostnames`) -- ugyanaz a
+          korlát, mint `dns_support_enabled`-nél: OCI-n nincs
+          megfelelője, lásd ott. Ugyanazon okból NINCS `default` itt
+          sem.
+
+      - name: dns_label
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: dns_label
+        description: >
+          Belső DNS-feloldáshoz használt névkomponens (pl. OCI `Vcn.
+          dnsLabel`, create-only) -- KÜLÖN fogalom a
+          `dns_support_enabled`/`dns_hostnames_enabled` be/ki
+          kapcsolóktól, lásd azok leírását. `capability: dns_label`
+          jelöli, hogy nem minden provider exponálja (thead18, #154).
 
       - name: tags
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -179,14 +237,23 @@ spec:
           - type: enum
             expression: [pending, available, deleting, deleted, unknown]
 
-      - name: ipv6_cidr_block
+      - name: ipv6_cidr_blocks
         atomic_ref: "cic:core:Shape@v0.2.0"
-        shape_type: scalar
-        scalar_type: string
+        shape_type: collection
+        collection_variant: set
+        item_scalar_type: string
         role: state
         optional: true
         capability: ipv6
-        description: A provider által kiosztott IPv6 CIDR blokk (ha ipv6_enabled)
+        description: >
+          A provider által kiosztott IPv6 CIDR blokk(ok) (ha
+          ipv6_enabled). KARDINALITÁS-JAVÍTÁS (thead18, #154, korábban
+          `ipv6_cidr_block` néven, skalárként): ez NEM csak OCI-n lista
+          (`ipv6CidrBlocks`) -- az AWS VPC is több (dokumentáció szerint
+          akár öt) IPv6 CIDR blokkot enged VPC-nként, az Azure virtuális
+          hálózat address-space modellje is listás (`AddressPrefixes`).
+          Egy skalár mező tehát ÁLTALÁNOSAN, nem csak OCI-specifikusan,
+          túl szűk volt.
 
       - name: subnet_count
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -194,7 +261,13 @@ spec:
         scalar_type: integer
         role: operational
         optional: true
-        description: A hálózati térben jelenleg létező Subnet-ek száma
+        description: >
+          A hálózati térben jelenleg létező Subnet-ek száma. DERIVED/
+          COMPOSITION érték -- a legtöbb provider API-ja (pl. OCI Vcn)
+          nem ad vissza ilyen mezőt közvetlenül; az adapter felelőssége
+          egy külön subnet-lista lekérdezésből összeállítani (thead18,
+          #154). Nincs garantált, egységes forrás minden providernél --
+          optional emiatt is.
 
   # ── OperationSurface ──────────────────────────────────────────────────────────
   operation_surface:
