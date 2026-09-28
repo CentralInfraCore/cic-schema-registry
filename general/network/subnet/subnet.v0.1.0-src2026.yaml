@@ -1,0 +1,394 @@
+---
+metadata:
+  name: Subnet
+  version: v0.1.0
+  description: >
+    Egy NetworkSpace-en (VCN/VPC/VNet) belüli, cím-tartomány szerint
+    particionált al-hálózat — OCI Subnet, AWS Subnet, Azure Subnet közös
+    absztrakciója. Lásd general/network/network-space/ — ugyanaz a
+    thead04-eredetű coverage-rés, egy szinttel lejjebb.
+
+    Scope: KIZÁRÓLAG a particionálás maga (cím-tartomány, elhelyezkedés a
+    szülő NetworkSpace-ben, publikus elérhetőség). Route-tábla-hozzárendelés,
+    security group-hozzárendelés és a DHCP-vel szétosztott DNS/search-domain
+    opciók (OCI DhcpOptions-szerű fogalom) NEM tartoznak ide — ez utóbbi
+    külön canonical fogalom, lásd general/network/dhcp-service/ README-jét
+    és a thead04 review-t.
+
+    Adapter: MÉG NINCS, ugyanúgy mint a NetworkSpace-nél.
+
+    binding_surface.addresses[].key_fields formalizált Shape+Role
+    primitívekkel íródott (nem {name, type, values}) — lásd
+    cic-primitives#5 és proposals/atom-grammar/README.md §2.7.
+
+    v0.1.0: első release. Tartalmazza a thead18/#154 "Canonical gaps"
+    javítását, amit a working copy még verzióbump nélkül hordozott:
+    `public_access` description pontosítva (a public IP-kiosztás és az
+    internet-elérés/routing fogalmának szétválasztása); új `dns_label`
+    mező (OCI `dnsLabel`-stílusú belső DNS-névkomponens,
+    capability-jelölve); `available_ip_count` description kiegészítve a
+    derived/composition jelleg dokumentálásával.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: ManagedEntity
+    ref: "cic:core:ManagedEntity@v0.2.0"
+
+  # ── PolicySurface — Access atom alapú jogosultság (cic-primitives D-011) ────
+  policy_surface:
+    default_access: open
+    default_modify: owner
+    surface_rules:
+      - surface: state_surface
+        modify: [OU=adapters, O=cic]
+      - surface: config_surface
+        access: [O=owner]
+        modify: [O=owner]
+    inherit_policy: true
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: Subnet
+    namespace: "cic:network"
+    version: v0.1.0
+    base: "cic:core:ManagedEntity@v0.2.0"
+    abstract: false
+    description: Cím-tartomány szerint particionált al-hálózat egy NetworkSpace-en belül
+
+  # ── ConfigSurface ─────────────────────────────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      - name: network_space_ref
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        semantic_type: cic-reference
+        reference_target: "cic:network:NetworkSpace"
+        role: config
+        mandatory: true
+        description: A szülő NetworkSpace (VCN/VPC/VNet) address-e
+
+      - name: cidr_block
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: >
+          A subnet CIDR blokkja. A szülő NetworkSpace cidr_block-ján belül
+          kell essen — ezt a séma nem tudja kikényszeríteni (cross-entity
+          contract, a `must` kontraktus ma csak ugyanazon entitás
+          surface-ei között demonstrálva a corpuson), az adapter felelőssége.
+        contract:
+          - type: pattern
+            expression: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+
+      - name: availability_zone
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        description: >
+          Az a rendelkezésre állási zóna, amihez a subnet kötve van — nem
+          minden provider AZ-hoz köti a subnetet (OCI regionális subnetet is
+          enged), ezért optional.
+
+      - name: public_access
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        default: false
+        description: >
+          A subneten létrehozott erőforrások (VNIC-ek) alapból kapnak-e
+          publikus IP-t. KIZÁRÓLAG ezt a kérdést fedi le -- a tényleges
+          internet-elérést (ingress-szűrés, route table/internet gateway)
+          NEM ez a mező szabályozza, azok külön, provider-specifikus
+          mechanizmusok (pl. OCI-n `prohibitInternetIngress` +
+          route table), amik ma nincsenek modellezve a canonicalban
+          (thead18, cic-schema-registry#154). `public_access: true` a
+          public-IP-kiosztás engedélyezését jelenti, nem a garantált
+          internet-elérést.
+
+      - name: dns_label
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: dns_label
+        description: >
+          Belső DNS-feloldáshoz használt névkomponens (pl. OCI `dnsLabel`,
+          create-only) -- KÜLÖN fogalom a NetworkSpace/Vcn szintű
+          `dns_support_enabled`/`dns_hostnames_enabled` be/ki
+          kapcsolóktól: azok AWS-VPC-stílusú DNS-viselkedést vezérelnek,
+          ez egy konkrét névkomponens, amit OCI épít be a subnet
+          erőforrásainak automatikusan generált DNS-nevébe.
+          `capability: dns_label` jelöli, hogy nem minden provider
+          exponálja (thead18, #154).
+
+      - name: tags
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: Platform tag-ek
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface ──────────────────────────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: "provider-specific — see binding_surface.adapter_capabilities"
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: lifecycle_state
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: A subnet életciklus-állapota
+        contract:
+          - type: enum
+            expression: [pending, available, deleting, deleted, unknown]
+
+      - name: available_ip_count
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        description: >
+          Szabad (ki nem osztott) IP-cím a subneten. DERIVED/COMPOSITION
+          érték -- a legtöbb provider API-ja (pl. OCI Subnet) nem ad
+          vissza ilyen mezőt közvetlenül. NINCS egyszerű, provider-
+          független levezetési képlet (`cidr_block` mérete mínusz
+          allokált interfészek száma NEM helyes: egy VNIC OCI-n akár 64
+          secondary private IP-t is hordozhat, és OCI subnetenként 3
+          címet fenntart infrastruktúra-célra -- network address,
+          broadcast, default gateway). Az adapter felelőssége a
+          provider tényleges IP-allokációs nyilvántartásából
+          összeállítani (thead18/thead19, #154). Nincs garantált,
+          egységes forrás minden providernél -- optional emiatt is.
+
+  # ── OperationSurface ──────────────────────────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: provision
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Új subnet létrehozása egy NetworkSpace-en belül
+        input:
+          - name: network_space_ref
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+          - name: cidr_block
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: lifecycle_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: delete
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: "Subnet végleges törlése — MANUAL ONLY (confirm: mandatory)"
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre.
+        output: null
+
+  # ── NotificationSurface ───────────────────────────────────────────────────────
+  notification_surface:
+    events:
+      - name: lifecycle-state-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: info
+        description: A subnet életciklus-állapota megváltozott
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface ────────────────────────────────────────────────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-network:subnets/subnet={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:subnets/subnet={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network"
+        key_fields:
+          - name: backend
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [cloud]
+          - name: provider
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: "cloud provider enum-szerű értéke (pl. aws, gcp, azure, hcloud, do, ovh, oci)"
+          - name: location
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: Provider region (pl. eu-central-1)
+          - name: id
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              A subnet egyedi azonosítója (pl. OCI Subnet OCID, AWS Subnet
+              ID, Azure Subnet resource ID)
+    adapter_capabilities:
+      known_adapters: []
+      note: >
+        Üres szándékosan — nincs még execution-layer adapter, az
+        adat-oldali munka jelenlegi fókusza.
+release:
+  createdBy:
+    name: Gabor Zoltan Sinko
+    email: sinkog@centralinfracore.hu
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICBjCCAaygAwIBAgIUSnRMR6RPnEbg296XWPOqq/u5PCwwCgYIKoZIzj0EAwIw
+
+      QzELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxGTAXBgNV
+
+      BAMMEENJQyBEZXZlbG9wZXIgQ0EwHhcNMjYwMzIwMTMyMjU5WhcNMjYxMjMxMTMy
+
+      MjU5WjBFMQswCQYDVQQGEwJIVTEZMBcGA1UECgwQQ2VudHJhbEluZnJhQ29yZTEb
+
+      MBkGA1UEAwwSR2Fib3IgWm9sdGFuIFNpbmtvMFkwEwYHKoZIzj0CAQYIKoZIzj0D
+
+      AQcDQgAEIG2CVmTfmLB9pLLclj7YmP2eedAjklpy4LGrU2ijoiy6Xqpuybv7OgJe
+
+      i+ez31s65NEV8+X/ByeX1cstR988z6N8MHowCQYDVR0TBAIwADAdBgNVHQ4EFgQU
+
+      yZN6AIX/TNnIJ9GwAa/NRN3ujHAwHwYDVR0jBBgwFoAUXn6CHYzPUqU4JVP8g+OS
+
+      WeDYjhcwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEF
+
+      BQcDBDAKBggqhkjOPQQDAgNIADBFAiEA+bFzXRoJ4PCQbhAAtpkcMjt0vNj5rEW0
+
+      lOMBGDNyaWkCIB1vmM7PcZzv/c9bIrxF5kqv6QXomouhByUfeNUTbpKW
+
+      -----END CERTIFICATE-----
+
+      '
+  build_hash: vRAmU1uvB8DVsj1QZHE06BRuFMDeNshb8XSORhqwRdw=
+  sign: vault:v1:MEUCIQDEzT1suLBgqkVHbppzAash6SFCdpyfSZ7/0F9bFWsGxQIgBrIzla1+FTIX5gjJkso1QlgChr9hgQyee8KORMdw5ew=
+cic_countersign:
+  authority:
+    name: CIC Source CA
+    certificate: '-----BEGIN CERTIFICATE-----
+
+      MIICMDCCAdagAwIBAgIUStyiR+g40cCBauhK8nOUNLIj0iIwCgYIKoZIzj0EAwIw
+
+      PjELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNV
+
+      BAMMC0NJQyBSb290IENBMB4XDTI2MDMyMDEzMjIzOVoXDTI2MTIzMTEzMjIzOVow
+
+      QDELMAkGA1UEBhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFjAUBgNV
+
+      BAMMDUNJQyBTb3VyY2UgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARuSq7+
+
+      gRkRwiZYbZBp8aWzFyK36YMBQ58PwUTtoL6Gzu5QZS2tDGLWvFqDY/BRavqcOfel
+
+      I6y+P9WlhntH4oI6o4GvMIGsMB0GA1UdDgQWBBTXWkl+CqRrqaEpr/fUmVHc6B7I
+
+      OTBnBgNVHSMEYDBegBSiQtbuMt81/vweajD7O4ogMMaKGqFCpEAwPjELMAkGA1UE
+
+      BhMCSFUxGTAXBgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBS
+
+      b290IENBggIQBDASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBhjAK
+
+      BggqhkjOPQQDAgNIADBFAiEA25x0lXd37TAiRROTXQtqXNoMiwl0wCZln3m/DMBR
+
+      YcQCID3gc64TnA9Y7QL96lY1nYhAl2NWeMjK8pFXXN2Dymuf
+
+      -----END CERTIFICATE-----
+
+      '
+    root_certificate: "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number: 4100\
+      \ (0x1004)\n        Signature Algorithm: ecdsa-with-SHA256\n        Issuer: C=HU, O=CentralInfraCore,\
+      \ CN=CIC Root CA\n        Validity\n            Not Before: Mar 19 12:59:30 2026 GMT\n         \
+      \   Not After : Dec 31 23:59:59 2026 GMT\n        Subject: C=HU, O=CentralInfraCore, CN=CIC Root\
+      \ CA\n        Subject Public Key Info:\n            Public Key Algorithm: id-ecPublicKey\n     \
+      \           Public-Key: (256 bit)\n                pub:\n                    04:cd:07:56:3a:e7:28:41:c4:99:76:3a:e8:5e:90:\n\
+      \                    39:54:be:e7:7d:42:ab:65:49:05:f0:f8:84:63:5f:\n                    5f:05:22:56:d1:29:e0:ac:7d:67:e3:cf:ac:8f:9c:\n\
+      \                    e2:be:71:6f:a8:91:00:e4:6c:af:1f:f2:86:3f:6d:\n                    03:1d:36:c7:f4\n\
+      \                ASN1 OID: prime256v1\n                NIST CURVE: P-256\n        X509v3 extensions:\n\
+      \            X509v3 Subject Key Identifier: \n                A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \            X509v3 Authority Key Identifier: \n                keyid:A2:42:D6:EE:32:DF:35:FE:FC:1E:6A:30:FB:3B:8A:20:30:C6:8A:1A\n\
+      \                DirName:/C=HU/O=CentralInfraCore/CN=CIC Root CA\n                serial:10:04\n\
+      \            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:3\n          \
+      \  X509v3 Key Usage: critical\n                Digital Signature, Certificate Sign, CRL Sign\n \
+      \   Signature Algorithm: ecdsa-with-SHA256\n    Signature Value:\n        30:45:02:20:51:b0:f6:e5:50:ac:3b:f8:2e:d1:af:7a:7a:b3:\n\
+      \        42:7b:5d:8e:1d:d0:7d:e0:5c:60:48:42:aa:6b:f0:24:8b:a0:\n        02:21:00:d8:c6:94:12:db:f1:a8:b8:3b:45:46:b9:30:88:36:\n\
+      \        6c:f3:e2:56:76:02:35:f6:17:0b:b5:3a:7b:80:5d:16:24\n-----BEGIN CERTIFICATE-----\nMIICHDCCAcKgAwIBAgICEAQwCgYIKoZIzj0EAwIwPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMB4X\nDTI2MDMxOTEyNTkzMFoXDTI2MTIzMTIzNTk1OVowPjELMAkGA1UEBhMCSFUxGTAX\n\
+      BgNVBAoMEENlbnRyYWxJbmZyYUNvcmUxFDASBgNVBAMMC0NJQyBSb290IENBMFkw\nEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzQdWOucoQcSZdjroXpA5VL7nfUKrZUkF\n\
+      8PiEY19fBSJW0SngrH1n48+sj5zivnFvqJEA5GyvH/KGP20DHTbH9KOBrzCBrDAd\nBgNVHQ4EFgQUokLW7jLfNf78Hmow+zuKIDDGihowZwYDVR0jBGAwXoAUokLW7jLf\n\
+      Nf78Hmow+zuKIDDGihqhQqRAMD4xCzAJBgNVBAYTAkhVMRkwFwYDVQQKDBBDZW50\ncmFsSW5mcmFDb3JlMRQwEgYDVQQDDAtDSUMgUm9vdCBDQYICEAQwEgYDVR0TAQH/\n\
+      BAgwBgEB/wIBAzAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwIDSAAwRQIgUbD2\n5VCsO/gu0a96erNCe12OHdB94FxgSEKqa/Aki6ACIQDYxpQS2/GouDtFRrkwiDZs\n\
+      8+JWdgI19hcLtTp7gF0WJA==\n-----END CERTIFICATE-----\n"
+  signed_payload: build_hash
+  sign: vault:v1:MEUCIGCiWSqBvLaZb3u4Nd4SmjD74RfCpEq9gSNTqGh7v8LhAiEApq+IQxRZNkHsBcM1W2dLiKOJFs9ZXha8kNogV0Nn32w=
+  workflow: cic-schema-registry-sign@v1
+  ts: '2026-09-28T21:43:44Z'
