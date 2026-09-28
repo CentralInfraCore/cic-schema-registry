@@ -28,6 +28,14 @@ metadata:
     binding_surface.addresses[].key_fields formalizált Shape+Role
     primitívekkel íródott (nem {name, type, values}) — lásd
     cic-primitives#5 és proposals/atom-grammar/README.md §2.7.
+
+    thead18/#154 "Canonical gaps" javítása (nincs verzióbump, sosem
+    release-elt fájl): `public_access` description pontosítva (a
+    public IP-kiosztás és az internet-elérés/routing fogalmának
+    szétválasztása); új `dns_label` mező (OCI `dnsLabel`-stílusú
+    belső DNS-névkomponens, capability-jelölve); `available_ip_count`
+    description kiegészítve a derived/composition jelleg
+    dokumentálásával.
   owner: Gabor Zoltan Sinko
   tags:
     - domain-composition
@@ -113,8 +121,32 @@ spec:
         optional: true
         default: false
         description: >
-          A subneten létrehozott erőforrások alapból kapnak-e publikus IP-t /
-          útvonalat internet gateway felé.
+          A subneten létrehozott erőforrások (VNIC-ek) alapból kapnak-e
+          publikus IP-t. KIZÁRÓLAG ezt a kérdést fedi le -- a tényleges
+          internet-elérést (ingress-szűrés, route table/internet gateway)
+          NEM ez a mező szabályozza, azok külön, provider-specifikus
+          mechanizmusok (pl. OCI-n `prohibitInternetIngress` +
+          route table), amik ma nincsenek modellezve a canonicalban
+          (thead18, cic-schema-registry#154). `public_access: true` a
+          public-IP-kiosztás engedélyezését jelenti, nem a garantált
+          internet-elérést.
+
+      - name: dns_label
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: dns_label
+        description: >
+          Belső DNS-feloldáshoz használt névkomponens (pl. OCI `dnsLabel`,
+          create-only) -- KÜLÖN fogalom a NetworkSpace/Vcn szintű
+          `dns_support_enabled`/`dns_hostnames_enabled` be/ki
+          kapcsolóktól: azok AWS-VPC-stílusú DNS-viselkedést vezérelnek,
+          ez egy konkrét névkomponens, amit OCI épít be a subnet
+          erőforrásainak automatikusan generált DNS-nevébe.
+          `capability: dns_label` jelöli, hogy nem minden provider
+          exponálja (thead18, #154).
 
       - name: tags
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -159,7 +191,13 @@ spec:
         scalar_type: integer
         role: operational
         optional: true
-        description: Szabad (ki nem osztott) IP-cím a subneten
+        description: >
+          Szabad (ki nem osztott) IP-cím a subneten. DERIVED/COMPOSITION
+          érték -- a legtöbb provider API-ja (pl. OCI Subnet) nem ad
+          vissza ilyen mezőt közvetlenül; az adapter felelőssége a
+          `cidr_block` mérete és a ténylegesen allokált VNIC-ek száma
+          alapján kiszámítani (thead18, #154). Nincs garantált, egységes
+          forrás minden providernél -- optional emiatt is.
 
   # ── OperationSurface ──────────────────────────────────────────────────────────
   operation_surface:

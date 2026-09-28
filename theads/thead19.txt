@@ -1,0 +1,79 @@
+Ez a szál a #154 ("Subnet/NetworkSpace vs. real OCI VCN/Subnet API: canonical
+model bugs found, decide next steps") RÉSZLEGES feloldása -- kizárólag a
+thead18-ban azonosított "Canonical gaps" kategória, a "Provider/modul gaps"
+(correspondence/subnet.json hiánya, AddVcnCidr modul-lefedettség) és a
+SubnetOracleCloud/NetworkSpaceOracleCloud specializáció-építés kérdése
+NEM ez a szál hatóköre -- azok külön, ha/amikor sorra kerülnek.
+
+== Subnet.yaml ==
+
+1. `public_access` description pontosítva. Korábban egy "/" jellel
+   összemosta a public IP-kiosztást és az internet-elérést (routing/
+   gateway). Most explicit kimondja: KIZÁRÓLAG a public-IP-kiosztást
+   fedi le, a tényleges internet-elérés (ingress-szűrés, route table/
+   internet gateway) külön, ma nem modellezett mechanizmus.
+
+2. Új `dns_label` mező (config_surface, optional, `capability:
+   dns_label`) -- az OCI `dnsLabel`-stílusú, belső DNS-feloldáshoz
+   használt névkomponens. Ez KÜLÖN fogalom, mint a NetworkSpace-en
+   lévő `dns_support_enabled`/`dns_hostnames_enabled` be/ki
+   kapcsolók -- azok AWS-VPC-stílusú viselkedést vezérelnek, ez egy
+   konkrét OCI-mechanizmus.
+
+3. `available_ip_count` description kiegészítve: explicit jelölve
+   DERIVED/COMPOSITION értékként (nincs közvetlen OCI-forrás, az
+   adapternek kell kiszámítania a `cidr_block` mérete és az allokált
+   VNIC-ek száma alapján).
+
+== NetworkSpace.yaml ==
+
+1. `ipv6_cidr_block` -> `ipv6_cidr_blocks`, skalárról
+   `collection_variant: set`-re (KARDINALITÁS-JAVÍTÁS). A thead18
+   eredeti findingjét egy külső review erősítette meg cross-provider
+   bizonyítékkal: az AWS VPC is több (akár öt) IPv6 CIDR blokkot
+   enged VPC-nként, az Azure virtuális hálózat address-space modellje
+   is listás (`AddressPrefixes`) -- ez tehát NEM OCI-specifikus
+   mapping-kérdés volt, hanem a canonical modell ÁLTALÁNOSAN túl szűk
+   volt minden cloud-providerre nézve. Frissítve a keresztre mutató
+   hivatkozás (`ipv6_enabled` mező leírása) is.
+
+2. `dns_support_enabled`/`dns_hostnames_enabled` description
+   pontosítva: explicit jelölve, hogy AWS-VPC-stílusú fogalmak
+   (`enableDnsSupport`/`enableDnsHostnames`), OCI-n nincs megfelelőjük.
+   `capability: dns_toggles` jelölve mindkettőn -- SZÁNDÉKOSAN NEM
+   TÁVOLÍTOTTUK EL ezeket a mezőket, mert a fájl saját fejléce
+   explicit a scope részének mondja a "DNS-beállítást" (nem tartozik
+   a route/security/dhcp kizárt kategóriák közé) -- eltávolításuk a
+   deklarált scope-ot szűkítette volna, nem csak egy hibát javított
+   volna. A helyes megoldás: megtartani, mint az egyik legitim,
+   provider-specifikus DNS-mechanizmus megjelenését, capability-vel
+   jelölve hogy nem univerzális.
+
+3. Új `dns_label` mező (ugyanaz, mint a Subnet-en, `capability:
+   dns_label`) -- a canonical cél TÖBB provider ELTÉRŐ DNS-
+   mechanizmusát egyszerre kifejezni (AWS-stílusú be/ki kapcsolók
+   ÉS OCI-stílusú névkomponens), nem csak az egyiket.
+
+4. `subnet_count` description kiegészítve: explicit jelölve DERIVED/
+   COMPOSITION értékként (OCI Vcn API nem ad vissza subnet-számot,
+   az adapternek kell egy külön subnet-lista lekérdezésből
+   összeállítania).
+
+== Ami NEM változott ==
+
+`secondary_cidr_blocks` + `add_secondary_cidr` operation VÁLTOZATLAN
+maradt -- a thead18 két review-köre után ez már NEM hiba (van valós
+OCI action, `AddVcnCidr`), csak a cic-module-oracle-cloud modul
+lefedettségének hiánya (Provider/modul gap), nem canonical-oldali
+javítandó dolog.
+
+== Verzió ==
+
+Egyik fájlon sincs verzióbump. Mindkettő v0.1.dev, sosem lett
+`-src<év>` release-ként kivágva, tehát a módosítások a még ki nem
+adott munkaverzió finomításai.
+
+== Verifikálva ==
+
+check_grammar.py (cic-primitives devel) mindkét fájlon 0 finding
+(Subnet: 20 node, NetworkSpace: 24 node).
