@@ -1,0 +1,106 @@
+thread: thead18
+status: reviewed
+date_reviewed: 2026-09-27
+
+summary: |
+  Field-szintű összehasonlító elemzés (thead04 módszertana) a kanonikus
+  Subnet/NetworkSpace sémák és a valós OCI Vcn/Subnet API között. Két
+  eredetileg "legsúlyosabb" finding (public_access inverzió,
+  secondary_cidr_blocks/create-only ellentmondás) egy külső review után
+  HELYESBÍTVE: mindkettő tévesen lett canonical-hibának minősítve.
+  A ténylegesen megmaradó, valódi hiányosságok szűkebb körűek --
+  hiányzó correspondence/subnet.json, túlterhelt public_access
+  description, IPv6-kardinalitás, AWS-eredetű DNS mezők, dnsLabel
+  hiánya, derived state mezők dokumentálatlansága.
+
+accepted:
+  - "public_access (Subnet) leírása 'kapnak-e publikus IP-t' (true =
+    kaphatnak), az OCI prohibitPublicIpOnVnic leírása 'can have public
+    IP addresses' de prohibit-polaritással (true = NEM kaphatnak) --
+    az INVERZIÓ CONFIRMED, mindkét fájl közvetlen olvasásával. DE ez
+    NEM canonical hiba (eredeti besorolás, 'LEGSÚLYOSABB TALÁLAT',
+    TÉVES volt) -- normális provider-correspondence eset
+    (transform/bool-invert), aminek a hiányzó correspondence/
+    subnet.json volna a helye. A valós hiányosság: (1) correspondence/
+    subnet.json nem létezik, (2) a public_access description egy '/'
+    jellel összemos két külön OCI-fogalmat (prohibitPublicIpOnVnic
+    vs. prohibitInternetIngress/routing)."
+  - "secondary_cidr_blocks (NetworkSpace) + add_secondary_cidr operation
+    -- az eredeti 'OCI-n MA NEM IMPLEMENTÁLHATÓ' következtetés TÉVES
+    volt. Az OCI API-nak van egy külön action-je erre (AddVcnCidr, OCI
+    CLI: add-vcn-cidr), külső review Oracle-dokumentációra hivatkozva
+    mutatott rá. CONFIRMED: a cic-module-oracle-cloud teljes repóban
+    SEHOL nincs AddVcnCidr (sem generált sémákban, sem Go kódban) --
+    de ez a MODUL jelenlegi, nem teljes lefedettségű extrakciójának
+    hiányossága, NEM egy OCI API-korlát vagy canonical séma-hiba. A
+    cidrBlocks mező create-only mutability-je a Create/Update modellen
+    vonatkozik, ez nem zárja ki, hogy egy KÜLÖN ACTION más úton érje
+    el ugyanazt a célt. Megőrzendő általánosítás: egy mező mutability
+    policy-ja nem azonos az objektum teljes behavior surface-ével."
+  - "ipv6_cidr_block (NetworkSpace state) skalárként modellezve, OCI
+    ipv6CidrBlocks ténylegesen lista -- kardinalitás-hiba, nem csak
+    névbeli eltérés. MEGERŐSÍTVE, ÁLTALÁNOSABBÁ TÉVE egy második
+    review-körben: az AWS VPC is több (akár öt) IPv6 CIDR blokkot
+    enged VPC-nként, az Azure virtuális hálózat address-space modellje
+    is listás (AddressPrefixes) -- tehát ez NEM OCI-specifikus
+    mapping-kérdés, hanem ÁLTALÁNOSAN túl szűk a canonical modell,
+    minden cloud-providerre nézve."
+  - "dns_support_enabled/dns_hostnames_enabled AWS VPC fogalmak
+    (enableDnsSupport/enableDnsHostnames), nincs OCI megfelelőjük --
+    a review nem vitatta, változatlanul áll."
+  - "dnsLabel (mind Vcn, mind Subnet) hiányzik a canonicalból, DE
+    nincs is explicit kizárva -- ellentétben route-table/security-
+    list/dhcp-vel. A review nem vitatta, változatlanul áll."
+  - "binding_surface/key_fields (backend/provider/location/id) minta
+    konzisztens a StorageResource-szal -- OCI oldalon nincs bontás,
+    a teljes szerkezet CIC-oldali konstrukció. Nincs új felismerés,
+    megerősíti a thead12 mintát a network doménre is. A review nem
+    vitatta."
+  - "Második review-kör: a 'KANONIKUS sémában maradó hiányosságok'
+    lista tévesen összemosott két különböző kategóriát --
+    correspondence/subnet.json és AddVcnCidr modul-lefedettség NEM
+    canonical séma-hiba, hanem provider/modul oldali dokumentációs/
+    lefedettségi hiányosság. Szétválasztva CANONICAL GAPS (public_access
+    description, ipv6_cidr_block kardinalitás, dnsLabel, DNS-mezők,
+    derived state) és PROVIDER/MODUL GAPS (correspondence/subnet.json,
+    AddVcnCidr) kategóriára -- ugyanaz a fajta tisztítás, mint a
+    #131/thead12 TYPE/VOCABULARY vs. IMPLEMENTATION CAPABILITY
+    szétválasztása."
+
+rejected:
+  - "'public_access hibás/canonical bug, mert OCI-n invertált boolean
+    van' -- ELUTASÍTVA a helyesbítés után: az inverzió normális
+    provider-correspondence, nem canonical hiba."
+  - "'secondary_cidr_blocks/add_secondary_cidr OCI-n nem implementálható'
+    -- ELUTASÍTVA a helyesbítés után: van valós OCI action (AddVcnCidr),
+    csak a modul nem generálta le."
+  - "'correspondence/subnet.json hiánya' a canonical gaps listában --
+    ELUTASÍTVA egy második review-kör után: ez provider/modul gap,
+    nem canonical séma-hiba."
+
+opened:
+  - "cic-schema-registry issue #154: döntés kell a MEGMARADÓ,
+    kategorizált hiányosságokról -- Canonical gaps (public_access
+    description, ipv6_cidr_block kardinalitás, dnsLabel sorsa,
+    dns_support_enabled/dns_hostnames_enabled sorsa, derived state
+    mezők dokumentálása) és Provider/modul gaps (correspondence/
+    subnet.json, AddVcnCidr modul-lefedettség) -- és arról, építsünk-e
+    SubnetOracleCloud/NetworkSpaceOracleCloud specializációt. Ez a
+    szál nem dönt, csak feltár."
+
+nem nyitva (szándékosan, döntésre vár):
+  - "Minden konkrét javítás sorrendje és köre -- ez a szál csak
+    feltárja, nem dönti el."
+
+kapcsolódó:
+  - "theads/thead04.txt + thead04.meta.yaml (a módszertan eredete,
+    StorageResource vs. valós OCI Volume API)"
+  - "theads/thead17.txt (#134, ProviderCorrespondence döntés -- ebből a
+    mellékkérdésből indult ez a szál)"
+  - "theads/thead12.txt (a backend/provider feltételes Contract minta,
+    amit ez a szál megerősít a network doménre is)"
+  - "general/network/subnet/subnet.yaml + general/network/network-space/
+    network-space.yaml (a vizsgált kanonikus sémák)"
+  - "cic-module-oracle-cloud module/schemas/core/{vcn,subnet}.json +
+    module/correspondence/vcn.json (a valós OCI API forrás, és ahol
+    az AddVcnCidr hiánya megerősítést nyert)"
