@@ -131,13 +131,21 @@ spec:
         scalar_type: boolean
         role: config
         optional: true
-        default: false
         capability: ipv6
         description: >
           IPv6 CIDR blokk hozzárendelve-e. A tényleges blokkot a provider
           osztja ki (lásd state_surface.ipv6_cidr_blocks) — ez csak az
           engedélyezést jelöli, ahogy a cic-module-oracle-cloud
           isIpv6Enabled <- ipv6CidrBlocks derivációja is mutatja.
+          SZÁNDÉKOSAN NINCS `default` (külső review után, thead19,
+          ugyanaz az indoklás, mint dns_support_enabled/
+          dns_hostnames_enabled-nél): `optional` + nem-univerzális
+          `capability` + `default` ugyanaz a kockázatos kombináció --
+          egy `default: false` is hamis intentet injektálna egy olyan
+          providerre, ahol az `ipv6` capability nem támogatott (a
+          `false` itt nem "no-op", hanem egy MEGKÜLÖNBÖZTETHETETLEN
+          harmadik szemantikát venne fel a "nincs intent" és a "mező
+          nem alkalmazható" mellett). Hiányzás = nincs róla intent.
 
       - name: dns_support_enabled
         atomic_ref: "cic:core:Shape@v0.2.0"

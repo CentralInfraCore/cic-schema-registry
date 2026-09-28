@@ -56,6 +56,13 @@ accepted:
     A kernel-szintű hiány (capability-mechanizmus formalizálatlansága)
     ezzel NEM oldódik meg, csak a konkrét kockázat ezen a két mezőn --
     dokumentálva mint továbbra is nyitott kerneladósság."
+  - "Külső review, HARMADIK kör: ugyanaz a capability+default minta
+    megtalálva egy KIHAGYOTT mezőn -- ipv6_enabled (optional +
+    capability: ipv6 + default: false). CONFIRMED, elfogadva, javítva
+    ugyanúgy: default eltávolítva. Magam is átvizsgáltam mindkét fájl
+    ÖSSZES capability-jelölt mezőjét (dns_label x2, secondary_cidr_blocks,
+    tags, ipv6_cidr_blocks) -- egyik sem hordoz default-ot, ez volt az
+    egyetlen fennmaradó eset."
 
 rejected:
   - "available_ip_count eredeti, konkrét levezetési képlete -- ELUTASÍTVA
@@ -64,6 +71,10 @@ rejected:
     megtartása pusztán capability-jelöléssel 'megoldottnak' állítva --
     ELUTASÍTVA: a capability mechanizmus formalizálatlansága miatt ez
     nem oldja meg a default-injekció kockázatát, csak dokumentálja azt."
+  - "ipv6_enabled default: false megtartása mint 'ártalmatlan no-op' --
+    ELUTASÍTVA harmadik review-kör után: a false itt megkülönböztethetetlen
+    harmadik szemantikát venne fel a 'nincs intent' és a 'mező nem
+    alkalmazható' mellett."
 
 opened: []
 

@@ -90,6 +90,18 @@ NEM ez a szál hatóköre -- azok külön, ha/amikor sorra kerülnek.
    az adapternek kell egy külön subnet-lista lekérdezésből
    összeállítania).
 
+5. `ipv6_enabled` (HELYESBÍTVE egy HARMADIK review-kör után):
+   ELTÁVOLÍTVA a `default: false`. A review megtalálta ugyanazt a
+   mintát, amit a dns_support_enabled/dns_hostnames_enabled 2. pontban
+   már kijavítottunk (`optional` + nem-univerzális `capability: ipv6`
+   + `default`), csak a `capability` bevezetésekor (thead18/#154
+   első köre) ezt a mezőt véletlenül kihagytuk a javításból. Ugyanaz
+   az indoklás: egy `default: false` egy `ipv6`-capability nélküli
+   providerre is hamisan beledeklarálna egy MEGKÜLÖNBÖZTETHETETLEN
+   harmadik szemantikát ("nincs intent" vs. "mező nem alkalmazható"
+   vs. "explicit false") -- a `false` itt NEM "ártalmatlan no-op".
+   Javítva ugyanúgy: `optional`, `default` nélkül.
+
 == Ami NEM változott ==
 
 `secondary_cidr_blocks` + `add_secondary_cidr` operation VÁLTOZATLAN
