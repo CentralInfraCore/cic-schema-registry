@@ -1,0 +1,62 @@
+thread: thead20
+status: reviewed
+date_reviewed: 2026-09-28
+
+summary: |
+  #154 "Provider/modul gaps" -- correspondence/subnet.json tétel
+  visszavonva: helytelen diagnózis volt. A cic-module-oracle-cloud
+  correspondence.go mechanizmusa kizárólag ugyanazon OCI objektum
+  state-jén belüli input-only/output-only rekonstrukcióra való, nem
+  CIC-canonical <-> OCI-natív fordításra -- ilyen fordítási réteg
+  (mezőnév és polaritás) sehol nem létezik ma. AddVcnCidr tétel
+  változatlan marad.
+
+accepted:
+  - "module/correspondence.go 3 szabálya (bool-from-nonempty,
+    bool-invert, rename) ugyanazon OCI objektum SAJÁT read-state-jéből
+    számol -- a mechanizmus saját doksi-ja is explicit erre a szűk
+    hatókörre korlátozza magát. CONFIRMED forráskódból."
+  - "module/schemas/core/subnet.json TELJES config+state sémája
+    kizárólag OCI-natív mezőnevekkel dolgozik (cidrBlock,
+    prohibitPublicIpOnVnic, compartmentId) -- CIC-canonical mezőnevek
+    (cidr_block, public_access) SEHOL nem szerepelnek. CONFIRMED
+    teljes fájl olvasásával."
+  - "prohibitPublicIpOnVnic mind a config, mind a state surface-en
+    jelen van, ugyanazzal a névvel/jelentéssel -- nincs input-only/
+    output-only aszimmetria, nincs mit levezetni. A correspondence.go
+    mechanizmus emiatt nem alkalmazható erre az esetre."
+  - "Végigmentünk a teljes Subnet state-sémán: az EGYETLEN jelölt eset
+    (subnetDomainName, ami a subnet+szülő Vcn DNS labeljéből áll
+    össze) egy COMPOSITION eset, amit a mechanizmus explicit kizár
+    ('stays out until a resolve step exists'). Nincs a Subnet
+    objektumon egyetlen eset sem, ami a correspondence.go jelenlegi
+    hatókörébe illene."
+  - "A VALÓS hiány: egy CIC-canonical <-> OCI-natív fordító réteg
+    (mezőnév ÉS polaritás szinten), ami sem a cic-module-oracle-cloud-
+    ban, sem a cic-schema-registry-ben nem létezik ma. Ez önálló,
+    nagyobb architekturális kérdés -- nem ez a szál, sem #154 dönti el."
+
+rejected:
+  - "correspondence/subnet.json létrehozása a public_access/
+    prohibitPublicIpOnVnic bool-invert dokumentálásával -- ELUTASÍTVA
+    mélyebb vizsgálat után: rossz mechanizmus a problémára, vagy üres
+    fájl lenne, vagy rossz helyre írná a fordítást."
+
+opened: []
+
+nem nyitva (szándékosan, döntésre vár):
+  - "CIC-canonical <-> OCI-natív fordító réteg tervezése (hol éljen:
+    modul-oldal, relay-oldal, vagy egy külön adapter-komponens) --
+    külön, nagyobb architekturális kérdés, nincs itt eldöntve."
+
+kapcsolódó:
+  - "cic-schema-registry#154 (a #154 'Provider/modul gaps' listáját
+    ez a szál pontosítja -- correspondence/subnet.json tétel törölve,
+    AddVcnCidr változatlan)"
+  - "theads/thead18.txt (az eredeti, most helyesbített diagnózis)"
+  - "theads/thead06.txt (a correspondence.go vs. ProviderCorrespondence
+    YAML eredeti szétválasztása -- ez a szál MÉLYEBBEN kifejti, miért
+    NEM ugyanaz a két réteg, egészen odáig hogy a correspondence.go
+    mezőnév-szinten sem ismeri a CIC-canonical névteret)"
+  - "cic-module-oracle-cloud module/correspondence.go +
+    module/schemas/core/subnet.json (a vizsgált forrás)"

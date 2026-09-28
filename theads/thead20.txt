@@ -1,0 +1,71 @@
+Ez a szál a #154 "Provider/modul gaps" kategóriájának (thead18
+kategorizálása) egyik tételét helyesbíti: a `correspondence/subnet.json`
+hiányát, mint a `public_access`/`prohibitPublicIpOnVnic` bool-invert
+dokumentálatlanságát.
+
+A user "kezdj neki" felszólítására a cic-module-oracle-cloud oldalon
+akartuk létrehozni a `module/correspondence/subnet.json` fájlt, a meglévő
+`vcn.json` mintájára (ami az `isIpv6Enabled <- ipv6CidrBlocks
+bool-from-nonempty` szabályt dokumentálja). Mielőtt megírtuk volna,
+alaposabban megvizsgáltuk a mechanizmust, ami befogadná -- és kiderült,
+hogy a terv HIBÁS ALAPFELTEVÉSRE épült.
+
+A tényleges felfedezés:
+
+1. `module/correspondence.go` MECHANIZMUSA kizárólag ugyanazon OCI
+   objektum STATE-jén belüli, input-only <-> output-only mezők közti
+   REKONSTRUKCIÓRA való (pl. `isIpv6Enabled`-et az OCI create elfogadja,
+   de az observe nem adja vissza ugyanazon néven -- a valódi állapotot
+   az `ipv6CidrBlocks` lista nem-üres voltából kell visszaszámolni). A
+   mechanizmus saját dokumentációja is explicit erre a szűk hatókörre
+   korlátozza magát: 3 szabály (bool-from-nonempty, bool-invert, rename),
+   mindegyik ugyanazon objektum saját read-state-jéből.
+
+2. Megnéztük a `module/schemas/core/subnet.json` TELJES generált sémáját
+   (config ÉS state surface egyaránt): a `prohibitPublicIpOnVnic` mező
+   MINDKÉT surface-en jelen van, UGYANAZZAL a névvel, UGYANAZZAL a
+   jelentéssel (`x-cic-policy: create-only`). NINCS itt semmilyen
+   input-only/output-only aszimmetria -- az OCI API már egyenesben
+   visszaadja, nincs mit "levezetni" belőle.
+
+3. Mélyebb ok: a TELJES cic-module-oracle-cloud modul (config ÉS state
+   séma is) KIZÁRÓLAG OCI-natív mezőnevekkel dolgozik (`cidrBlock`,
+   `prohibitPublicIpOnVnic`, `compartmentId`) -- a CIC-canonical
+   mezőnevek (`cidr_block`, `public_access`) SEHOL nem szerepelnek a
+   modulban. A `correspondence.go` tehát nem a "CIC-canonical <->
+   OCI-natív" fordításra való mechanizmus -- egy ilyen fordítási réteg
+   (mezőnév ÉS polaritás) MA EGYÁLTALÁN NEM LÉTEZIK sem a
+   cic-module-oracle-cloud-ban, sem a cic-schema-registry-ben.
+
+Végigmentünk a teljes `subnet.json` state-sémán is, hogy van-e
+EGYÁLTALÁN olyan Subnet-mező, ami a correspondence.go meglévő,
+szűk szabálykészletébe (ugyanazon objektum state-jéből levezetett
+bool-from-nonempty/bool-invert/rename) illene. Az egyetlen jelölt a
+`subnetDomainName` (provider-computed state mező, ami "a subnet DNS
+labeljéből, a szülő VCN DNS labeljéből és az oraclevcn.com domainből
+áll össze") -- de ez egy COMPOSITION eset (két KÜLÖNBÖZŐ objektum,
+Subnet + szülő Vcn), amit a mechanizmus saját maga explicit KIZÁR
+("stays out until a resolve step exists" -- module/correspondence.go
+saját doksi-ja). Tehát a Subnet objektumon NINCS EGYETLEN olyan eset
+sem, ami a correspondence.go jelenlegi hatókörébe illene.
+
+Következtetés: a `correspondence/subnet.json` LÉTREHOZÁSA a jelenlegi
+tervezett formájában (a public_access/prohibitPublicIpOnVnic bool-invert
+dokumentálása) VAGY üres/felesleges fájl lenne, VAGY -- ha mégis
+beleírnánk -- ROSSZ HELYRE írnánk a fordítást (egy mechanizmusba, ami
+nem erre a problémára való). A #154/thead18 eredeti "Provider/modul
+gap #1" megfogalmazása HIBÁS DIAGNÓZIS volt.
+
+A VALÓS hiányzó dolog, amit ez a felfedezés kimutat: egy
+CIC-canonical <-> OCI-natív FORDÍTÓ RÉTEG (mezőnév ÉS polaritás
+szinten), ami sem a cic-module-oracle-cloud-ban, sem a
+cic-schema-registry-ben nem létezik. Ez EGY SOKKAL NAGYOBB,
+ÖNÁLLÓ ARCHITEKTURÁLIS KÉRDÉS -- nem ennek a szálnak, sem a #154-nek
+a hatóköre. Nem próbáljuk itt megtervezni; csak rögzítjük, hogy a
+hiány valós, csak nem ott van, ahol korábban kerestük.
+
+Módosítás: a #154 "Provider/modul gaps" listájáról a
+`correspondence/subnet.json` tétel TÖRÖLVE, a fenti indoklással
+helyettesítve. Az `AddVcnCidr` modul-lefedettség tétel VÁLTOZATLAN
+marad -- az egy független, valódi hiányzó OCI API-művelet, amit ez a
+felfedezés nem érint.
