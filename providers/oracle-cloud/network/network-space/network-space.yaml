@@ -1,0 +1,440 @@
+# WORKING COPY — not a versioned, signed release file (no -src<year>
+# suffix, so tools/registrylib's filename pattern and all registry
+# tooling ignore this file entirely: make check/registry_validate/
+# generate_latest/signing never see it).
+#
+# This is the editable source of truth. When ready, a new
+# network-space.vX.Y.Z-src<year>.yaml is cut FROM this file's current
+# content and signed (cic-schema-registry#125).
+---
+metadata:
+  name: NetworkSpaceOracleCloud
+  version: v0.1.dev
+  description: >
+    Oracle Cloud Infrastructure altípusa a canonical NetworkSpace-nek
+    (general/network/network-space/), az OCI Vcn API ellen verifikálva
+    (cic-module-oracle-cloud module/schemas/core/vcn.json, valós
+    OCI-tenancy ellen igazolva, docs/design/manual-verification.md).
+    cic-schema-registry#154 utolsó nyitott tétele, a SubnetOracleCloud
+    párja — lásd providers/oracle-cloud/network/subnet/subnet.yaml a
+    módszertani előszóért (első valóban élesen validált domain-to-domain
+    identity.base pin, a StorageResourceOracleCloud "working-copy
+    verzióra pinnelve" kompromisszuma nélkül).
+
+    Minden canonical surface teljes restatement-tel jelen van, egyik sem
+    access.conformance: not_implemented — az OCI Vcn API a teljes
+    canonical vokabulárium minden fogalmát lefedi, valamilyen formában
+    (közvetlen mező, derivált érték, vagy — dns_support_enabled/
+    dns_hostnames_enabled esetén — explicit "nincs OCI-megfelelő"
+    dokumentáció, ami MÉGIS a mező típusszintű megtartását indokolja,
+    nem a kizárását, lásd lent).
+
+    Mezőnkénti OCI-megfelelés (module/schemas/core/vcn.json ellen
+    ellenőrizve):
+
+      - cidr_block (canonical, mandatory, skalár) <-> OCI Vcn.cidrBlocks
+        (lista, create-only): KOMPOZÍCIÓS leképezés, nem 1:1 mező-mező.
+        Létrehozáskor cidr_block a cidrBlocks[0] lesz; a szülő OCI
+        objektum saját deprecated Vcn.cidrBlock mezője is pontosan ezt
+        mondja ki ("Deprecated. The first CIDR IP address from
+        cidrBlocks" — ugyanaz a mező, amit a cic-module-oracle-cloud
+        PR #27 review-ja talált meg: AddVcnCidrDetails.cidrBlock más
+        szemantikájú, ne keverd össze).
+      - secondary_cidr_blocks (canonical, lista) <-> OCI cidrBlocks[1:]
+        (a cidrBlocks lista cidr_block utáni elemei): szintén
+        kompozíciós, nem direkt mező. add_secondary_cidr operation <->
+        OCI AddVcnCidr action — MOST MÁR VALÓS OCI action ÉS valós
+        modul-lefedettség (cic-module-oracle-cloud#27/#30, mergelve),
+        korábban (thead18 első köre) tévesen "nem implementálhatónak"
+        minősítve, helyesbítve.
+      - ipv6_enabled (canonical, boolean) <-> OCI isIpv6Enabled
+        (input-only OCI-n): DERIVÁLT valójában — a
+        cic-module-oracle-cloud saját correspondence.go mechanizmusa
+        (bool-from-nonempty szabály) az ipv6CidrBlocks lista
+        nem-üres voltából számolja vissza az observed értéket, mert
+        OCI maga nem adja vissza az isIpv6Enabled-et olvasáskor. A
+        canonical mező saját leírása ezt már dokumentálja.
+      - dns_support_enabled / dns_hostnames_enabled (canonical,
+        capability: dns_toggles): NINCS OCI-megfelelő — OCI-n nincs
+        önálló be/ki kapcsoló ezekre a fogalmakra (a `dns_label` mező
+        jelenléte/hiánya és a belső DNS-zóna implicit módon együtt jár
+        a hálózati tér létezésével). access.conformance:
+        not_implemented, EGYEDI ÉRTÉKKÉNT a mező saját Contract-ján
+        (nem a teljes mező kihagyásával) — a TYPE/VOCABULARY szinten a
+        mező megmarad (egy általános NetworkSpace-kliens leírt intentje
+        séma-szinten legális marad ezen a specializáción is), csak az
+        IMPLEMENTATION CAPABILITY szinten utasítja el a runtime (D-012
+        szabály) — pontosan ugyanaz a két szint szándékos
+        szétválasztása, mint a StorageResourceOracleCloud
+        encryption_mode none/guest_managed értékein (#137/thead11).
+      - dns_label (canonical, capability: dns_label): OCI Vcn.dnsLabel
+        (create-only) — direkt.
+      - tags: OCI freeformTags + definedTags — direkt, ugyanaz a minta,
+        mint a Subnet/StorageResource specializációkon.
+      - lifecycle_state: OCI Vcn.lifecycleState — direkt.
+      - ipv6_cidr_blocks (canonical state, lista): OCI Vcn.ipv6CidrBlocks
+        — direkt, MÁR listás mindkét oldalon (a thead18/#154
+        kardinalitás-javítás után, ami a canonicalt v0.1.0-ra hozta
+        ebbe az állapotba).
+      - subnet_count: nincs direkt OCI Vcn mező. DERIVED/COMPOSITION —
+        az adapter felelőssége egy külön ListSubnets hívásból
+        összeállítani, ugyanaz a korlát, amit a canonical mező saját
+        leírása is dokumentál.
+      - provision: OCI CreateVcn — direkt.
+      - add_secondary_cidr: OCI AddVcnCidr — direkt (lásd fent).
+      - delete: OCI DeleteVcn — direkt.
+
+    Amit ez a fájl NEM fed le (a canonical saját scope-ja is kizárja):
+    route-olás (OCI defaultRouteTableId), security (OCI
+    defaultSecurityListId), DHCP-opciók (OCI defaultDhcpOptionsId),
+    BYOIPv6/Oracle GUA allokáció részletei (OCI
+    byoipv6CidrDetails/isOracleGuaAllocationEnabled — ezek a canonical
+    ipv6_enabled/ipv6_cidr_blocks mögé absztrahált, OCI-specifikus
+    finomrészletek, nem önálló canonical fogalmak ma) — ezek OCI Vcn
+    mezők, de a canonical NetworkSpace scope-ja explicit kizárja őket
+    (general/network/network-space/network-space.yaml saját fejléce).
+  owner: Gabor Zoltan Sinko
+  tags:
+    - domain-composition
+    - network
+    - oracle-cloud
+  validatedBy:
+    name: cic-primitives
+    version: v0.2.0
+
+spec:
+  kind: DomainComposition
+  base:
+    aggregate: NetworkSpace
+    ref: "cic:network:NetworkSpace@v0.1.0"
+
+  provider_resources:
+    - core.Vcn
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  identity:
+    atomic_ref: "cic:core:Identity@v0.2.0"
+    kind: NetworkSpaceOracleCloud
+    namespace: "cic:network"
+    version: v0.1.dev
+    base: "cic:network:NetworkSpace@v0.1.0"
+    abstract: false
+    description: Oracle Cloud Infrastructure altípusa a platform-agnosztikus hálózati térnek (VCN)
+
+  # ── ConfigSurface (teljes restatement) ───────────────────────────────────────
+  config_surface:
+    aggregate_ref: "cic:core:ConfigSurface@v0.2.0"
+    nodes:
+
+      - name: cidr_block
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        mandatory: true
+        description: >
+          Elsődleges IPv4 CIDR blokk. OCI Vcn.cidrBlocks[0] — KOMPOZÍCIÓS
+          leképezés: létrehozáskor ez lesz a cidrBlocks lista első eleme,
+          nem egy önálló OCI mező. A szülő OCI objektum saját deprecated
+          Vcn.cidrBlock mezője pontosan ugyanezt mondja ki ("the first
+          CIDR IP address from cidrBlocks") — de EZ a mező nem az az
+          AddVcnCidrDetails.cidrBlock action-operand, amit a
+          cic-module-oracle-cloud PR #27 review-ja talált meg: itt a
+          resource CONFIG mezőjéről van szó, nem az action bemenetéről.
+        contract:
+          - type: pattern
+            expression: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+
+      - name: secondary_cidr_blocks
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: secondary_cidr
+        description: >
+          OCI Vcn.cidrBlocks[1:] — a cidrBlocks lista cidr_block utáni
+          elemei, KOMPOZÍCIÓS leképezés. Az add_secondary_cidr operation
+          (lásd operation_surface) OCI AddVcnCidr action-re képeződik —
+          MOST MÁR valós OCI action ÉS valós cic-module-oracle-cloud
+          modul-lefedettség (cic-module-oracle-cloud#27/#30, mergelve
+          2026-09-28). Korábban (thead18 első köre) tévesen "nem
+          implementálhatónak" minősítve — helyesbítve.
+        item_fields:
+          - name: cidr
+            shape_type: scalar
+            scalar_type: string
+            role: key
+
+      - name: ipv6_enabled
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        capability: ipv6
+        description: >
+          IPv6 CIDR blokk hozzárendelve-e. OCI isIpv6Enabled — DERIVÁLT:
+          a cic-module-oracle-cloud saját correspondence.go mechanizmusa
+          (bool-from-nonempty szabály) az observed ipv6CidrBlocks lista
+          nem-üres voltából számolja vissza ezt az értéket, mert OCI maga
+          input-only-ként kezeli (nem adja vissza olvasáskor). SZÁNDÉKOSAN
+          NINCS `default`, öröklődik a bázis indoklása.
+
+      - name: dns_support_enabled
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        capability: dns_toggles
+        access:
+          conformance: not_implemented
+        description: >
+          AWS VPC-stílusú fogalom (`enableDnsSupport`) — OCI-nak NINCS
+          megfelelője: nincs önálló be/ki kapcsoló, a belső DNS-feloldás
+          implicit módon együtt jár a Vcn létezésével és a `dns_label`
+          mező jelenlétével. `access.conformance: not_implemented` —
+          TYPE/VOCABULARY szinten a mező megmarad (egy általános
+          NetworkSpace-kliens leírt `dns_support_enabled` intentje
+          séma-szinten legális marad ezen a specializáción is), csak
+          IMPLEMENTATION CAPABILITY szinten utasítja el a runtime (D-012:
+          "Silent acceptance is FORBIDDEN") — ugyanaz a két szint
+          szándékos szétválasztása, mint a StorageResourceOracleCloud
+          encryption_mode none/guest_managed értékein (#137/thead11).
+          SZÁNDÉKOSAN NINCS `default` sem (a bázis indoklása öröklődik):
+          a `capability` mechanizmus ma nem formalizált, egy `default`
+          hamisan beledeklarálna egy AWS-fogalmat egy OCI-intent-be.
+
+      - name: dns_hostnames_enabled
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: boolean
+        role: config
+        optional: true
+        capability: dns_toggles
+        access:
+          conformance: not_implemented
+        description: >
+          AWS VPC-stílusú fogalom (`enableDnsHostnames`) — ugyanaz a
+          korlát, mint dns_support_enabled-nél, lásd ott a teljes
+          indoklást. `access.conformance: not_implemented`, `default`
+          nélkül, ugyanazon okból.
+
+      - name: dns_label
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: config
+        optional: true
+        capability: dns_label
+        description: OCI Vcn.dnsLabel (create-only) — közvetlen.
+
+      - name: tags
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: list
+        role: config
+        optional: true
+        capability: tagging
+        description: >
+          OCI freeformTags + definedTags — normalizálható egységes
+          listává, ugyanaz a minta, mint a Subnet/StorageResource
+          specializációkon.
+        item_fields:
+          - name: key
+            shape_type: scalar
+            scalar_type: string
+            role: key
+          - name: value
+            shape_type: scalar
+            scalar_type: string
+
+  # ── StateSurface (teljes restatement) ────────────────────────────────────────
+  state_surface:
+    aggregate_ref: "cic:core:StateSurface@v0.2.0"
+    source: cic-module-oracle-cloud
+    freshness:
+      ttl: 60s
+      strategy: event-driven
+    nodes:
+
+      - name: lifecycle_state
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: string
+        role: state
+        mandatory: true
+        description: OCI Vcn.lifecycleState — közvetlen.
+        contract:
+          - type: enum
+            expression: [pending, available, deleting, deleted, unknown]
+
+      - name: ipv6_cidr_blocks
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: collection
+        collection_variant: set
+        item_scalar_type: string
+        role: state
+        optional: true
+        capability: ipv6
+        description: >
+          OCI Vcn.ipv6CidrBlocks — közvetlen, MÁR listás mindkét oldalon.
+          A thead18/#154 kardinalitás-javítás (ami a canonical
+          ipv6_cidr_block skalárt ipv6_cidr_blocks listává tette) után a
+          canonical és az OCI shape most pontosan illeszkedik — nincs
+          itt semmilyen leképezési feszültség.
+
+      - name: subnet_count
+        atomic_ref: "cic:core:Shape@v0.2.0"
+        shape_type: scalar
+        scalar_type: integer
+        role: operational
+        optional: true
+        description: >
+          Nincs direkt OCI Vcn mező. DERIVED/COMPOSITION — az adapter
+          felelőssége egy külön ListSubnets hívásból összeállítani
+          (thead18, cic-schema-registry#154). Ugyanaz a korlát, amit a
+          canonical mező saját leírása is dokumentál.
+
+  # ── OperationSurface (teljes restatement) ────────────────────────────────────
+  operation_surface:
+    aggregate_ref: "cic:core:OperationSurface@v0.2.0"
+    operations:
+
+      - name: provision
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: Új hálózati tér létrehozása. OCI CreateVcn — közvetlen.
+        input:
+          - name: cidr_block
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: lifecycle_state
+            shape_type: scalar
+            scalar_type: string
+
+      - name: add_secondary_cidr
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        capability: secondary_cidr
+        description: >
+          További CIDR blokk hozzáadása a hálózati térhez. OCI AddVcnCidr
+          — közvetlen, valós OCI action ÉS valós cic-module-oracle-cloud
+          modul-lefedettség (cic-module-oracle-cloud#27/#30). Aszinkron
+          OCI-n (OpcWorkRequestId-t ad vissza, pollozni kell) — a
+          binding_surface/execution-layer ezt ma nem fedi le explicit,
+          ugyanúgy, mint minden más operation itt (a data-oldali munka a
+          jelenlegi fókusz, nem az execution-layer).
+        input:
+          - name: cidr
+            shape_type: scalar
+            scalar_type: string
+            mandatory: true
+        output:
+          - name: secondary_cidr_blocks
+            shape_type: collection
+            collection_variant: set
+            item_scalar_type: string
+
+      - name: delete
+        atomic_ref: "cic:core:Behavior@v0.2.0"
+        type: operation
+        idempotent: false
+        description: "Hálózati tér végleges törlése — MANUAL ONLY (confirm: mandatory). OCI DeleteVcn — közvetlen."
+        input:
+          - name: confirm
+            shape_type: scalar
+            scalar_type: boolean
+            mandatory: true
+            contract:
+              - type: must
+                expression: "confirm = true()"
+                error_message: >
+                  A törlés csak explicit confirm: true mellett hajtható
+                  végre.
+        output: null
+
+  # ── NotificationSurface (teljes restatement) ─────────────────────────────────
+  notification_surface:
+    events:
+      - name: lifecycle-state-changed
+        atomic_ref: "cic:core:Event@v0.2.0"
+        trigger: state_change
+        severity: info
+        description: >
+          A hálózati tér életciklus-állapota megváltozott. OCI-n a
+          lifecycleState mező adapter-oldali figyeléséből származtatott.
+        payload:
+          - name: previous_state
+            shape_type: scalar
+            scalar_type: string
+          - name: current_state
+            shape_type: scalar
+            scalar_type: string
+
+  # ── BindingSurface (teljes restatement, #131/thead12 mintája) ────────────────
+  binding_surface:
+    addresses:
+      - atomic_ref: "cic:core:Address@v0.2.0"
+        schema_path: "/cic-network:network-spaces/network-space={backend}, {provider}, {location}, {id}"
+        api_path: "/restconf/data/cic-network:network-spaces/network-space={backend}, {provider}, {location}, {id}"
+        logical_id: "cic:network:{backend}:{provider}:{location}:{id}"
+        namespace: "cic:network"
+        key_fields:
+          - name: backend
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            contract:
+              - type: enum
+                expression: [cloud]
+            description: >
+              A bázison már ma is kizárólag `cloud` az egyetlen érték —
+              nincs itt narrowing-teendő, egyszerű restatement.
+          - name: provider
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              Ezen a specializáción gyakorlatilag mindig `oci` -- de ez
+              NEM `default`-tal jelölve (C13, proposals/atom-grammar), és
+              szándékosan NINCS Contract-enummal sem szűkítve, ugyanazon
+              konzisztencia-okból, mint a SubnetOracleCloud/
+              StorageResourceOracleCloud provider mezőjén.
+          - name: location
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: "OCI region (pl. eu-frankfurt-1) — a bázis prózájának OCI-specifikus pontosítása."
+          - name: id
+            atomic_ref: "cic:core:Shape@v0.2.0"
+            shape_type: scalar
+            scalar_type: string
+            role: key
+            mandatory: true
+            description: >
+              OCI VCN OCID (pl. ocid1.vcn.oc1.eu-frankfurt-1.abc...) — a
+              bázis "cloud: cloud VPC ID" leírásának OCI-specifikus
+              pontosítása.
+    adapter_capabilities:
+      known_adapters: []
+      note: >
+        Üres szándékosan — a canonical NetworkSpace fejléce is kimondja,
+        hogy MÉG NINCS execution-layer network-adapter absztrakció. A
+        cic-module-oracle-cloud modul (module/schemas/core/vcn.json)
+        valós, verifikált OCI-lefedettséget ad, de ma nem a
+        `binding_surface.adapter`/`adapter_capabilities` mechanizmuson
+        keresztül van bekötve — az egy WASM provider-modul, nem ez a
+        registry-oldali adapter-absztrakció. Ez a mező akkor tölthető ki,
+        ha/amikor a network domain kap egy formális adapter-réteget.
