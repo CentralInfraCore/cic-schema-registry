@@ -194,10 +194,15 @@ spec:
         description: >
           Szabad (ki nem osztott) IP-cím a subneten. DERIVED/COMPOSITION
           érték -- a legtöbb provider API-ja (pl. OCI Subnet) nem ad
-          vissza ilyen mezőt közvetlenül; az adapter felelőssége a
-          `cidr_block` mérete és a ténylegesen allokált VNIC-ek száma
-          alapján kiszámítani (thead18, #154). Nincs garantált, egységes
-          forrás minden providernél -- optional emiatt is.
+          vissza ilyen mezőt közvetlenül. NINCS egyszerű, provider-
+          független levezetési képlet (`cidr_block` mérete mínusz
+          allokált interfészek száma NEM helyes: egy VNIC OCI-n akár 64
+          secondary private IP-t is hordozhat, és OCI subnetenként 3
+          címet fenntart infrastruktúra-célra -- network address,
+          broadcast, default gateway). Az adapter felelőssége a
+          provider tényleges IP-allokációs nyilvántartásából
+          összeállítani (thead18/thead19, #154). Nincs garantált,
+          egységes forrás minden providernél -- optional emiatt is.
 
   # ── OperationSurface ──────────────────────────────────────────────────────────
   operation_surface:

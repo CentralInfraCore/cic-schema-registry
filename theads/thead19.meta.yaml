@@ -4,13 +4,14 @@ date_reviewed: 2026-09-28
 
 summary: |
   #154 "Canonical gaps" kategóriájának javítása (thead18 kategorizálása
-  szerint) -- public_access description pontosítás, dns_label mező
-  felvétele (Subnet + NetworkSpace), ipv6_cidr_block -> ipv6_cidr_blocks
-  kardinalitás-javítás, dns_support_enabled/dns_hostnames_enabled
-  pontosítás capability-jelöléssel, available_ip_count/subnet_count
-  derived jelleg dokumentálása. A "Provider/modul gaps" (correspondence/
-  subnet.json, AddVcnCidr) és a specializáció-építés kérdése nem ez a
-  szál hatóköre.
+  szerint), egy review-körrel helyesbítve. public_access description
+  pontosítás, dns_label mező felvétele (Subnet + NetworkSpace),
+  ipv6_cidr_block -> ipv6_cidr_blocks kardinalitás-javítás,
+  dns_support_enabled/dns_hostnames_enabled pontosítás capability-
+  jelöléssel ÉS default eltávolítással, available_ip_count/subnet_count
+  derived jelleg dokumentálása (konkrét, hibás levezetési képlet nélkül).
+  A "Provider/modul gaps" (correspondence/subnet.json, AddVcnCidr) és a
+  specializáció-építés kérdése nem ez a szál hatóköre.
 
 accepted:
   - "public_access description szétválasztva: kizárólag public-IP-
@@ -36,8 +37,33 @@ accepted:
   - "Nincs verzióbump egyik fájlon sem -- mindkettő sosem lett még
     -src<év> release-ként kivágva. Verifikálva: check_grammar.py 0
     finding mindkét fájlon (20, 24 node)."
+  - "Külső review a #156-on, PONT 1: available_ip_count eredeti
+    levezetési képlete ('cidr_block mérete mínusz VNIC-ek száma')
+    TÁRGYILAG HIBÁS volt még OCI-ra is -- egy VNIC OCI-n akár 64
+    secondary private IP-t hordozhat, OCI subnetenként 3 címet
+    fenntart infrastruktúra-célra. CONFIRMED, elfogadva, javítva:
+    a description mostantól NEM ad meg konkrét algoritmust, csak a
+    derived/composition jelleget mondja ki."
+  - "Külső review, PONT 2: capability + default konfliktus, mélyebb
+    kernel-szintű hiba. A capability mechanizmus ma nem formalizált
+    (proposals/atom-grammar/README.md), nincs grammar-szabály, ami
+    kikényszerítené hogy egy nem-univerzális capability-jű mező
+    default-ja csak a capability-t támogató provider-eken
+    injektálódjon -- egy default egy OCI-intent-be hamisan
+    beledeklarálna egy AWS-fogalmat. CONFIRMED, elfogadva: default
+    eltávolítva mindkét DNS-toggle mezőről (dns_support_enabled/
+    dns_hostnames_enabled), 'hiányzás = nincs intent' elvre váltva.
+    A kernel-szintű hiány (capability-mechanizmus formalizálatlansága)
+    ezzel NEM oldódik meg, csak a konkrét kockázat ezen a két mezőn --
+    dokumentálva mint továbbra is nyitott kerneladósság."
 
-rejected: []
+rejected:
+  - "available_ip_count eredeti, konkrét levezetési képlete -- ELUTASÍTVA
+    külső review után: tárgyilag hibás volt."
+  - "dns_support_enabled/dns_hostnames_enabled default-értékének
+    megtartása pusztán capability-jelöléssel 'megoldottnak' állítva --
+    ELUTASÍTVA: a capability mechanizmus formalizálatlansága miatt ez
+    nem oldja meg a default-injekció kockázatát, csak dokumentálja azt."
 
 opened: []
 
@@ -47,8 +73,16 @@ nem nyitva (szándékosan, döntésre vár):
     nyitva."
   - "SubnetOracleCloud/NetworkSpaceOracleCloud provider-specializáció
     építése -- külön, nagyobb döntés, #154-ben marad nyitva."
+  - "A capability mechanizmus kernel-szintű formalizálatlansága (nincs
+    grammar-szabály nem-univerzális capability + default-injekció
+    konfliktusára) -- külső review vetette fel, ugyanaz a mintaosztály,
+    mint cic-primitives#11 és thead12. Nem ez a szál dönti el, csak
+    rögzíti mint nyitott kerneladósságot."
 
 kapcsolódó:
+  - "cic-primitives#11 (relációs invariáns hiánya) + theads/thead12.txt
+    (feltételes Contract) -- ugyanaz a mintaosztály, mint a most talált
+    capability+default konfliktus"
   - "cic-schema-registry#154 (a szál, amit ez részlegesen feloldott)"
   - "theads/thead18.txt + thead18.meta.yaml (a findings eredete, két
     review-körrel helyesbítve)"

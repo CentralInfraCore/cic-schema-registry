@@ -21,9 +21,18 @@ NEM ez a szál hatóköre -- azok külön, ha/amikor sorra kerülnek.
    konkrét OCI-mechanizmus.
 
 3. `available_ip_count` description kiegészítve: explicit jelölve
-   DERIVED/COMPOSITION értékként (nincs közvetlen OCI-forrás, az
-   adapternek kell kiszámítania a `cidr_block` mérete és az allokált
-   VNIC-ek száma alapján).
+   DERIVED/COMPOSITION értékként. Első verzió (HELYESBÍTVE külső
+   review után): eredetileg egy konkrét (hibás) képletet írt le
+   ("`cidr_block` mérete mínusz allokált VNIC-ek száma") -- a review
+   rámutatott, hogy ez OCI-ra sem igaz: egy VNIC OCI-n akár 64
+   secondary private IP-t is hordozhat, és OCI subnetenként 3 címet
+   fenntart infrastruktúra-célra (network address, broadcast, default
+   gateway). Egy adapter-implementáló joggal olvasta volna
+   specifikációnak és számolt volna rosszul. Javítva: a description
+   most NEM ad meg konkrét algoritmust, csak azt mondja ki, hogy a
+   provider tényleges IP-allokációs nyilvántartásából kell
+   összeállítani -- nincs egyszerű, provider-független levezetési
+   képlet.
 
 == NetworkSpace.yaml ==
 
@@ -48,6 +57,28 @@ NEM ez a szál hatóköre -- azok külön, ha/amikor sorra kerülnek.
    volna. A helyes megoldás: megtartani, mint az egyik legitim,
    provider-specifikus DNS-mechanizmus megjelenését, capability-vel
    jelölve hogy nem univerzális.
+
+   HELYESBÍTVE külső review után: mindkét mezőről ELTÁVOLÍTVA a
+   `default` (`true`, illetve `false`). A review rámutatott egy
+   mélyebb, KERNEL-SZINTŰ konfliktusra: a `capability` mechanizmus MA
+   NEM FORMALIZÁLT (proposals/atom-grammar/README.md "Amit
+   szándékosan NEM zárok le") -- nincs grammar-szabály, ami
+   kikényszerítené, hogy egy nem-univerzális capability-jű mező
+   default-ja CSAK a capability-t ténylegesen támogató provider-eken
+   injektálódjon. Emiatt egy `default: true`/`default: false` egy
+   OCI-alapú intent-dokumentumba (ahol a kliens nem adott meg explicit
+   értéket, mert OCI-n nincs értelme) HAMISAN beledeklarálna egy
+   AWS-fogalmat, amit a provider nem is ismer -- "grammar-valid, de
+   szemantikailag nem bizonyított" eset, ugyanaz a mintaosztály, mint
+   a cic-primitives#11-ben (relációs invariáns hiánya) és a
+   thead12-ben (feltételes Contract) már dokumentált kifejezőerő-rések.
+   A `default` eltávolítása NEM oldja meg a kernel-szintű hiányt
+   (a capability-mechanizmus formalizálatlansága marad, EZ a szál nem
+   dönti el), csak megszünteti a KONKRÉT kockázatot ezen a két mezőn:
+   `optional`, `default` nélkül a hiányzás "nincs róla intent"-et
+   jelent, nem egy kitalált értéket. Ez már meglévő kerneladósság,
+   amit ez a PR nem talált ki, csak felszínre hozott -- nem ez a szál
+   dönti el, marad nyitva.
 
 3. Új `dns_label` mező (ugyanaz, mint a Subnet-en, `capability:
    dns_label`) -- a canonical cél TÖBB provider ELTÉRŐ DNS-

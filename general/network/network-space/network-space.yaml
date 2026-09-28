@@ -145,7 +145,6 @@ spec:
         scalar_type: boolean
         role: config
         optional: true
-        default: true
         capability: dns_toggles
         description: >
           Belső DNS feloldás engedélyezve-e a hálózati térben. AWS
@@ -154,7 +153,16 @@ spec:
           jelenléte/hiánya és a belső DNS-zóna implicit módon együtt
           jár a hálózati tér létezésével. `capability: dns_toggles`
           jelöli, hogy ez a mező-pár nem minden providernél
-          alkalmazható (thead18, #154).
+          alkalmazható (thead18, #154). SZÁNDÉKOSAN NINCS `default`
+          (külső review után, thead19): a `capability` mechanizmus ma
+          nem formalizált (proposals/atom-grammar/README.md "Amit
+          szándékosan NEM zárok le") és nem tudja kikényszeríteni,
+          hogy egy nem-univerzális capability-jű mező default-ja csak
+          a capability-t ténylegesen támogató provider-eken
+          injektálódjon -- egy `default` itt egy OCI-alapú intent-be
+          hamisan beledeklarálna egy AWS-fogalmat, amit a provider nem
+          is ismer. `optional`, `default` nélkül: hiányzás = nincs róla
+          intent, nem egy kitalált érték.
 
       - name: dns_hostnames_enabled
         atomic_ref: "cic:core:Shape@v0.2.0"
@@ -162,13 +170,13 @@ spec:
         scalar_type: boolean
         role: config
         optional: true
-        default: false
         capability: dns_toggles
         description: >
           Automatikus DNS hostname kiosztás engedélyezve-e. AWS
           VPC-stílusú fogalom (`enableDnsHostnames`) -- ugyanaz a
           korlát, mint `dns_support_enabled`-nél: OCI-n nincs
-          megfelelője, lásd ott.
+          megfelelője, lásd ott. Ugyanazon okból NINCS `default` itt
+          sem.
 
       - name: dns_label
         atomic_ref: "cic:core:Shape@v0.2.0"
