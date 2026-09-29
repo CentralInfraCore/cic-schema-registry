@@ -65,9 +65,16 @@ metadata:
         — emiatt NEM az "explicit full restatement, nincs implicit
         öröklés" elv (coverage.py check_coverage() docstring) alá
         tartozik, hanem a bázis `derivation_chain.restconf`-jával
-        RIVÁLIS, provider-specifikus fogalom. A #131 döntése szerint
-        ez a `provider_resources` mezőbe lett átvezetve (lásd lent) —
-        NEM hiányzó restatement, hanem tudatosan más mechanizmus.
+        ROKON, provider-specifikus fogalom. A `provider_resources` mező
+        (lásd lent) ugyanezt a kérdést válaszolja meg provider szinten
+        — DE a két mechanizmus egyesítése (közös forma, ha egyáltalán
+        indokolt) MA SZÁNDÉKOSAN NINCS eldöntve, egy második
+        provider-specializációig halasztva (lásd a provider_resources
+        mező saját kommentjét lent, "Megfigyelés, nem lezárt döntés").
+        Ami LEZÁRT: hogy derivation_chain maga schema-provenance, ezért
+        a hiánya itt NEM egy elmaradt restatement — csak az, hogy MI
+        legyen a helyette álló provider-szintű mechanizmus formája,
+        marad nyitott.
 
       - policy_surface: a bázis saját `inherit_policy: true` mezőt
         visel (general/storage/storage-resource/storage-resource.yaml)
