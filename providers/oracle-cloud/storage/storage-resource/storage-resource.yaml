@@ -53,17 +53,41 @@ metadata:
     valódi mechanizmuson fut majd le ellene.
 
     policy_surface / derivation_chain szándékosan NINCS itt
-    megismételve — ezeket tools/registrylib/coverage.py
-    `_NODE_LIST_KEYS`-e nem ellenőrzi (csak config_surface/
-    state_surface/operation_surface/notification_surface node-listáit),
-    tehát a hiányuk nem okoz coverage violationt még release után sem.
-    Ez viszont csak a tooling vakfoltja, nem architekturális döntés —
-    az "explicit full restatement, nincs implicit öröklés"
-    dokumentált elv (coverage.py check_coverage() docstring) szerint
-    ez a két surface is logikailag idetartozna. Nyitva hagyva:
-    derivation_chain restate-je cic-primitives#6 (domain-object
-    szemantika vs. schema-provenance) eldöntésétől függ — lásd
-    cic-schema-registry#131.
+    megismételve — mindkettő kívül esik tools/registrylib/coverage.py
+    `_NODE_LIST_KEYS`-ének ellenőrzésén (csak config_surface/
+    state_surface/operation_surface/notification_surface node-listáit
+    nézi), DE ez a tooling vakfoltja, nem önmagában elég indoklás — a
+    #131 (cic-schema-registry, LEZÁRVA 2026-09-29) mindkettőt egyenként
+    megvizsgálta:
+
+      - derivation_chain: cic-primitives#6 eldöntötte
+        (schema-provenance, NEM domain-object szemantika, lásd thead14)
+        — emiatt NEM az "explicit full restatement, nincs implicit
+        öröklés" elv (coverage.py check_coverage() docstring) alá
+        tartozik, hanem a bázis `derivation_chain.restconf`-jával
+        ROKON, provider-specifikus fogalom. A `provider_resources` mező
+        (lásd lent) ugyanezt a kérdést válaszolja meg provider szinten
+        — DE a két mechanizmus egyesítése (közös forma, ha egyáltalán
+        indokolt) MA SZÁNDÉKOSAN NINCS eldöntve, egy második
+        provider-specializációig halasztva (lásd a provider_resources
+        mező saját kommentjét lent, "Megfigyelés, nem lezárt döntés").
+        Ami LEZÁRT: hogy derivation_chain maga schema-provenance, ezért
+        a hiánya itt NEM egy elmaradt restatement — csak az, hogy MI
+        legyen a helyette álló provider-szintű mechanizmus formája,
+        marad nyitott.
+
+      - policy_surface: a bázis saját `inherit_policy: true` mezőt
+        visel (general/storage/storage-resource/storage-resource.yaml)
+        — ez a domain-modeler explicit deklarációja, hogy ez a surface
+        SZÁNDÉKOSAN implicit öröklődik, nem kér explicit restatement-et.
+        Ez ELTÉR binding_surface korábbi helyzetétől (aminek NEM volt
+        hasonló jelzése — pont ez volt az ambiguitás, ami a #131
+        binding_surface-javítását indokolta): itt a bázis maga oldja
+        fel az ambiguitást, az "explicit full restatement" elv ezért
+        nem alkalmazandó. A `tools/registrylib/`-ben semmi nem
+        FOGYASZTJA az `inherit_policy` mezőt kódszinten (csak
+        dokumentáció-szintű deklaráció ma), de ez a séma saját,
+        egyértelmű szándéknyilatkozata, amit tiszteletben tartunk.
 
     binding_surface VISZONT most már TELJESEN meg van ismételve (#131,
     thead12 — egy külső review helyesen mutatott rá, hogy egy RÉSZLEGES
