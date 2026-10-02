@@ -203,13 +203,21 @@ def _dc_enum_value_names(expression: Any) -> tuple[str, ...] | None:
 # occurrence is inherited unchanged from a base, not introduced by a
 # specialization, and its semantics (still readable/writable, warning
 # only) aren't obviously monotonic the way not_implemented's hard-reject
-# (D-012) is. A transition into or out of `deprecated` is not checked by
-# this function at all; only `not_implemented` on either side matters.
+# (D-012) is.
+#
+# D-017 left `deprecated`'s ordering *undefined*, not "proven fine in
+# either direction" -- so a transition touching it is NOT silently waved
+# through. A move FROM `deprecated` is still left alone (old_field_c /
+# old_value_c below only ever triggers on `not_implemented`, so
+# `deprecated` as the OLD side never reaches this check at all -- D-017
+# has nothing to say about it and this function doesn't invent anything).
+# A move INTO `deprecated` FROM `not_implemented`, however, is an
+# unproven transition the same as any other move away from
+# `not_implemented` that isn't `not_implemented` itself, so it is
+# rejected by the same `conformance_widened` branch as any other
+# un-narrowing -- fail closed on the undecided case rather than quietly
+# deciding it for D-017.
 _NARROWED_CONFORMANCE = "not_implemented"
-# A move into `deprecated` is never flagged as a widening, even coming from
-# not_implemented -- deprecated is out of D-017's normative scope entirely,
-# not a third conformance tier ordered between not_implemented and bare.
-_EXCLUDED_FROM_WIDENING = "deprecated"
 
 
 def _dc_enum_value_conformance(expression: Any) -> dict[Any, str | None] | None:
@@ -261,11 +269,7 @@ def _check_conformance_direction(
     shape/vocabulary comparison is conformance-blind by design, see
     _dc_enum_value_names, and does not see this direction at all)."""
     old_field_c, new_field_c = _conformance_of(old_node), _conformance_of(new_node)
-    if (
-        old_field_c == _NARROWED_CONFORMANCE
-        and new_field_c != _NARROWED_CONFORMANCE
-        and new_field_c != _EXCLUDED_FROM_WIDENING
-    ):
+    if old_field_c == _NARROWED_CONFORMANCE and new_field_c != _NARROWED_CONFORMANCE:
         result.violations.append(
             Violation(
                 field=name,
@@ -293,7 +297,6 @@ def _check_conformance_direction(
         if (
             old_value_c == _NARROWED_CONFORMANCE
             and new_value_c != _NARROWED_CONFORMANCE
-            and new_value_c != _EXCLUDED_FROM_WIDENING
         ):
             result.violations.append(
                 Violation(
@@ -353,6 +356,55 @@ def _shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
 # -> the working cic:core:<Name>@v0.2.0 pin, #125) changes zero actual
 # compatibility surface, so it must not by itself force a MAJOR bump.
 _DEEP_DIFF_IGNORE_KEYS = {"description", "atomic_ref", "aggregate_ref"}
+
+
+def _strip_conformance_for_deep_diff(node: dict[str, Any]) -> dict[str, Any]:
+    """Removes the conformance axis from a copy of `node` before it goes
+    into `_deep_diff()` — `_check_conformance_direction()` (above) is the
+    sole judge of whether a conformance change is legal, run
+    unconditionally before the deep/shallow branch either way; without
+    this, `_deep_diff()`'s generic structural comparison independently
+    re-flags the very transition D-017 just approved as a `mutated`
+    violation, because it has no concept of conformance at all:
+      - a bare enum value ('b') and its narrowed long form
+        ({value: 'b', conformance: not_implemented}) are a dict-vs-str
+        type mismatch at the list-element level, not a recognizable
+        no-op, so it reads as a structural change;
+      - a field gaining an `access: {conformance: not_implemented}`
+        block it didn't carry before reads as `access (added)`, a
+        whole-key addition, not a narrowing.
+    Reduces every enum contract entry's expression list to bare value
+    names (mirroring _dc_enum_value_names, but keeping list order rather
+    than sorting, since _deep_diff's list comparison is positional) and
+    drops `access.conformance` outright — leaving every other key
+    (access.modify/access/inherit/default_injection, any non-enum
+    contract entry, everything else) for `_deep_diff` to compare exactly
+    as before."""
+    node = dict(node)
+    access = node.get("access")
+    if isinstance(access, dict):
+        stripped_access = {k: v for k, v in access.items() if k != "conformance"}
+        if stripped_access:
+            node["access"] = stripped_access
+        else:
+            node.pop("access", None)
+    contract = node.get("contract")
+    if isinstance(contract, list):
+        new_contract = []
+        for entry in contract:
+            if isinstance(entry, dict) and entry.get("type") == "enum":
+                expression = entry.get("expression")
+                if isinstance(expression, list):
+                    entry = {
+                        **entry,
+                        "expression": [
+                            v["value"] if isinstance(v, dict) and "value" in v else v
+                            for v in expression
+                        ],
+                    }
+            new_contract.append(entry)
+        node["contract"] = new_contract
+    return node
 
 
 def _deep_diff(old_node: Any, new_node: Any, path: str = "") -> list[str]:
@@ -498,7 +550,10 @@ def check_coverage(
         _check_conformance_direction(name, old_node, new_node, result)
 
         if deep:
-            diffs = _deep_diff(old_node, new_node)
+            diffs = _deep_diff(
+                _strip_conformance_for_deep_diff(old_node),
+                _strip_conformance_for_deep_diff(new_node),
+            )
             if diffs:
                 result.violations.append(
                     Violation(

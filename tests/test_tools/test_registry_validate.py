@@ -154,7 +154,15 @@ def test_schema_evolution_grandfather_list_suppresses_only_the_named_case(
     """#94's grandfather list is keyed to (dir, old filename, new filename,
     field) exactly -- it must suppress the one real, already-reviewed case
     it names, and NOT suppress a same-shaped nested change on a different
-    field in the same transition."""
+    field in the same transition.
+
+    Uses a scalar_type change rather than an added `access.conformance`
+    block: cic-schema-registry#160/D-017 taught check_coverage(deep=True)
+    that an added/narrowed access.conformance is never a `mutated`
+    violation in the first place (it's a legal narrowing), so that kind
+    of change can no longer exercise the grandfather list at all -- a
+    genuine, unrelated shape mutation is needed to prove the suppression
+    is keyed to the named field and nothing else."""
     schema_dir = tmp_path / "general" / "storage" / "storage-resource"
     _write(
         schema_dir / "storage-resource.v0.1.2-src2026.yaml",
@@ -164,8 +172,10 @@ def test_schema_evolution_grandfather_list_suppresses_only_the_named_case(
         "    nodes:\n"
         "      - name: attached_to\n"
         "        shape_type: scalar\n"
+        "        scalar_type: string\n"
         "      - name: unrelated_field\n"
-        "        shape_type: scalar\n",
+        "        shape_type: scalar\n"
+        "        scalar_type: string\n",
     )
     _write(
         schema_dir / "storage-resource.v0.1.3-src2026.yaml",
@@ -175,10 +185,10 @@ def test_schema_evolution_grandfather_list_suppresses_only_the_named_case(
         "    nodes:\n"
         "      - name: attached_to\n"
         "        shape_type: scalar\n"
-        "        access: {conformance: not_implemented}\n"  # grandfathered
+        "        scalar_type: integer\n"  # grandfathered
         "      - name: unrelated_field\n"
         "        shape_type: scalar\n"
-        "        access: {conformance: not_implemented}\n",  # NOT grandfathered
+        "        scalar_type: integer\n",  # NOT grandfathered
     )
 
     problems, skipped = check_schema_evolution(tmp_path)

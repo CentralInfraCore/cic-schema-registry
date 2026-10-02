@@ -437,13 +437,14 @@ def test_contract_enum_value_widened_from_not_implemented_is_rejected():
     assert result2.violations[0].kind == "conformance_widened"
 
 
-def test_contract_enum_deprecated_transitions_are_never_checked():
-    """deprecated is explicitly out of scope for D-017 -- neither
-    not_implemented -> deprecated nor deprecated -> anything triggers a
-    conformance_widened violation. This is the corpus's own real shape:
-    StorageResourceOracleCloud.attached_to inherits `conformance:
-    deprecated` from the base unchanged; nothing here narrows via
-    deprecated."""
+def test_contract_enum_value_not_implemented_to_deprecated_is_rejected():
+    """deprecated's ordering is UNDEFINED by D-017, not proven safe in
+    either direction -- so a move away from not_implemented into
+    deprecated is fail-closed, rejected the same as any other
+    un-narrowing, rather than silently waved through. D-017 only ever
+    proved implemented/bare -> not_implemented; treating a move to
+    deprecated as an implicit "also fine" would be inventing derivation
+    semantics D-017 never established."""
     base = _doc(
         [
             {
@@ -482,12 +483,18 @@ def test_contract_enum_deprecated_transitions_are_never_checked():
             }
         ]
     )
-    # Not asserted "ok" -- vocabulary is unchanged either way, but this
-    # specific function's job is only to confirm no conformance_widened
-    # violation fires for a transition into/out of deprecated.
     result = check_coverage(base, to_deprecated, major_bump=False)
-    assert not any(v.kind == "conformance_widened" for v in result.violations)
+    assert not result.ok
+    assert result.violations[0].kind == "conformance_widened"
 
+
+def test_contract_enum_value_transitions_away_from_deprecated_are_never_checked():
+    """A move FROM deprecated (to anything) is not this function's call to
+    make -- D-017 never anchors a narrowing check on deprecated as the
+    OLD side, only on not_implemented. This is the corpus's own real
+    shape: StorageResourceOracleCloud.attached_to inherits `conformance:
+    deprecated` from the base unchanged; nothing in the corpus narrows
+    via deprecated."""
     already_deprecated = _doc(
         [
             {
@@ -517,10 +524,10 @@ def test_contract_enum_deprecated_transitions_are_never_checked():
             }
         ]
     )
-    result2 = check_coverage(
+    result = check_coverage(
         already_deprecated, widened_from_deprecated, major_bump=False
     )
-    assert not any(v.kind == "conformance_widened" for v in result2.violations)
+    assert not any(v.kind == "conformance_widened" for v in result.violations)
 
 
 def test_access_conformance_field_narrowed_to_not_implemented_is_allowed():
@@ -583,9 +590,11 @@ def test_access_conformance_field_widened_from_not_implemented_is_rejected():
     assert result2.violations[0].kind == "conformance_widened"
 
 
-def test_access_conformance_deprecated_transitions_are_never_checked():
-    """Same deprecated-is-out-of-scope rule as the contract.enum case,
-    applied to whole-field access.conformance."""
+def test_access_conformance_not_implemented_to_deprecated_is_rejected():
+    """Same fail-closed rule as the contract.enum case, applied to
+    whole-field access.conformance: D-017 never proved deprecated is a
+    safe landing spot for a field moving off not_implemented, so it is
+    rejected rather than silently allowed."""
     base = _doc(
         [
             {
@@ -607,6 +616,29 @@ def test_access_conformance_deprecated_transitions_are_never_checked():
         ]
     )
     result = check_coverage(base, to_deprecated, major_bump=False)
+    assert not result.ok
+    assert result.violations[0].kind == "conformance_widened"
+
+
+def test_access_conformance_transitions_away_from_deprecated_are_never_checked():
+    """Same as the contract.enum case: deprecated as the OLD side is not
+    this function's call to make, only not_implemented is."""
+    already_deprecated = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "deprecated"},
+            }
+        ]
+    )
+    widened_from_deprecated = _doc(
+        [{"name": "x", "shape_type": "scalar", "scalar_type": "string"}]
+    )
+    result = check_coverage(
+        already_deprecated, widened_from_deprecated, major_bump=False
+    )
     assert not any(v.kind == "conformance_widened" for v in result.violations)
 
 
@@ -635,6 +667,132 @@ def test_access_conformance_unchanged_not_implemented_is_fine():
     )
     result = check_coverage(base, same, major_bump=False)
     assert result.ok
+
+
+def test_contract_enum_value_narrowed_to_not_implemented_is_allowed_with_deep_true():
+    """check_schema_evolution (registry_validate.py) is the ONLY caller
+    that passes deep=True -- i.e. this is the path real same-schema
+    version bumps actually go through. Before
+    _strip_conformance_for_deep_diff(), this exact D-017-sanctioned
+    narrowing was a dict-vs-str type mismatch at the list-element level
+    ('b' vs {value: 'b', conformance: not_implemented}), which
+    _deep_diff() doesn't recognize as a no-op and flags as 'mutated' --
+    completely independent of, and contradicting, the
+    _check_conformance_direction() narrowing this same transition is
+    supposed to pass."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b", "c"]}],
+            }
+        ]
+    )
+    specialization = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "not_implemented"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    result = check_coverage(base, specialization, major_bump=False, deep=True)
+    assert result.ok
+
+
+def test_access_conformance_field_narrowed_to_not_implemented_is_allowed_with_deep_true():
+    """Same deep=True gap as the enum case, for whole-field
+    access.conformance: before _strip_conformance_for_deep_diff(), a
+    field newly gaining `access: {conformance: not_implemented}` read as
+    a top-level `access (added)` structural change to _deep_diff(), even
+    though _check_conformance_direction() already approves this exact
+    narrowing."""
+    base = _doc(
+        [{"name": "filesystem", "shape_type": "scalar", "scalar_type": "string"}]
+    )
+    specialization = _doc(
+        [
+            {
+                "name": "filesystem",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    result = check_coverage(base, specialization, major_bump=False, deep=True)
+    assert result.ok
+
+
+def test_access_conformance_widening_still_caught_with_deep_true():
+    """_strip_conformance_for_deep_diff() must not blind deep=True to an
+    illegal widening -- that's still _check_conformance_direction()'s
+    job, which runs unconditionally before the deep/shallow branch
+    either way."""
+    base = _doc(
+        [
+            {
+                "name": "filesystem",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    widened = _doc(
+        [{"name": "filesystem", "shape_type": "scalar", "scalar_type": "string"}]
+    )
+    result = check_coverage(base, widened, major_bump=False, deep=True)
+    assert not result.ok
+    assert result.violations[0].kind == "conformance_widened"
+
+
+def test_access_modify_change_still_caught_with_deep_true_alongside_conformance():
+    """_strip_conformance_for_deep_diff() strips only the `conformance`
+    sub-key -- a real, unrelated change to another `access` sub-field
+    (e.g. `modify`, the write-ACL) happening in the same field must still
+    surface as a deep-diff `mutated` violation, not get swept away along
+    with the conformance axis."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"modify": ["O=acme-corp"]},
+            }
+        ]
+    )
+    changed = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {
+                    "modify": ["O=other-corp"],
+                    "conformance": "not_implemented",
+                },
+            }
+        ]
+    )
+    result = check_coverage(base, changed, major_bump=False, deep=True)
+    assert not result.ok
+    assert result.violations[0].kind == "mutated"
+    assert "modify" in result.violations[0].message
 
 
 def test_conformance_direction_lifted_across_major_bump():
