@@ -162,6 +162,18 @@ _DEEP_DIFF_GRANDFATHER: set[tuple[str, str, str, str]] = {
     ),
     # Pre-#27-era additive fields (an `access` block, and a second
     # `detach` input parameter) from before this check existed.
+    #
+    # The `attached_to` entry below is now provably redundant for the real
+    # corpus: cic-schema-registry#160/D-017 taught check_coverage(deep=True)
+    # that an added/narrowed access.conformance is a legal narrowing, not a
+    # `mutated` violation, so this transition no longer needs grandfathering
+    # at all (verified: check_schema_evolution produces zero violations for
+    # it without this entry). Left in place as historical record and because
+    # removing it is not load-bearing either way -- a key that never matches
+    # is inert, not a risk. The test exercising grandfather-key *precision*
+    # (test_registry_validate.py) now uses an unrelated scalar_type mutation
+    # instead, since an access.conformance change can no longer demonstrate
+    # the suppression at all.
     (
         "general/storage/storage-resource",
         "storage-resource.v0.1.2-src2026.yaml",
