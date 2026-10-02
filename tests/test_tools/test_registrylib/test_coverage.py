@@ -327,6 +327,336 @@ def test_non_enum_contract_types_are_unaffected_by_enum_normalization():
     assert result.violations[0].kind == "mutated"
 
 
+# ── Conformance direction (cic-primitives D-017, cic-schema-registry#160) ───
+# D-017's one normative derivation direction: implemented/bare ->
+# not_implemented is allowed (narrowing); the reverse (un-narrowing) is not.
+# `deprecated` is deliberately excluded -- no corpus evidence it's even
+# monotonic, so it must never trigger these checks on either side.
+
+
+def test_contract_enum_value_narrowed_to_not_implemented_is_allowed():
+    """The positive case, mirroring StorageResourceOracleCloud.encryption_mode
+    exactly: a value moving from bare to not_implemented is the one
+    direction D-017 proves. Already covered by
+    test_contract_enum_not_implemented_value_still_counts_in_vocabulary for
+    the vocabulary side; this asserts it explicitly as the conformance-
+    direction positive fixture too."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b", "c"]}],
+            }
+        ]
+    )
+    specialization = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "not_implemented"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    result = check_coverage(base, specialization, major_bump=False)
+    assert result.ok
+
+
+def test_contract_enum_value_widened_from_not_implemented_is_rejected():
+    """The negative case D-017 identified as missing: a descendant
+    silently reversing an inherited not_implemented value back to usable
+    is caught, even though the plain vocabulary-name comparison
+    (_dc_enum_value_names) sees no difference at all between the two
+    sides -- both reduce to the same ('a', 'b', 'c') tuple."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "not_implemented"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    widened_to_bare = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b", "c"]}],
+            }
+        ]
+    )
+    result = check_coverage(base, widened_to_bare, major_bump=False)
+    assert not result.ok
+    assert result.violations[0].kind == "conformance_widened"
+
+    widened_to_implemented = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "implemented"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    result2 = check_coverage(base, widened_to_implemented, major_bump=False)
+    assert not result2.ok
+    assert result2.violations[0].kind == "conformance_widened"
+
+
+def test_contract_enum_deprecated_transitions_are_never_checked():
+    """deprecated is explicitly out of scope for D-017 -- neither
+    not_implemented -> deprecated nor deprecated -> anything triggers a
+    conformance_widened violation. This is the corpus's own real shape:
+    StorageResourceOracleCloud.attached_to inherits `conformance:
+    deprecated` from the base unchanged; nothing here narrows via
+    deprecated."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "not_implemented"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    to_deprecated = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "deprecated"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    # Not asserted "ok" -- vocabulary is unchanged either way, but this
+    # specific function's job is only to confirm no conformance_widened
+    # violation fires for a transition into/out of deprecated.
+    result = check_coverage(base, to_deprecated, major_bump=False)
+    assert not any(v.kind == "conformance_widened" for v in result.violations)
+
+    already_deprecated = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [
+                    {
+                        "type": "enum",
+                        "expression": [
+                            "a",
+                            {"value": "b", "conformance": "deprecated"},
+                            "c",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    widened_from_deprecated = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "contract": [{"type": "enum", "expression": ["a", "b", "c"]}],
+            }
+        ]
+    )
+    result2 = check_coverage(
+        already_deprecated, widened_from_deprecated, major_bump=False
+    )
+    assert not any(v.kind == "conformance_widened" for v in result2.violations)
+
+
+def test_access_conformance_field_narrowed_to_not_implemented_is_allowed():
+    """The positive case, mirroring StorageResourceOracleCloud.filesystem
+    and NetworkSpaceOracleCloud.dns_support_enabled/dns_hostnames_enabled:
+    a whole field gaining access.conformance: not_implemented that it
+    didn't carry in the base."""
+    base = _doc(
+        [{"name": "filesystem", "shape_type": "scalar", "scalar_type": "string"}]
+    )
+    specialization = _doc(
+        [
+            {
+                "name": "filesystem",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    result = check_coverage(base, specialization, major_bump=False)
+    assert result.ok
+
+
+def test_access_conformance_field_widened_from_not_implemented_is_rejected():
+    """The negative case D-017 identified as the real, unenforced gap:
+    access isn't in _SHAPE_KEYS at all, so before this check existed,
+    check_coverage() was completely blind to a descendant silently
+    dropping an inherited access.conformance: not_implemented -- falsely
+    claiming a capability the base said didn't exist."""
+    base = _doc(
+        [
+            {
+                "name": "filesystem",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    widened_to_absent = _doc(
+        [{"name": "filesystem", "shape_type": "scalar", "scalar_type": "string"}]
+    )
+    result = check_coverage(base, widened_to_absent, major_bump=False)
+    assert not result.ok
+    assert result.violations[0].kind == "conformance_widened"
+
+    widened_to_implemented = _doc(
+        [
+            {
+                "name": "filesystem",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "implemented"},
+            }
+        ]
+    )
+    result2 = check_coverage(base, widened_to_implemented, major_bump=False)
+    assert not result2.ok
+    assert result2.violations[0].kind == "conformance_widened"
+
+
+def test_access_conformance_deprecated_transitions_are_never_checked():
+    """Same deprecated-is-out-of-scope rule as the contract.enum case,
+    applied to whole-field access.conformance."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    to_deprecated = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "deprecated"},
+            }
+        ]
+    )
+    result = check_coverage(base, to_deprecated, major_bump=False)
+    assert not any(v.kind == "conformance_widened" for v in result.violations)
+
+
+def test_access_conformance_unchanged_not_implemented_is_fine():
+    """A field that stays not_implemented on both sides is unchanged, not
+    a narrowing or a widening -- must not fire."""
+    base = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    same = _doc(
+        [
+            {
+                "name": "x",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    result = check_coverage(base, same, major_bump=False)
+    assert result.ok
+
+
+def test_conformance_direction_lifted_across_major_bump():
+    """Consistent with every other coverage rule: a MAJOR bump lifts the
+    conformance-direction check too, same as vocabulary/field removal."""
+    base = _doc(
+        [
+            {
+                "name": "filesystem",
+                "shape_type": "scalar",
+                "scalar_type": "string",
+                "access": {"conformance": "not_implemented"},
+            }
+        ]
+    )
+    widened = _doc(
+        [{"name": "filesystem", "shape_type": "scalar", "scalar_type": "string"}]
+    )
+    result = check_coverage(base, widened, major_bump=True)
+    assert result.ok
+
+
 # ── YANGBlock dialect (#28, #45) ────────────────────────────────────────────
 
 

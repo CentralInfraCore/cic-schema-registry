@@ -78,7 +78,7 @@ _ACKNOWLEDGED_CONFORMANCE = {"not_implemented", "deprecated"}
 @dataclass
 class Violation:
     field: str
-    kind: str  # "missing" | "mutated"
+    kind: str  # "missing" | "mutated" | "conformance_widened"
     message: str
 
 
@@ -195,6 +195,118 @@ def _dc_enum_value_names(expression: Any) -> tuple[str, ...] | None:
         else:
             return None  # malformed -- let the raw comparison below catch it
     return _sorted_enum_value_names(names)
+
+
+# The one conformance direction cic-primitives D-017 found real corpus
+# evidence for: implemented/bare -> not_implemented. `deprecated` is
+# deliberately NOT a narrowing anchor here -- D-017 found its one corpus
+# occurrence is inherited unchanged from a base, not introduced by a
+# specialization, and its semantics (still readable/writable, warning
+# only) aren't obviously monotonic the way not_implemented's hard-reject
+# (D-012) is. A transition into or out of `deprecated` is not checked by
+# this function at all; only `not_implemented` on either side matters.
+_NARROWED_CONFORMANCE = "not_implemented"
+# A move into `deprecated` is never flagged as a widening, even coming from
+# not_implemented -- deprecated is out of D-017's normative scope entirely,
+# not a third conformance tier ordered between not_implemented and bare.
+_EXCLUDED_FROM_WIDENING = "deprecated"
+
+
+def _dc_enum_value_conformance(expression: Any) -> dict[Any, str | None] | None:
+    """Per-value conformance map for a `contract: type: enum` entry's
+    `expression` list -- the counterpart to _dc_enum_value_names() that
+    keeps the conformance _dc_enum_value_names() deliberately drops, so
+    _check_conformance_direction() (below) can check the one direction
+    D-017 makes normative without disturbing _dc_enum_value_names()'s own
+    conformance-blind vocabulary comparison. Returns None for a malformed
+    expression, mirroring _dc_enum_value_names()."""
+    if not isinstance(expression, list):
+        return None
+    out: dict[Any, str | None] = {}
+    for entry in expression:
+        if isinstance(entry, str):
+            out[entry] = None
+        elif isinstance(entry, dict) and "value" in entry:
+            out[entry["value"]] = entry.get("conformance")
+        else:
+            return None
+    return out
+
+
+def _enum_contract_expression(contract: Any) -> Any:
+    """The first `type: enum` entry's `expression` in a field's `contract`
+    list, or None if the field has no enum contract (it may have another
+    contract type instead, or none at all)."""
+    if not isinstance(contract, list):
+        return None
+    for entry in contract:
+        if isinstance(entry, dict) and entry.get("type") == "enum":
+            return entry.get("expression")
+    return None
+
+
+def _check_conformance_direction(
+    name: str,
+    old_node: dict[str, Any],
+    new_node: dict[str, Any],
+    result: CoverageResult,
+) -> None:
+    """D-017 (cic-primitives): the only normative conformance-direction
+    move is implemented/bare -> not_implemented, for both whole-field
+    `access.conformance` and per-value `contract.enum` conformance. The
+    reverse (un-narrowing -- a descendant silently claiming a capability
+    the base marked not_implemented) is a Liskov violation for any
+    base-typed caller that already treats the value/field as unusable;
+    this is the check D-017 identified as missing (coverage.py's existing
+    shape/vocabulary comparison is conformance-blind by design, see
+    _dc_enum_value_names, and does not see this direction at all)."""
+    old_field_c, new_field_c = _conformance_of(old_node), _conformance_of(new_node)
+    if (
+        old_field_c == _NARROWED_CONFORMANCE
+        and new_field_c != _NARROWED_CONFORMANCE
+        and new_field_c != _EXCLUDED_FROM_WIDENING
+    ):
+        result.violations.append(
+            Violation(
+                field=name,
+                kind="conformance_widened",
+                message=(
+                    f"field '{name}' was access.conformance: not_implemented in "
+                    "the base and is not here — conformance may only narrow "
+                    "(implemented -> not_implemented), never widen back"
+                ),
+            )
+        )
+
+    old_conf = (
+        _dc_enum_value_conformance(_enum_contract_expression(old_node.get("contract")))
+        or {}
+    )
+    new_conf = (
+        _dc_enum_value_conformance(_enum_contract_expression(new_node.get("contract")))
+        or {}
+    )
+    for value, old_value_c in old_conf.items():
+        if value not in new_conf:
+            continue  # removed outright -- a vocabulary mutation, caught elsewhere
+        new_value_c = new_conf[value]
+        if (
+            old_value_c == _NARROWED_CONFORMANCE
+            and new_value_c != _NARROWED_CONFORMANCE
+            and new_value_c != _EXCLUDED_FROM_WIDENING
+        ):
+            result.violations.append(
+                Violation(
+                    field=name,
+                    kind="conformance_widened",
+                    message=(
+                        f"field '{name}' value {value!r} was conformance: "
+                        "not_implemented in the base and is not here — "
+                        "conformance may only narrow (implemented -> "
+                        "not_implemented), never widen back"
+                    ),
+                )
+            )
 
 
 def _normalize_contract(contract: Any) -> Any:
@@ -382,6 +494,8 @@ def check_coverage(
 
         if major_bump:
             continue
+
+        _check_conformance_direction(name, old_node, new_node, result)
 
         if deep:
             diffs = _deep_diff(old_node, new_node)
