@@ -6,6 +6,7 @@ from tools.registry_validate import (
     _kernel_required_slots,
     _parse_min_schemas,
     check_base_references,
+    check_certpattern_lists,
     check_schema_evolution,
     check_src_year_identity,
     check_yang_extends,
@@ -883,3 +884,29 @@ def test_check_yang_extends_flags_a_pin_to_a_nonexistent_base_version(tmp_path):
     assert len(problems) == 1
     assert "v9.9.9" in problems[0]
     assert "no matching content version" in problems[0]
+
+
+def test_certpattern_check_flags_ambiguous_current_file_and_skips_frozen(tmp_path):
+    bad = "spec:\n  policy_surface:\n    surface_rules:\n      - surface: s\n        modify: [OU=adapters, O=cic]\n"
+    _write(tmp_path / "general" / "x" / "x" / "x.yaml", bad)
+    _write(tmp_path / "general" / "x" / "x" / "x.v0.1.0-src2026.yaml", bad)
+    problems, skipped = check_certpattern_lists(tmp_path)
+    assert len(problems) == 1 and "x.yaml:5" in problems[0]
+    assert len(skipped) == 1 and "frozen" in skipped[0]
+
+
+def test_certpattern_check_accepts_single_pattern_and_deliberate_or(tmp_path):
+    good = (
+        "spec:\n  policy_surface:\n    surface_rules:\n"
+        '      - surface: s\n        modify: ["OU=adapters,O=cic"]\n'
+        '      - surface: t\n        access: ["O=a", "O=b"]\n'
+    )
+    _write(tmp_path / "general" / "x" / "x" / "x.yaml", good)
+    assert check_certpattern_lists(tmp_path) == ([], [])
+
+
+def test_certpattern_check_rejects_a_non_pattern_element(tmp_path):
+    bad = "spec:\n  policy_surface:\n    surface_rules:\n      - surface: s\n        modify: [inherit]\n"
+    _write(tmp_path / "general" / "x" / "x" / "x.yaml", bad)
+    problems, _ = check_certpattern_lists(tmp_path)
+    assert any("not a CertPattern" in p for p in problems)
