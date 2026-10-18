@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI entrypoint for the registry-specific checks (proposals/schema-registry).
 
-Five independent checks, all driven purely by walking general/standards/
+Six independent checks, all driven purely by walking general/standards/
 providers — no committed index:
 
 1. schema evolution — within each schema's own directory, every step from
@@ -48,6 +48,15 @@ providers — no committed index:
    signed under a different tool's envelope (the cic-primitives kernel
    bundle) is reported SKIPPED, not a violation.
 
+6. CertPattern list hygiene (security) -- an unquoted flow list with two or
+   more elements in an `access`/`modify` value (`[OU=adapters, O=cic]`) is
+   two OR-ed patterns to YAML, not one pattern with two attributes, and
+   silently widens the permission. It is flagged in every current file;
+   frozen, already-released `-src<year>` files are reported SKIPPED
+   (they cannot be edited; the fix is a new release). Parsed policy
+   surface rules must also hold valid CertPattern strings
+   (tools/registrylib/certpattern.py).
+
 This does NOT replace `tools/compiler.py validate` (the inherited, bundle-
 oriented meta-schema check) — it is additive, and is not yet wired into
 `make validate`. See CLAUDE.md "Jelenlegi, valódi állapot".
@@ -63,6 +72,7 @@ import yaml
 
 from .registrylib.bundle import find_kernel_type
 from .registrylib.bundle import is_bundle as _is_bundle
+from .registrylib.certpattern import ambiguous_flow_lists, is_valid_pattern
 from .registrylib.coverage import (
     check_coverage,
     extract_fields,
@@ -544,6 +554,60 @@ def check_release_signatures(registry_root: Path) -> tuple[list[str], list[str]]
     return problems, skipped
 
 
+_FROZEN_VERSION_FILE = re.compile(r"\.v\d+\.\d+\.\d+-src\d{4}\.yaml$")
+
+
+def check_certpattern_lists(registry_root: Path) -> tuple[list[str], list[str]]:
+    """Security: every `access`/`modify` list must spell its CertPatterns
+    unambiguously (see tools/registrylib/certpattern.py). Frozen versioned
+    files that still carry the ambiguous form are SKIPPED, not failed: the
+    -src<year> files are immutable, so the correction is a new release."""
+    problems: list[str] = []
+    skipped: list[str] = []
+    for tier in ("general", "standards", "providers"):
+        tier_dir = registry_root / tier
+        if not tier_dir.is_dir():
+            continue
+        for path in sorted(tier_dir.rglob("*.yaml")):
+            text = path.read_text()
+            hits = ambiguous_flow_lists(text)
+            if hits and _FROZEN_VERSION_FILE.search(path.name):
+                skipped.append(
+                    f"{path}: {len(hits)} ambiguous CertPattern flow list(s) in a "
+                    "frozen released file; fixing it needs a new release"
+                )
+            else:
+                for number, line in hits:
+                    problems.append(
+                        f"{path}:{number}: ambiguous unquoted CertPattern list "
+                        f"`{line}` -- quote each pattern: one pattern is "
+                        '"OU=adapters,O=cic", an OR is ["O=a", "O=b"]'
+                    )
+            if "PolicySurface" in text or "policy_surface" in text:
+                try:
+                    doc = _load(path)
+                except yaml.YAMLError:
+                    continue
+                rules = (
+                    ((doc.get("spec") or {}).get("policy_surface", {}) or {}).get(
+                        "surface_rules", []
+                    )
+                    if isinstance(doc, dict)
+                    else []
+                )
+                for rule in rules if isinstance(rules, list) else []:
+                    for op in ("access", "modify"):
+                        value = rule.get(op) if isinstance(rule, dict) else None
+                        if isinstance(value, list):
+                            for item in value:
+                                if not is_valid_pattern(item):
+                                    problems.append(
+                                        f"{path}: surface rule {op} holds "
+                                        f"{item!r}, not a CertPattern"
+                                    )
+    return problems, skipped
+
+
 def _parse_min_schemas(argv: list[str]) -> int:
     """--min-schemas=N — a floor on how many schema directories this run
     must have scanned, so an accidentally-empty or broken checkout (wrong
@@ -584,12 +648,14 @@ def main(argv: list[str] | None = None) -> int:
     base_problems, base_skipped = check_base_references(registry_root)
     extends_problems, extends_skipped = check_yang_extends(registry_root)
     signature_problems, signature_skipped = check_release_signatures(registry_root)
+    certpattern_problems, certpattern_skipped = check_certpattern_lists(registry_root)
     problems = (
         evolution_problems
         + src_year_problems
         + base_problems
         + extends_problems
         + signature_problems
+        + certpattern_problems
     )
     skipped = (
         evolution_skipped
@@ -597,6 +663,7 @@ def main(argv: list[str] | None = None) -> int:
         + base_skipped
         + extends_skipped
         + signature_skipped
+        + certpattern_skipped
     )
 
     if skipped:

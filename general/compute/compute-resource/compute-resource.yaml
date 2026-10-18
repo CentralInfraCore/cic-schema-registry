@@ -65,7 +65,7 @@ spec:
     default_modify: owner
     surface_rules:
       - surface: state_surface
-        modify: [OU=adapters, O=cic]
+        modify: ["OU=adapters,O=cic"]
       - surface: config_surface
         access: [O=owner]
         modify: [O=owner]
