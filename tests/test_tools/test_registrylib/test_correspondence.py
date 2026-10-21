@@ -124,7 +124,9 @@ def test_secondary_cidr_blocks_are_mapped_but_not_emitted_by_fixture_v1(doc):
 
 def test_the_lifecycle_table_equals_the_fixture_table(doc):
     table = next(
-        m for m in doc["spec"]["mappings"] if m["target"] == "state_surface.lifecycle_state"
+        m
+        for m in doc["spec"]["mappings"]
+        if m["target"] == "state_surface.lifecycle_state"
     )
     fixture = _json("lifecycle-map.json")
     assert table["value_map"] == fixture["map"]
@@ -137,7 +139,9 @@ def test_an_oci_state_the_table_does_not_know_is_unknown_not_a_guess(doc):
     got = cor.apply(doc, oci, {}, _emit_config())
     assert got["state"]["lifecycle_state"] == "unknown"
     oci["state"]["lifecycleState"] = 7
-    assert cor.apply(doc, oci, {}, _emit_config())["state"]["lifecycle_state"] == "unknown"
+    assert (
+        cor.apply(doc, oci, {}, _emit_config())["state"]["lifecycle_state"] == "unknown"
+    )
 
 
 def test_every_value_of_the_table_is_in_the_schema_enum():
@@ -148,10 +152,7 @@ def test_every_value_of_the_table_is_in_the_schema_enum():
         if n["name"] == "lifecycle_state"
     )
     allowed = {
-        v
-        for c in node["contract"]
-        if c["type"] == "enum"
-        for v in c["expression"]
+        v for c in node["contract"] if c["type"] == "enum" for v in c["expression"]
     }
     assert allowed == {"pending", "available", "deleting", "deleted", "unknown"}
     table = _json("lifecycle-map.json")
@@ -208,9 +209,7 @@ def test_the_known_gaps_are_recorded(doc):
 
 def test_every_oci_field_the_fixture_reports_is_mapped_or_declared(doc):
     """Nothing the OCI answers with is silently dropped."""
-    mapped = {
-        m["source"]["field"] for m in doc["spec"]["mappings"] if "source" in m
-    }
+    mapped = {m["source"]["field"] for m in doc["spec"]["mappings"] if "source" in m}
     declared = {f["field"] for f in doc["spec"]["unmapped_provider_fields"]}
     seen = set()
     for case in CASES:
@@ -247,7 +246,13 @@ def test_a_broken_file_is_reported(doc):
 )
 def test_each_structural_defect_is_reported(doc, mutate):
     bad = copy.deepcopy(doc)
-    mutate(next(m for m in bad["spec"]["mappings"] if m["target"] == "config_surface.dns_label"))
+    mutate(
+        next(
+            m
+            for m in bad["spec"]["mappings"]
+            if m["target"] == "config_surface.dns_label"
+        )
+    )
     assert cor.check_structure(bad)
 
 
