@@ -1,0 +1,168 @@
+# A NetworkSpaceOracleCloud (cic:network:NetworkSpaceOracleCloud@v0.1.0) mező-szintű megfeleltetése az OCI VCN (core.Vcn)
+# valós GetVcn-válaszára. Második worked example a StorageResourceOracleCloud mellett.
+#
+# #134 (thead17) továbbra is érvényes: ez a fájl DOKUMENTÁCIÓS KONVENCIÓ, nincs meta-séma, a registry_validate/coverage.py nem
+# olvassa. Új: a `rule:` kulcsok egy szándékosan kicsi, TESZT-célú szókészletet adnak (tools/registrylib/correspondence.py), hogy
+# a megfeleltetés a közös VCN-fixture (tests/fixtures/vcn-v1, 4. szakasz) ellen futtatható legyen. Ez nem bevezetése egy
+# validációs rétegnek és nem codegen-forrás: a futó precedens a cic-module-oracle-cloud/module/correspondence.go.
+---
+metadata:
+  name: NetworkSpaceOracleCloudCorrespondence
+  version: v0.1.dev
+  description: >
+    Mit jelent a NetworkSpaceOracleCloud egy mezője az OCI VCN-en, és hogyan kell az OCI-oldali megfigyelt állapotból
+    (az OCI modul normalizálásának kimenete: effective_config + state + coverage, OCI-nevekkel) a registry-oldali megfigyelt
+    állapotot előállítani. A fájl az `Intent -> Observed -> Conformance -> Evidence` szelet 4. szakasza.
+
+    Szabályok, amiket a fixture rögzít és a teszt ellenőriz:
+      - A registry-mező coverage-e a forrásmezőé (`coverage_from`); a megfeleltetés NEM javít a coverage-en. Ha a forrás nem
+        `observed`, a registry-mezőnek nincs értéke, csak a coverage-e.
+      - A `tags` elemszintű útvonalai (`/tags/{key=K}/value`) a szándék kulcsaira képződnek, a `freeformTags` coverage-ével.
+      - A lifecycle-leképezésnek nincs néma alapértéke: ami nincs a táblában, `unknown`. Az OCI `UPDATING` állapotnak NINCS
+        megfelelője a séma `lifecycle_state` enumjában (pending|available|deleting|deleted|unknown), ezért `unknown`-ra
+        képződik — ez ismert rés (lásd `gaps`), nem hallgatólagos döntés.
+      - Provider-oldali mezők, amiknek nincs sémamezője (compartmentId, displayName, definedTags, ...), kifejezetten
+        `unmapped_provider_fields`-ben vannak; sémamezők, amiknek nincs (vagy ebben a szeletben nincs) OCI-megfelelőjük,
+        `unmapped_schema_fields`-ben. Semmi nincs "elfelejtve": a teszt minden séma-config/state mezőt számon kér.
+  owner: Gabor Zoltan Sinko
+  tags:
+    - provider-correspondence
+    - network
+    - oracle-cloud
+  # Szándékosan NINCS `validatedBy` — ugyanazért, mint a StorageResourceOracleCloud megfelelésénél (PR #153): `kind:
+  # ProviderCorrespondence` nincs a grammar által ismert kind-ok között, semmi nem ellenőrzi ezt a fájlt a registry-ben.
+
+spec:
+  kind: ProviderCorrespondence
+  provider: oracle-cloud
+  canonical: "cic:network:NetworkSpaceOracleCloud@v0.1.0"
+  provider_resources:
+    - core.Vcn
+
+  # Az OCI-oldali bemenet alakja (az oracle modul normalizálása; a fixture `expected/observed.oci.json`): három rész.
+  observed_input:
+    effective_config: "a módosítható/létrehozáskor megadott mezők, ahogy a GetVcn visszaadja (cidrBlocks, dnsLabel, ...)"
+    state: "provider-számított mezők (id, lifecycleState, ipv6CidrBlocks)"
+    coverage: "OCI-útvonal -> observed|absent|unobserved|unknown (pl. /cidrBlocks)"
+
+  mappings:
+
+    # ── ConfigSurface ───────────────────────────────────────────────────────
+    - target: config_surface.cidr_block
+      kind: transform
+      rule: first
+      source: {side: effective_config, field: cidrBlocks}
+      coverage_from: /cidrBlocks
+      note: az OCI cidrBlocks[0] az elsődleges blokk; a `cidrBlock` (egyes szám) elavult.
+
+    - target: config_surface.secondary_cidr_blocks
+      kind: transform
+      rule: rest
+      source: {side: effective_config, field: cidrBlocks}
+      coverage_from: /cidrBlocks
+      emit_in_fixture_v1: false
+      note: >
+        cidrBlocks[1:]. A fixture v1 tervében (plan.json) NINCS, ezért a 4. szakasz kimenetében sem szerepel; a megfeleltetés
+        létezik, a fixture nem ellenőrzi.
+
+    - target: config_surface.ipv6_enabled
+      kind: derived
+      rule: direct
+      source: {side: effective_config, field: isIpv6Enabled}
+      coverage_from: /isIpv6Enabled
+      note: >
+        Az OCI VCN-nek nincs "ipv6 bekapcsolva" mezője: az oracle modul levezeti az ipv6CidrBlocks nem-üres voltából
+        (bool-from-nonempty). Ha az ipv6CidrBlocks nincs a válaszban, az érték nem állítható elő -> coverage `unobserved`,
+        sosem `false`.
+
+    - target: config_surface.dns_support_enabled
+      kind: unsupported
+      note: az OCI VCN-en nincs ilyen mező; a séma szerint access.conformance not_implemented.
+
+    - target: config_surface.dns_hostnames_enabled
+      kind: unsupported
+      note: az OCI VCN-en nincs ilyen mező; a séma szerint access.conformance not_implemented.
+
+    - target: config_surface.dns_label
+      kind: direct
+      rule: direct
+      source: {side: effective_config, field: dnsLabel}
+      coverage_from: /dnsLabel
+      note: az OCI `dnsLabel` hiánya/null-ja "nincs beállítva" -> coverage `absent` (authoritatív), nem `unknown`.
+
+    - target: config_surface.tags
+      kind: transform
+      rule: map_to_list
+      source: {side: effective_config, field: freeformTags}
+      key_field: key
+      value_field: value
+      coverage_from: /freeformTags
+      coverage_elements:
+        template: "/tags/{key=<key>}/value"
+        intent_field: tags
+        intent_key: key
+      note: >
+        freeformTags (map) -> [{key, value}] kulcs szerint rendezve. A definedTags (névtér.kulcs) ebben a szeletben nincs
+        leképezve (lásd unmapped_provider_fields).
+
+    # ── StateSurface ────────────────────────────────────────────────────────
+    - target: state_surface.lifecycle_state
+      kind: transform
+      rule: value_map
+      source: {side: state, field: lifecycleState}
+      value_map:
+        PROVISIONING: pending
+        AVAILABLE: available
+        UPDATING: unknown
+        TERMINATING: deleting
+        TERMINATED: deleted
+      default: unknown
+      note: kisbetűs séma-enum <- nagybetűs OCI-érték; az UPDATING-nek nincs megfelelője (gaps[0]).
+
+    - target: state_surface.ipv6_cidr_blocks
+      kind: direct
+      rule: direct
+      source: {side: state, field: ipv6CidrBlocks}
+
+    - target: state_surface.subnet_count
+      kind: composition
+      note: >
+        Nem a VCN-ből jön: a ListSubnets (vcnId szűrővel) találatainak száma. Egy második OCI-hívás eredménye, ebben a
+        szeletben nincs megfigyelve.
+
+  # Sémamezők, amiknek ebben a szeletben nincs értékük a 4. szakaszban (a `mappings`-ben `unsupported`/`composition`).
+  unmapped_schema_fields:
+    - config_surface.dns_support_enabled
+    - config_surface.dns_hostnames_enabled
+    - state_surface.subnet_count
+
+  # OCI GetVcn-mezők, amiknek nincs sémamezőjük a NetworkSpaceOracleCloud v0.1.0-ban.
+  unmapped_provider_fields:
+    - {field: id, note: "a VCN OCID-ja: a binding_surface kulcsa (`id`), nem config/state mező"}
+    - {field: compartmentId, note: "nincs sémamező; az OCI-n kötelező a létrehozáskor. Lásd gaps[1]"}
+    - {field: displayName, note: "nincs sémamező. Lásd gaps[1]"}
+    - {field: definedTags, note: "névtér.kulcs szerkezetű címkék; a sémában csak a szabad címke (tags) van"}
+    - {field: defaultRouteTableId, note: "az alapértelmezett erőforrások azonosítói; nem a VCN konfigurációja"}
+    - {field: defaultSecurityListId, note: "uo."}
+    - {field: defaultDhcpOptionsId, note: "uo."}
+    - {field: timeCreated, note: "audit-mező, nem konfiguráció"}
+    - {field: isZprOnly, note: "ZPR; nincs sémamező"}
+    - {field: securityAttributes, note: "ZPR; nincs sémamező"}
+    - {field: byoipv6CidrBlocks, note: "BYOIP IPv6; nincs sémamező"}
+
+  # Ismert hiányok a sémában (a v0.1.0 alá van írva; módosítása új verzió + aláírás, ezért itt csak jelezzük).
+  gaps:
+    - id: lifecycle-updating
+      what: >
+        Az OCI VCN lifecycleState értékei: PROVISIONING, AVAILABLE, UPDATING, TERMINATING, TERMINATED. A séma
+        `lifecycle_state` enumja (pending|available|deleting|deleted|unknown) az UPDATING-et nem tudja megnevezni.
+      proposal: >
+        Új sémaverzió (v0.1.1) `updating` taggal az enumban, aláírással; addig az UPDATING -> `unknown`, ami a verdiktben
+        UNOBSERVED-et ad, nem CONFORMANT-ot.
+    - id: compartment-and-display-name
+      what: >
+        A `compartmentId` az OCI-n kötelező mező, a `displayName` az egyetlen ember által olvasható név; a sémának egyik sincs
+        config_surface mezője, így a szándék nem tudja kifejezni, és a megfigyelés sem hasonlítható hozzá.
+      proposal: >
+        Új sémaverzió `compartment_id` (kötelező, scalar string, role identity) és `display_name` (opcionális) config
+        mezőkkel; addig provider-oldali, szándékon kívüli mezők (unmapped_provider_fields).
