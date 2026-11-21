@@ -1,0 +1,9 @@
+# docgate exclusions (tools/docgate/docgate.py): fnmatch globs of repository-relative paths.
+# Each entry is documented elsewhere or must not change; see the reason above it.
+
+# Template copies identical to base-repo's base flavor, documented there.
+tools/__init__.py
+tools/finalize_release.py
+tools/releaselib/__init__.py
+tools/releaselib/exceptions.py
+tools/releaselib/git_service.py
