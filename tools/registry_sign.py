@@ -48,6 +48,9 @@ AUTHOR_EMAIL = "sinkog@centralinfracore.hu"
 def _fetch_author_certificate(
     vault_addr: str, vault_token: str, cert_path: str, vault_ca_file: Path
 ) -> str:
+    """Read the author's certificate PEM from Vault KV (the entry's single field, whatever
+    its name); RuntimeError if Vault reports errors.
+    """
     resp = requests.get(
         f"{vault_addr.rstrip('/')}/v1/{cert_path}",
         headers={"X-Vault-Token": vault_token},
@@ -67,6 +70,11 @@ def _fetch_author_certificate(
 
 
 def main(argv: list[str]) -> int:
+    """Sign one schema file: compute its build hash, have the author's Vault key sign it,
+    obtain the CIC countersignature over mTLS through vault-mtls-client, and append the
+    signature blocks to the file. Returns 2 on a usage error and 1 on any failure,
+    including a file that is already signed.
+    """
     if len(argv) != 2:
         print(__doc__)
         return 2

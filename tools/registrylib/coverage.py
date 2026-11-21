@@ -77,6 +77,10 @@ _ACKNOWLEDGED_CONFORMANCE = {"not_implemented", "deprecated"}
 
 @dataclass
 class Violation:
+    """One coverage problem of a field - missing, mutated or conformance widened - with its
+    message.
+    """
+
     field: str
     kind: str  # "missing" | "mutated" | "conformance_widened"
     message: str
@@ -84,10 +88,13 @@ class Violation:
 
 @dataclass
 class CoverageResult:
+    """The violations a coverage check found; ``ok`` when there are none."""
+
     violations: list[Violation] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
+        """Whether no violation was found."""
         return not self.violations
 
     def __bool__(self) -> bool:  # pragma: no cover - convenience only
@@ -95,6 +102,7 @@ class CoverageResult:
 
 
 def _spec_of(doc: dict[str, Any]) -> dict[str, Any]:
+    """The ``spec`` block of a schema document, {} if it has none."""
     return doc.get("spec", {}) or {}
 
 
@@ -139,6 +147,7 @@ def extract_fields(doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _conformance_of(node: dict[str, Any]) -> str | None:
+    """The ``access.conformance`` value of a field node, or None."""
     access = node.get("access")
     if isinstance(access, dict):
         return access.get("conformance")
@@ -332,6 +341,9 @@ def _normalize_contract(contract: Any) -> Any:
 
 
 def _shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
+    """The compatibility-relevant shape of a field - shape type, scalar type, collection
+    variant and normalized contract - as a comparable tuple.
+    """
     return tuple(
         _normalize_contract(node[k]) if k == "contract" and k in node else node.get(k)
         for k in _SHAPE_KEYS
@@ -439,6 +451,7 @@ def _deep_diff(old_node: Any, new_node: Any, path: str = "") -> list[str]:
 
 
 def _is_required(node: dict[str, Any]) -> bool:
+    """Whether a field must be set - mandatory, or required on create."""
     return node.get("mandatory") is True or node.get("required_on_create") is True
 
 
@@ -688,6 +701,10 @@ _YANG_SHAPE_KEY_DEFAULTS: dict[str, Any] = {"required_on_create": False}
 
 
 def yang_shape_signature(node: dict[str, Any]) -> tuple[Any, ...]:
+    """The comparable shape of a YANG field: its shape keys (with defaults) plus its enum
+    value names in an order-independent form, or the raw ``values`` when they cannot be
+    normalized.
+    """
     sig = tuple(node.get(k, _YANG_SHAPE_KEY_DEFAULTS.get(k)) for k in _YANG_SHAPE_KEYS)
     values = node.get("values")
     normalized = _yang_enum_value_names(values)

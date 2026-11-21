@@ -42,8 +42,12 @@ type vaultSigner struct {
 	keyVersion string // set by Sign(), from Vault's own "vault:vN:" prefix
 }
 
+// Public returns the public key of the signer certificate.
 func (s *vaultSigner) Public() crypto.PublicKey { return s.pub }
 
+// Sign has Vault Transit sign the prehashed SHA-256 digest and returns the DER signature without
+// the vault:vN: envelope, recording the key version Vault reported; the private key never leaves
+// Vault.
 func (s *vaultSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([]byte, error) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"input":          base64.StdEncoding.EncodeToString(digest),
@@ -92,6 +96,7 @@ func (s *vaultSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([]b
 	return der, nil
 }
 
+// vaultCAPool loads a CA bundle; the program exits if it cannot be read or holds no certificate.
 func vaultCAPool(path string) *x509.CertPool {
 	pool := x509.NewCertPool()
 	b, err := os.ReadFile(path)
@@ -104,6 +109,9 @@ func vaultCAPool(path string) *x509.CertPool {
 	return pool
 }
 
+// main signs BUILD_HASH with the developer's Vault key, then sends the countersign request to
+// countersign-server over mTLS, with the client certificate's private-key operation delegated to
+// the same Vault key, and prints the response.
 func main() {
 	// --- Vault holding the real developer identity key (cic-my-sign-key) ---
 	devVaultAddr := os.Getenv("DEV_VAULT_ADDR")
@@ -202,6 +210,7 @@ func main() {
 	fmt.Printf("HTTP_STATUS=%d\n%s\n", resp.StatusCode, respBody)
 }
 
+// envOr returns the environment variable name, or def when it is unset or empty.
 func envOr(name, def string) string {
 	if v := os.Getenv(name); v != "" {
 		return v

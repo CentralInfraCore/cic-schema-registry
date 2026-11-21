@@ -50,6 +50,9 @@ def compute_build_hash(path: Path) -> str:
 
 
 def _check_not_already_signed(path: Path) -> None:
+    """Refuse (AlreadySignedError) a file that already carries signature keys: signing is
+    one-shot per file, a content change belongs in a new version or -src<year> file.
+    """
     doc = yaml.safe_load(path.read_text()) or {}
     present = [k for k in _TOP_LEVEL_SIGNATURE_KEYS if k in doc]
     if present:

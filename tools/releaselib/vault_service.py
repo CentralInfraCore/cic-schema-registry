@@ -1,3 +1,11 @@
+"""HashiCorp Vault client of the release tooling.
+
+Covers the two calls a release needs: Transit signing of a prehashed SHA-256 digest
+(accepting any ``vault:v<N>:`` key version, so a rotated key keeps working) and reading
+a certificate from a KV v2 secret. In dry-run mode neither call touches Vault; both
+return placeholders.
+"""
+
 import base64
 import logging
 import os

@@ -89,6 +89,7 @@ from .registrylib.verify import (
 
 
 def _load(path: Path) -> dict:
+    """Load a schema YAML file; an empty file is {}."""
     return yaml.safe_load(path.read_text()) or {}
 
 
@@ -200,6 +201,10 @@ _DEEP_DIFF_GRANDFATHER: set[tuple[str, str, str, str]] = {
 
 
 def check_schema_evolution(registry_root: Path) -> tuple[list[str], list[str]]:
+    """For every schema directory, check each transition between consecutive content
+    versions with check_coverage (a major bump may remove fields, a minor one may not);
+    re-signs under a new -src year are not transitions. Returns (problems, skipped).
+    """
     problems: list[str] = []
     skipped: list[str] = []
     for schema_dir in iter_schema_dirs(registry_root):
@@ -325,6 +330,10 @@ def _kernel_required_slots(kernel_doc: dict) -> list[str]:
 
 
 def check_base_references(registry_root: Path) -> tuple[list[str], list[str]]:
+    """For the newest version of every schema with an exact ``base`` pin, check that the
+    pin parses and names a type registered here, and that the schema still covers its
+    base. Returns (problems, skipped); bundle-shaped files are skipped.
+    """
     problems: list[str] = []
     skipped: list[str] = []
     type_index = build_type_index(registry_root)
@@ -623,6 +632,11 @@ def _parse_min_schemas(argv: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run every registry check (evolution, -src year identity, base references, YANG
+    extends, release signatures, certificate patterns) under
+    general/standards/providers; return 1 when fewer schemas than --min-schemas were
+    found or any check reports a problem.
+    """
     argv = sys.argv[1:] if argv is None else argv
     min_schemas = _parse_min_schemas(argv)
 
