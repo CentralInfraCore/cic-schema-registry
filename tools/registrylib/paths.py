@@ -46,10 +46,12 @@ class SchemaVersion:
 
     @property
     def content_version(self) -> tuple[int, int, int]:
+        """The content version as a (major, minor, patch) tuple, for ordering."""
         return (self.major, self.minor, self.patch)
 
     @property
     def content_version_str(self) -> str:
+        """The content version as ``vMAJOR.MINOR.PATCH``."""
         return f"v{self.major}.{self.minor}.{self.patch}"
 
     def __str__(self) -> str:  # pragma: no cover - convenience only

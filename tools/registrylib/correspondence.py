@@ -39,6 +39,9 @@ class CorrespondenceError(ValueError):
 
 
 def load(path: str | Path) -> dict[str, Any]:
+    """Load a correspondence file; CorrespondenceError unless its ``spec.kind`` is
+    ProviderCorrespondence.
+    """
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(doc, dict) or doc.get("spec", {}).get("kind") != (
         "ProviderCorrespondence"
@@ -48,6 +51,9 @@ def load(path: str | Path) -> dict[str, Any]:
 
 
 def _target(mapping: dict[str, Any]) -> tuple[str, str]:
+    """Split a mapping's ``target`` into (surface, field name); the surface must be
+    config_surface or state_surface. CorrespondenceError otherwise.
+    """
     surface, _, name = str(mapping.get("target", "")).partition(".")
     if surface not in ("config_surface", "state_surface") or not name:
         raise CorrespondenceError("bad target %r" % (mapping.get("target"),))
@@ -88,6 +94,11 @@ def check_structure(doc: dict[str, Any]) -> list[str]:
 
 
 def _apply_rule(m: dict[str, Any], value: Any) -> Any:
+    """Apply a mapping's rule to a provider value: ``direct`` keeps it, ``first`` /
+    ``rest`` take the head / tail of a non-empty list, ``map_to_list`` turns a map into
+    a list, ``value_map`` translates a string (falling back to the mapping's default).
+    CorrespondenceError for an unknown rule or a value of the wrong shape.
+    """
     rule = m["rule"]
     if rule == "direct":
         return value

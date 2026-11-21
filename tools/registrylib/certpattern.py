@@ -26,6 +26,9 @@ _FLOW_LINE = re.compile(r"^\s*(?:-\s*)?(access|modify)\s*:\s*\[(.*)\]\s*(?:#.*)?
 
 
 def is_valid_pattern(value: object) -> bool:
+    """Whether value is a well-formed subject pattern - comma-separated ``attr=value``
+    pairs.
+    """
     return isinstance(value, str) and PATTERN_RE.match(value) is not None
 
 

@@ -101,6 +101,9 @@ def _signed_content_bytes(raw: bytes, path: Path) -> bytes:
 
 
 def _decode_vault_signature(vault_sig: object, context: str) -> bytes:
+    """The DER bytes of a ``vault:vN:<base64>`` signature; SignatureVerificationError if it
+    is malformed.
+    """
     if not isinstance(vault_sig, str):
         raise SignatureVerificationError(f"{context}: signature is not a string")
     m = _VAULT_SIG_RE.match(vault_sig)
@@ -118,6 +121,9 @@ def _decode_vault_signature(vault_sig: object, context: str) -> bytes:
 
 
 def _load_cert(pem_text: object, context: str) -> x509.Certificate:
+    """Parse a PEM certificate; SignatureVerificationError if it is missing or does not
+    parse.
+    """
     if not isinstance(pem_text, str) or "BEGIN CERTIFICATE" not in pem_text:
         raise SignatureVerificationError(f"{context}: missing/invalid certificate")
     try:
@@ -131,6 +137,10 @@ def _load_cert(pem_text: object, context: str) -> x509.Certificate:
 def _verify_prehashed_ecdsa(
     digest: bytes, vault_sig: object, cert_pem: object, context: str
 ) -> None:
+    """Verify a Vault ECDSA signature over a SHA-256 digest (prehashed) with the
+    certificate's EC public key; SignatureVerificationError if the key is not EC or the
+    signature does not verify.
+    """
     sig_der = _decode_vault_signature(vault_sig, context)
     cert = _load_cert(cert_pem, context)
     public_key = cert.public_key()
@@ -148,6 +158,9 @@ def _verify_prehashed_ecdsa(
 
 
 def _extract_embedded_pem(text: object, context: str) -> str:
+    """The first PEM certificate block embedded in text; SignatureVerificationError if
+    there is none.
+    """
     if not isinstance(text, str):
         raise SignatureVerificationError(f"{context}: not a string")
     m = _PEM_CERT_RE.search(text)
@@ -161,6 +174,9 @@ def _extract_embedded_pem(text: object, context: str) -> str:
 def _verify_chain_to_root(
     child_cert: x509.Certificate, root_pem: str, context: str
 ) -> None:
+    """Check that child_cert is issued by the given root - matching issuer and subject, and
+    a valid EC signature by the root's key over the child's TBS certificate.
+    """
     root_cert = _load_cert(root_pem, context)
     if child_cert.issuer != root_cert.subject:
         raise SignatureVerificationError(

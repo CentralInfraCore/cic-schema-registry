@@ -41,6 +41,8 @@ REGISTRY_ROOTS = ("general", "standards", "providers")
 
 @dataclass(frozen=True)
 class ParsedPin:
+    """A parsed registry pin ``{namespace}:{Kind}@vMAJOR.MINOR.PATCH``."""
+
     namespace: str
     kind: str
     major: int
@@ -49,10 +51,14 @@ class ParsedPin:
 
     @property
     def type_key(self) -> str:
+        """The version-less type identity, ``namespace:Kind``."""
         return f"{self.namespace}:{self.kind}"
 
 
 def parse_pin(pin: str) -> ParsedPin:
+    """Parse an exact registry pin; ValueError for anything else (a bare
+    ``namespace:Kind``, a missing patch version or a ``-src<year>`` suffix).
+    """
     m = _PIN_RE.match(pin)
     if not m:
         raise ValueError(
