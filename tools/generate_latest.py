@@ -57,6 +57,7 @@ ENROLLED = [
 
 
 def _latest_path(registry_root: Path, rel: str) -> Path:
+    """The LATEST.yaml path of a schema directory."""
     return registry_root / rel / "LATEST.yaml"
 
 
@@ -143,6 +144,7 @@ def _file_history_commits(registry_root: Path, path: Path) -> list[str]:
 
 
 def _commit_content(registry_root: Path, commit: str, path: Path) -> str | None:
+    """The content of path at commit (``git show``), or None if it does not exist there."""
     result = subprocess.run(
         ["git", "show", f"{commit}:{path.relative_to(registry_root)}"],
         cwd=registry_root,
@@ -325,6 +327,10 @@ def check_no_frozen_edits(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Refuse in-place edits of published schema files, then regenerate the LATEST.yaml of
+    every enrolled schema directory (or, with --check, report the directories whose
+    committed LATEST.yaml has drifted); return 1 on a problem.
+    """
     argv = sys.argv[1:] if argv is None else argv
     check_mode = "--check" in argv
     registry_root = Path.cwd()
